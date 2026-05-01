@@ -1,0 +1,247 @@
+{
+    "name": "UNI-T_UTD",
+    "description": "UNI-T UTD series oscilloscope command set, supporting UTD2000CEX and UTD7000C",
+    "type": "pyvisa",
+    "series": [
+        "UTD2000CEX",
+        "UTD7000C"
+    ],
+    "feature": {
+        "meas": "split",
+        "return_value_index": 0,
+        "get_value": "ByItem",
+        "set_meas": "Channel"
+    },
+    "keyword": {
+        "imp_fif": "FIF",
+        "imp_meg": "MEG",
+        "acquisition_mode_sample": "NORMAL",
+        "acquisition_mode_average": "AVERAGE",
+        "acquisition_mode_peak": "PEAK",
+        "meas_amp": "VAMP",
+        "meas_period": "PER",
+        "meas_risetime": "RIS",
+        "meas_freq": "FREQ",
+        "meas_mean": "VAV",
+        "meas_pos_overshoot": "OVER",
+        "meas_max": "VMAX",
+        "meas_min": "VMIN",
+        "acquire_stop_after_single": "SEQ",
+        "acquire_stop_after_run_stop": "RUNST"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*RST\n"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHAN",
+                ":DISP ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHAN",
+                ":SCAL ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_probe_gain": {
+            "name": "set_probe_gain",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHAN",
+                ":PROB ",
+                "X\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TRIG:SOUR CHAN",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TRIG:LEV ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TIM:SCAL ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":ACQ:TYPE ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "NORMAL",
+                    "AVERAGE",
+                    "PEAK"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":ACQ:AVER:COUN ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_source": {
+            "name": "set_meas_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":MEAS:SOUR CHAN",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "get_value_from_item": {
+            "name": "get_value_from_item",
+            "type": "query",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":MEAS:",
+                "?\n"
+            ],
+            "args": [
+                [
+                    "VAMP",
+                    "PER",
+                    "RIS",
+                    "FALL",
+                    "FREQ",
+                    "VAV",
+                    "VMAX",
+                    "VMIN"
+                ]
+            ]
+        },
+        "set_acquire_state": {
+            "name": "set_acquire_state",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":",
+                "\n"
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "STOP"
+                ]
+            ]
+        }
+    }
+}

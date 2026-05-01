@@ -1,0 +1,136 @@
+{
+    "name": "9500B",
+    "description": "Fluke 9500B Oscilloscope Calibrator with active probe heads",
+    "type": "pyvisa",
+    "series": ["9500B"],
+    "keyword": {
+        "imp_fif": "50",
+        "imp_meg": "10000"
+    },
+    "probes": {
+        "9560": {
+            "name": "9560",
+            "max_frequency": "6.4 GHz",
+            "edge_rise_times": [70E-12]
+        },
+        "9550": {
+            "name": "9550",
+            "description": "Fast Edge Head",
+            "edge_rise_times": [25E-12]
+        },
+        "9530": {
+            "name": "9530",
+            "max_frequency": "600 MHz",
+            "edge_rise_times": [150E-12, 500E-12]
+        }
+    },
+    "impedance_rules": {
+        "9560": {
+            "DC": ["1M", "50"],
+            "SQU": ["1M", "50"],
+            "MARK": ["50"],
+            "SIN": ["50"],
+            "EDGE": ["50"]
+        },
+        "9550": {
+            "EDGE": ["50"]
+        },
+        "9530": {
+            "DC": ["1M", "50"],
+            "SQU": ["1M", "50"],
+            "MARK": ["1M", "50"],
+            "SIN": ["1M", "50"],
+            "EDGE": ["1M", "50"]
+        }
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": ["*RST"],
+            "args": []
+        },
+        "initialize": {
+            "name": "initialize",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["*CLS;*RST"],
+            "args": []
+        },
+        "set_shap": {
+            "name": "set_shap",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:SCOP:SHAP "],
+            "args": [["SIN", "SQU", "MARK", "DC"]]
+        },
+        "set_freq": {
+            "name": "set_freq",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:FREQ "],
+            "args": [["<float>"]]
+        },
+        "set_volt": {
+            "name": "set_volt",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:VOLT "],
+            "args": [["<float>"]]
+        },
+        "set_output": {
+            "name": "set_output",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["OUTP "],
+            "args": [["ON", "OFF"]]
+        },
+        "set_impedance": {
+            "name": "set_impedance",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["ROUT:SIGN:IMP "],
+            "args": [["50", "10000"]]
+        },
+        "set_squ_polarity": {
+            "name": "set_squ_polarity",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:PAR:SQU:POL "],
+            "args": [["POS", "NEG", "SYMM"]]
+        },
+        "set_mark_period": {
+            "name": "set_mark_period",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:PER "],
+            "args": [["<float>"]]
+        },
+        "set_edge_speed": {
+            "name": "set_edge_speed",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["SOUR:PAR:EDGE:SPE "],
+            "args": [["<float>"]]
+        },
+        "query_head_type": {
+            "name": "get_value",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": ["ROUT:FITT? CH1"],
+            "args": []
+        }
+    }
+}

@@ -1,0 +1,94 @@
+{
+    "name": "osc",
+    "description": "Tektronix TDS5000 digital phosphor oscilloscope profile, 500MHz bandwidth, 4 channels",
+    "factor": "tektronix",
+    "series": "TDS5000",
+    "imp_has_50": true,
+    "vertical_div": 8,
+    "horizontal_div": 10,
+    "probe_default": 1,
+    "init_time": 5,
+    "bandwidth": 500E6,
+    "bd_step": 10E6,
+    "calibration_limits": {
+        "amp": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "dc_gain": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "delta_time": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "bandwidth": {
+            "min_mhz": 100
+        },
+        "transient": {}
+    },
+    "points": {
+        "bandwidth": [
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500
+        ],
+        "delta_amp": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "dc_gain": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "delta_time": [
+            10E-9,
+            20E-9,
+            40E-9,
+            80E-9,
+            200E-9,
+            400E-9,
+            800E-9,
+            2E-6,
+            4E-6,
+            10E-6,
+            20E-6,
+            40E-6,
+            100E-6,
+            200E-6,
+            400E-6,
+            1E-3,
+            2E-3,
+            4E-3,
+            10E-3,
+            20E-3
+        ]
+    }
+}

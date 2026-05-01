@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osccal"
+version = "0.1.0"
+description = "示波器自动校准 CLI 工具"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "pyvisa>=1.13",
+    "pyvisa-py>=0.7",
+    "openpyxl>=3.1",
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+osccal = "osccal.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["osccal*"]

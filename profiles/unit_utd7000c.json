@@ -1,0 +1,94 @@
+{
+    "name": "osc",
+    "description": "UNI-T UTD7000C oscilloscope profile, 200MHz bandwidth, no 50-ohm impedance",
+    "factor": "UNI-T",
+    "series": "UTD7000C",
+    "imp_has_50": false,
+    "vertical_div": 8,
+    "horizontal_div": 16,
+    "probe_default": 1,
+    "init_time": 10,
+    "bandwidth": 200E6,
+    "bd_step": 5E6,
+    "calibration_limits": {
+        "amp": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "dc_gain": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "delta_time": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "bandwidth": {
+            "min_mhz": 100
+        },
+        "transient": {}
+    },
+    "points": {
+        "bandwidth": [
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500
+        ],
+        "delta_amp": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "dc_gain": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "delta_time": [
+            10E-9,
+            20E-9,
+            50E-9,
+            100E-9,
+            200E-9,
+            500E-9,
+            1E-6,
+            2E-6,
+            5E-6,
+            10E-6,
+            20E-6,
+            50E-6,
+            100E-6,
+            200E-6,
+            500E-6,
+            1E-3,
+            2E-3,
+            5E-3,
+            10E-3,
+            20E-3
+        ]
+    }
+}

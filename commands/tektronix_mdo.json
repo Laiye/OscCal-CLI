@@ -1,0 +1,329 @@
+{
+    "name": "Tektronix_MDO",
+    "description": "Tektronix MDO/MSO/DPO series oscilloscope command set, supporting MDO4000C, MDO4000B, MDO4000, MSO4000B, DPO4000B, MDO3000",
+    "type": "pyvisa",
+    "series": [
+        "MDO4000C",
+        "MDO4000B",
+        "MDO4000",
+        "MSO4000B",
+        "DPO4000B",
+        "MDO3000"
+    ],
+    "feature": {
+        "meas": "merge",
+        "return_value_index": 1,
+        "get_value": "Direct"
+    },
+    "keyword": {
+        "imp_fif": "FIF",
+        "imp_meg": "MEG",
+        "acquisition_mode_sample": "SAMPLE",
+        "acquisition_mode_average": "AVERAGE",
+        "acquisition_mode_peak": "PEAK",
+        "meas_amp": "AMP",
+        "meas_period": "PERI",
+        "meas_risetime": "RIS",
+        "meas_freq": "FREQ",
+        "meas_mean": "MEAN",
+        "meas_pos_overshoot": "POV",
+        "meas_max": "MAX",
+        "meas_min": "MIN",
+        "acquire_stop_after_single": "SEQ",
+        "acquire_stop_after_run_stop": "RUNST"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "FAC"
+            ],
+            "args": []
+        },
+        "initialize": {
+            "name": "initialize",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "*CLS;*RST"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "SEL:CH",
+                " "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":SCALE "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_vertical_position": {
+            "name": "set_vertical_position",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":POS "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "TRIG:A:EDGE:SOU CH"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "TRIG:A:LEV:CH",
+                " "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "HOR:SCALE "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQ:MOD "
+            ],
+            "args": [
+                [
+                    "SAMPLE",
+                    "AVERAGE",
+                    "PEAK"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQ:NUMAV "
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_source": {
+            "name": "set_meas_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "MEASU:IMM:SOU CH"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_impedance": {
+            "name": "set_impedance",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":TER "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "FIF",
+                    "MEG"
+                ]
+            ]
+        },
+        "set_meas_type": {
+            "name": "set_meas_type",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "MEASU:IMM:TYP "
+            ],
+            "args": [
+                [
+                    "AMP",
+                    "PERI",
+                    "RIS",
+                    "FALL",
+                    "FREQ",
+                    "MEAN",
+                    "MAX",
+                    "MIN"
+                ]
+            ]
+        },
+        "get_value": {
+            "name": "get_value",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "MEASU:IMM:VAL?"
+            ],
+            "args": []
+        },
+        "get_unit": {
+            "name": "get_unit",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "MEASU:IMM:UNI?"
+            ],
+            "args": []
+        },
+        "set_meas_method": {
+            "name": "set_meas_method",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "MEASU:METH "
+            ],
+            "args": [
+                [
+                    "Auto",
+                    "HIStogram",
+                    "MINMax"
+                ]
+            ]
+        },
+        "set_acquire_state": {
+            "name": "set_acquire_state",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQ:STATE "
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "STOP"
+                ]
+            ]
+        },
+        "set_acquire_stop_after": {
+            "name": "set_acquire_stop_after",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQ:STOPA "
+            ],
+            "args": [
+                [
+                    "RUNST",
+                    "SEQ"
+                ]
+            ]
+        }
+    }
+}

@@ -1,0 +1,243 @@
+{
+    "name": "RIGOL_MSO",
+    "description": "RIGOL MSO5000 series oscilloscope command set, supporting MSO5000",
+    "type": "pyvisa",
+    "series": [
+        "MSO5000"
+    ],
+    "feature": {
+        "meas": "split",
+        "return_value_index": 0,
+        "get_value": "ByChannelItem",
+        "set_meas": "Channel"
+    },
+    "keyword": {
+        "imp_fif": "FIFT",
+        "imp_meg": "OMEG",
+        "acquisition_mode_sample": "HORM",
+        "acquisition_mode_average": "AVER",
+        "acquisition_mode_peak": "PEAK",
+        "meas_amp": "VAMP",
+        "meas_mean": "VAVG",
+        "meas_risetime": "RIS",
+        "meas_freq": "FREQ",
+        "meas_period": "PER",
+        "meas_pos_overshoot": "ROVE",
+        "meas_max": "VMAX",
+        "meas_min": "VMIN",
+        "acquire_stop_after_single": "SING",
+        "acquire_stop_after_run_stop": "RUN"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*RST\n"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":CHAN",
+                ":DISP "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":CHAN",
+                ":SCAL "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TRIG:EDGE:SOUR CHAN"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TRIG:EDGE:LEV "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TIM:SCAL "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":ACQ:TYPE "
+            ],
+            "args": [
+                [
+                    "NORM",
+                    "AVER",
+                    "PEAK"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":ACQ:AVER "
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_source": {
+            "name": "set_meas_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":MEAS:SOUR "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "get_value_from_item_and_source": {
+            "name": "get_value_from_item_and_source",
+            "type": "query",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":MEAS:ITEM? ",
+                ",CHAN"
+            ],
+            "args": [
+                [
+                    "VAMP",
+                    "VMEA",
+                    "PER",
+                    "FREQ",
+                    "RIS",
+                    "ROVE",
+                    "VMAX",
+                    "VMIN"
+                ],
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_impedance": {
+            "name": "set_impedance",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":OUTP",
+                ":IMP "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "FIFT",
+                    "OMEG"
+                ]
+            ]
+        },
+        "set_acquire_stop_after": {
+            "name": "set_acquire_stop_after",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":"
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "SING"
+                ]
+            ]
+        }
+    }
+}
