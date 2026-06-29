@@ -8,8 +8,6 @@
     "horizontal_div": 14,
     "probe_default": 10,
     "init_time": 5,
-    "bandwidth": 100E6,
-    "bd_step": 1E6,
     "calibration_limits": {
         "amp": {
             "upper": 2.0,

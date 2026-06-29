@@ -20,11 +20,13 @@ def cli():
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
 @click.option("--channel", type=click.STRING, default=None, help="校准通道，逗号分隔 (1,2,3,4)")
 @click.option("--probe", type=click.STRING, default=None, help="校准仪探头型号 (9560/9550/9530)")
-@click.option("--items", type=click.STRING, default="all", help="校准项目，逗号分隔 (amp,dc_gain,delta_time,bandwidth,transient,all)")
+@click.option("--items", type=click.STRING, default=None, help="校准项目，逗号分隔 (amp,dc_gain,delta_time,bandwidth,transient,all)")
 @click.option("--resource-osc", type=click.STRING, help="示波器 VISA 资源地址")
 @click.option("--resource-cal", type=click.STRING, help="校准仪 VISA 资源地址")
 @click.option("--socket-osc", type=click.STRING, help="示波器 Socket 地址 (host:port)")
-def calibrate(osc, profile, calibrator, channel, probe, items, resource_osc, resource_cal, socket_osc):
+@click.option("--bandwidth", type=click.FLOAT, default=None, help="示波器标称带宽 (MHz)")
+@click.option("--bd-step", type=click.FLOAT, default=None, help="带宽扫描步进 (MHz)")
+def calibrate(osc, profile, calibrator, channel, probe, items, resource_osc, resource_cal, socket_osc, bandwidth, bd_step):
     """执行示波器校准流程"""
     from osccal.core.config import load_commands, load_profile, load_calibrator, list_config_files
     from osccal.core.connect import connect_visa, connect_socket, list_visa_resources
@@ -186,21 +188,50 @@ def calibrate(osc, profile, calibrator, channel, probe, items, resource_osc, res
         console.print("[red]✗[/red] 示波器连接失败")
         return
 
+    if not items:
+        console.print("\n[bold]选择校准项目:[/bold]")
+        console.print("  [0] 全部项目")
+        console.print("  [1] 幅度(ΔV)")
+        console.print("  [2] 直流增益")
+        console.print("  [3] Δt(时间)")
+        console.print("  [4] 频带宽度")
+        console.print("  [5] 上升时间及过冲")
+        console.print("  也可输入序号多选(逗号分隔)，如: 1,3")
+        choice = click.prompt("请选择或输入", default="0")
+        item_presets = {
+            "0": "all",
+            "1": "amp",
+            "2": "dc_gain",
+            "3": "delta_time",
+            "4": "bandwidth",
+            "5": "transient",
+        }
+        if "," in choice:
+            items = ",".join(item_presets.get(c.strip(), c.strip()) for c in choice.split(","))
+        else:
+            items = item_presets.get(choice, choice)
+
     item_list = [i.strip() for i in items.split(",")]
 
-    from osccal.measure.amp import AmpCalibrator
-    from osccal.measure.dc_gain import DcGainCalibrator
-    from osccal.measure.delta_time import DeltaTimeCalibrator
-    from osccal.measure.bandwidth import BandwidthCalibrator
-    from osccal.measure.transient import TransientCalibrator
+    needs_bw = "all" in item_list or "bandwidth" in item_list
 
-    calibrators_map = {
-        "amp": AmpCalibrator,
-        "dc_gain": DcGainCalibrator,
-        "delta_time": DeltaTimeCalibrator,
-        "bandwidth": BandwidthCalibrator,
-        "transient": TransientCalibrator,
-    }
+    if needs_bw:
+        if bandwidth is None:
+            console.print("\n[bold]示波器标称带宽:[/bold]")
+            bandwidth = click.prompt("请输入 (MHz)", type=float, default=100.0)
+        if bd_step is None:
+            console.print("\n[bold]带宽扫描步进:[/bold]")
+            bd_step = click.prompt("请输入 (MHz)", type=float, default=5.0)
+    else:
+        if bandwidth is None:
+            bandwidth = 100.0
+        if bd_step is None:
+            bd_step = 5.0
+
+    profile_data["bandwidth"] = int(bandwidth * 1E6)
+    profile_data["bd_step"] = int(bd_step * 1E6)
+
+    from osccal.measure.registry import CALIBRATORS_MAP
 
     all_results = {}
 
@@ -220,7 +251,7 @@ def calibrate(osc, profile, calibrator, channel, probe, items, resource_osc, res
                 all_results[result_key] = val
         else:
             for item in item_list:
-                CalClass = calibrators_map.get(item)
+                CalClass = CALIBRATORS_MAP.get(item)
                 if not CalClass:
                     console.print(f"[yellow]⚠[/yellow] 未知校准项目: {item}")
                     continue
@@ -393,19 +424,13 @@ def _display_calibration_data(data: dict):
 
     console.print(info_table)
 
-    item_configs = {
-        "amp": {"title": "ΔV(幅度) 校准结果", "columns": ["序号", "通道", "挡位(V/div)", "标准值(V)", "被校示值(V)", "相对误差(%)"], "error_col": 5},
-        "dc_gain": {"title": "直流增益 校准结果", "columns": ["序号", "通道", "阻抗", "挡位(V/div)", "标准值U+(V)", "标准值U-(V)", "被校示值Ur+(V)", "被校示值Ur-(V)", "直流增益误差(%)"], "error_col": 8},
-        "delta_time": {"title": "Δt(时间) 校准结果", "columns": ["序号", "通道", "挡位(s/div)", "标准值MT(s)", "被校示值tm(s)", "相对误差(%)"], "error_col": 5},
-        "bandwidth": {"title": "频带宽度 校准结果", "columns": ["序号", "通道", "挡位(V/div)", "实测值(MHz)"], "error_col": None},
-        "transient": {"title": "上升时间及过冲 校准结果", "columns": ["序号", "通道", "上升时间(ns)", "过冲(%)"], "error_col": None},
-    }
+    from osccal.core.table_configs import ITEM_CONFIGS
 
     for item_name, rows in results.items():
         if not rows:
             continue
 
-        config = item_configs.get(item_name, {"title": item_name, "columns": [], "error_col": None})
+        config = ITEM_CONFIGS.get(item_name, {"title": item_name, "columns": [], "error_col": None})
         table = Table(title=config["title"], show_lines=True)
 
         for col in config["columns"]:

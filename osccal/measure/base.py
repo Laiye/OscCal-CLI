@@ -1,33 +1,11 @@
-import math
 import time
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from osccal.core.comm import scpi_write, scpi_query, read_measurement
+from osccal.core.comm import scpi_write, scpi_query, read_measurement, scpi_setup_measurement
 from osccal.core.command import assemble_cmd
 
 console = Console()
-
-
-def format_with_fixed_precision(number, precision):
-    if number == 0:
-        return "0." + "0" * (precision - 1)
-    order = math.floor(math.log10(abs(number)))
-    decimals = precision - 1 - order
-    format_string = "{:." + str(max(0, decimals)) + "f}"
-    formatted_number = format_string.format(number)
-    parts = formatted_number.rstrip("0").split(".")
-    integer_part = parts[0]
-    decimal_part = parts[1] if len(parts) > 1 else ""
-    if decimals > 0:
-        decimal_part += "0" * (decimals - len(decimal_part))
-    else:
-        decimal_part = ""
-    if not decimal_part:
-        formatted_number = integer_part
-    else:
-        formatted_number = f"{integer_part}.{decimal_part}"
-    return formatted_number
 
 
 class BaseCalibrator:
@@ -43,6 +21,12 @@ class BaseCalibrator:
         self.comm_type = cmd_osc.get("type", "pyvisa")
         self.cal_type = cmd_calibrator.get("type", "pyvisa")
         self.results = []
+
+    def _get_limits(self, item_name):
+        limits = self.profile.get("calibration_limits", {}).get(item_name, None)
+        if limits:
+            return (limits.get("lower", -2.0), limits.get("upper", 2.0))
+        return None
 
     def _setup_signal_impedance(self, shape, preferred_osc_impedance="1M"):
         rules = self.cmd_calibrator.get("impedance_rules", {})
@@ -84,13 +68,28 @@ class BaseCalibrator:
         probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
         return probe_info.get("edge_rise_times", [150E-12])
 
-    def _read_meas_value(self, meas_keyword):
+    def _get_probe_max_frequency_hz(self) -> float:
+        probe = self.probe or "9550"
+        probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
+        max_freq = probe_info.get("max_frequency_hz", 0)
+        if max_freq <= 0:
+            return 600E6
+        return float(max_freq)
+
+    def _read_meas(self, meas_keyword):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
 
     def _adjust_vertical_position(self, scale):
         if "set_vertical_position" not in self.cmd_osc["actions"]:
             return
+        keywords = self.cmd_osc.get("keyword", {})
+        has_max = "meas_max" in keywords
+        has_min = "meas_min" in keywords
+        if not has_max or not has_min:
+            console.print("[yellow]⚠ 指令集缺少 meas_max/meas_min 关键字，跳过垂直位置自动调整[/yellow]")
+            return
+
         self._write_osc("set_vertical_position", self.channel, 0.0)
         if scale > 0.002:
             return
@@ -98,8 +97,8 @@ class BaseCalibrator:
         half_div = vertical_div / 2.0
         position = 0.0
         for _ in range(5):
-            max_val = self._read_meas_value("meas_max")
-            min_val = self._read_meas_value("meas_min")
+            max_val = self._read_meas("meas_max")
+            min_val = self._read_meas("meas_min")
             top_limit = half_div * scale
             bottom_limit = -half_div * scale
             need_adjust = False
@@ -132,10 +131,6 @@ class BaseCalibrator:
         cmd = assemble_cmd(action, *args)
         scpi_write(self.inst_calibrator, cmd, self.cal_type)
 
-    def _read_meas(self, meas_keyword):
-        actual_keyword = self.cmd_osc["keyword"][meas_keyword]
-        return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
-
     def init_devices(self):
         self._write_osc("preset")
         self._write_calibrator("preset")
@@ -153,21 +148,7 @@ class BaseCalibrator:
             self._write_osc("set_impedance", self.channel, self.cmd_osc["keyword"][impedance_keyword])
 
     def setup_measurement(self, meas_keyword):
-        feature = self.cmd_osc.get("feature", {})
-        meas_mode = feature.get("meas", "split")
-        if meas_mode == "merge":
-            if "set_meas_source" in self.cmd_osc["actions"]:
-                self._write_osc("set_meas_source", self.channel)
-            if "set_meas_type" in self.cmd_osc["actions"]:
-                self._write_osc("set_meas_type", self.cmd_osc["keyword"][meas_keyword])
-        elif meas_mode == "split":
-            set_meas = feature.get("set_meas", "Channel")
-            if set_meas == "Channel":
-                if "set_meas_source" in self.cmd_osc["actions"]:
-                    self._write_osc("set_meas_source", self.channel)
-            elif set_meas == "ItemChannel":
-                if "set_meas_item_and_source" in self.cmd_osc["actions"]:
-                    self._write_osc("set_meas_item_and_source", self.cmd_osc["keyword"][meas_keyword], self.channel)
+        scpi_setup_measurement(self.inst_osc, self.cmd_osc, self.channel, self.cmd_osc["keyword"][meas_keyword])
 
     def print_title(self, title):
         console.print(Panel(f"[bold blue]{title}[/bold blue]  通道: CH{self.channel}", expand=False))

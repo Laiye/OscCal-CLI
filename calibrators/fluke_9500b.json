@@ -11,16 +11,19 @@
         "9560": {
             "name": "9560",
             "max_frequency": "6.4 GHz",
+            "max_frequency_hz": 6400000000,
             "edge_rise_times": [70E-12]
         },
         "9550": {
             "name": "9550",
             "description": "Fast Edge Head",
+            "max_frequency_hz": 0,
             "edge_rise_times": [25E-12]
         },
         "9530": {
             "name": "9530",
             "max_frequency": "600 MHz",
+            "max_frequency_hz": 600000000,
             "edge_rise_times": [150E-12, 500E-12]
         }
     },

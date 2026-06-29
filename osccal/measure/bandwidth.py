@@ -1,6 +1,7 @@
 import time
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, format_with_fixed_precision, console
+from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision
 
 
 class BandwidthCalibrator(BaseCalibrator):
@@ -34,6 +35,7 @@ class BandwidthCalibrator(BaseCalibrator):
         points = self.profile.get("points", {}).get("bandwidth", [])
         start_bd = self.profile.get("bandwidth", 100E6)
         bd_step = self.profile.get("bd_step", 10E6)
+        max_bd = self._get_probe_max_frequency_hz()
 
         columns = [
             {"name": "序号"},
@@ -60,7 +62,7 @@ class BandwidthCalibrator(BaseCalibrator):
 
                 while current_amp >= ref_amp * 0.707:
                     current_bd = current_bd + bd_step
-                    if current_bd > 600E6:
+                    if current_bd > max_bd:
                         break
 
                     self._write_calibrator("set_freq", current_bd)

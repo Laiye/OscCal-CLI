@@ -1,6 +1,7 @@
 import time
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, format_with_fixed_precision, console
+from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision
 
 
 class DeltaTimeCalibrator(BaseCalibrator):
@@ -22,10 +23,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
 
         horizontal_div = self.profile.get("horizontal_div", 10)
         points = self.profile.get("points", {}).get("delta_time", [])
-        limits = self.profile.get("calibration_limits", {}).get("delta_time", None)
-        limit_range = None
-        if limits:
-            limit_range = (limits.get("lower", -2.0), limits.get("upper", 2.0))
+        limit_range = self._get_limits("delta_time")
 
         columns = [
             {"name": "序号"},

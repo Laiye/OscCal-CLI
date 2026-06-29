@@ -66,6 +66,7 @@ def connect_visa(resource: str) -> tuple:
 def connect_socket(host: str, port: int) -> tuple:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
         s.connect((host, port))
         idn_raw = scpi_query(s, "*IDN?", "socket")
         idn_info = _parse_idn(idn_raw)

@@ -1,6 +1,7 @@
 import time
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, format_with_fixed_precision, console
+from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision
 
 
 class AmpCalibrator(BaseCalibrator):
@@ -22,10 +23,7 @@ class AmpCalibrator(BaseCalibrator):
 
         vertical_div = self.profile.get("vertical_div", 8)
         points = self.profile.get("points", {}).get("delta_amp", [])
-        limits = self.profile.get("calibration_limits", {}).get("amp", None)
-        limit_range = None
-        if limits:
-            limit_range = (limits.get("lower", -2.0), limits.get("upper", 2.0))
+        limit_range = self._get_limits("amp")
 
         columns = [
             {"name": "序号"},

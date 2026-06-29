@@ -1,5 +1,7 @@
 import time
-from osccal.measure.base import BaseCalibrator, format_with_fixed_precision, console
+import click
+from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision
 
 
 class TransientCalibrator(BaseCalibrator):
@@ -25,11 +27,7 @@ class TransientCalibrator(BaseCalibrator):
             for i, rt in enumerate(rise_times):
                 rt_ps = rt * 1E12
                 console.print(f"  [{i}] {rt_ps:.0f} ps")
-            choice = console.input("请选择 [bold]默认 0[/bold]: ")
-            try:
-                idx = int(choice) if choice.strip() else 0
-            except ValueError:
-                idx = 0
+            idx = click.prompt("请选择", type=int, default=0)
             edge_speed = rise_times[idx]
 
         self._write_calibrator("set_edge_speed", edge_speed)

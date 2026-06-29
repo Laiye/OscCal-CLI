@@ -1,10 +1,6 @@
 import time
 from rich.console import Console
-from osccal.measure.amp import AmpCalibrator
-from osccal.measure.dc_gain import DcGainCalibrator
-from osccal.measure.delta_time import DeltaTimeCalibrator
-from osccal.measure.bandwidth import BandwidthCalibrator
-from osccal.measure.transient import TransientCalibrator
+from osccal.measure.registry import CALIBRATOR_ORDER
 
 console = Console()
 
@@ -12,15 +8,8 @@ console = Console()
 def run_all(inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe=None):
     all_results = {}
 
-    calibrators = [
-        ("amp", AmpCalibrator),
-        ("dc_gain", DcGainCalibrator),
-        ("delta_time", DeltaTimeCalibrator),
-        ("bandwidth", BandwidthCalibrator),
-        ("transient", TransientCalibrator),
-    ]
-
-    for name, CalClass in calibrators:
+    for entry in CALIBRATOR_ORDER:
+        name, CalClass = entry["name"], entry["class"]
         try:
             console.rule(f"[bold blue]{name}[/bold blue]")
             cal = CalClass(inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe)
