@@ -14,6 +14,9 @@
 - **配置驱动扩展**：新增示波器只需添加 JSON 文件，无需修改代码
 - **美观终端输出**：Rich 表格、进度条、超差红色高亮
 - **Excel 报告导出**：含数据表、误差散点图、超差高亮
+- **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
+- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、SCPI 通信集成
+- **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
 
 ## 环境要求
 
@@ -80,6 +83,41 @@ osccal export
 # 指定输入和输出
 osccal export --file data/calibration_20260427_143000.json --output report.xlsx
 ```
+
+## 本地模拟运行
+
+无需真实示波器和校准仪，即可在本地跑通完整校准流程，便于开发调试和演示。模拟脚本内置两个实现 pyvisa 接口的模拟仪器，通过共享状态对象传递信号：校准仪 `write` 更新输出信号，示波器 `query` 据此返回合理的测量值，并按一阶低通模型模拟示波器 -3dB 带宽滚降。
+
+```bash
+# 默认跑全部 5 项校准（MDO34、CH1、9560 探头、模拟带宽 200MHz）
+python simulate_calibrate.py
+
+# 指定校准项目
+python simulate_calibrate.py --items amp,dc_gain
+
+# 多通道 + 切换探头
+python simulate_calibrate.py --channel 1,2 --probe 9530
+
+# 打印完整 SCPI 指令日志并导出 JSON + Excel
+python simulate_calibrate.py --log-scpi --export
+```
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `--commands` | 指令集文件名（不含 .json） | `tektronix_mdo3` |
+| `--profile` | Profile 文件名（不含 .json） | `tektronix_mdo34` |
+| `--calibrator` | 校准仪配置文件名（不含 .json） | `fluke_9500b` |
+| `--items` | 校准项目，逗号分隔 | `all` |
+| `--channel` | 通道，逗号分隔（如 1,2） | `1` |
+| `--probe` | 探头型号（9560/9550/9530） | `9560` |
+| `--bandwidth` | 起始带宽（MHz） | `100.0` |
+| `--bd-step` | 带宽扫描步进（MHz） | `20.0` |
+| `--sim-bandwidth` | 模拟示波器 -3dB 带宽（MHz） | `200.0` |
+| `--log-scpi` | 打印完整 SCPI 指令序列 | 关闭 |
+| `--export` | 保存 JSON 数据并导出 Excel | 关闭 |
+| `--real-sleep` | 保留真实 sleep 延时（默认加速） | 关闭 |
+
+默认启用快速模式（禁用 `time.sleep`、自动应答 `click.prompt`），全程秒级完成；多选项上升时间（如 9530 探头）会自动选择默认值。
 
 ## 命令详解
 
@@ -194,11 +232,13 @@ OscCal-CLI/
 │   ├── cli.py                       # CLI 命令入口
 │   ├── core/                        # 核心模块
 │   │   ├── config.py                # JSON 配置文件加载
-│   │   ├── comm.py                  # SCPI 通信（PyVISA / Socket）
+│   │   ├── comm.py                  # SCPI 通信（PyVISA / Socket，含重试）
 │   │   ├── connect.py               # 设备连接与 *IDN? 查询
 │   │   ├── command.py               # SCPI 命令组装
 │   │   ├── storage.py               # 校准数据 JSON 存储
-│   │   └── export.py                # Excel 报告导出
+│   │   ├── export.py                # Excel 报告导出
+│   │   ├── table_configs.py         # 表格配置集中管理
+│   │   └── utils.py                 # 共享工具函数
 │   ├── measure/                     # 校准测量模块
 │   │   ├── base.py                  # 校准基类（阻抗管理、垂直位置调整）
 │   │   ├── amp.py                   # 幅度校准
@@ -206,7 +246,8 @@ OscCal-CLI/
 │   │   ├── delta_time.py            # Δt 时间校准
 │   │   ├── bandwidth.py             # 频带宽度校准
 │   │   ├── transient.py             # 上升时间及过冲校准
-│   │   └── all.py                   # 全项目校准
+│   │   ├── all.py                   # 全项目校准
+│   │   └── registry.py              # 校准器映射与执行顺序
 │   └── draw/                        # 绘图模块（matplotlib）
 │       ├── amp.py
 │       ├── dc_gain.py
@@ -214,6 +255,7 @@ OscCal-CLI/
 │       └── bandwidth.py
 ├── commands/                        # 示波器指令集配置
 │   ├── tektronix_mdo.json           #   泰克 MDO3000/MDO4000
+│   ├── tektronix_mdo3.json          #   泰克 3 Series MDO（MDO34/MDO32）
 │   ├── tektronix_tbs.json           #   泰克 TBS2000B
 │   ├── tektronix_tds.json           #   泰克 TDS5000
 │   ├── rigol_mso.json               #   普源 MSO5000
@@ -222,6 +264,8 @@ OscCal-CLI/
 │   └── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
 ├── profiles/                        # 示波器特征配置
 │   ├── tektronix_mdo3000.json
+│   ├── tektronix_mdo34.json         #   泰克 MDO34（4 通道）
+│   ├── tektronix_mdo32.json         #   泰克 MDO32（2 通道）
 │   ├── tektronix_tbs2000b.json
 │   ├── tektronix_tds5000.json
 │   ├── rigol_mso5000.json
@@ -232,7 +276,13 @@ OscCal-CLI/
 │   └── zlg_zds4000.json
 ├── calibrators/                     # 校准仪配置
 │   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
+├── tests/                           # 单元测试（pytest）
+│   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
+│   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
+│   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
+│   └── test_mdo3_comm_integration.py # SCPI 通信集成测试
 ├── data/                            # 校准数据存储目录
+├── simulate_calibrate.py            # 本地模拟校准脚本
 └── pyproject.toml                   # 项目配置
 ```
 
@@ -442,6 +492,8 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 品牌 | 系列 | 指令集文件 | 特征文件 | 连接方式 |
 |------|------|-----------|---------|---------|
 | 泰克 | MDO3000, MDO4000, MSO4000B, DPO4000B | `tektronix_mdo.json` | `tektronix_mdo3000.json` | VISA |
+| 泰克 | MDO34（4 通道） | `tektronix_mdo3.json` | `tektronix_mdo34.json` | VISA |
+| 泰克 | MDO32（2 通道） | `tektronix_mdo3.json` | `tektronix_mdo32.json` | VISA |
 | 泰克 | TBS2000B | `tektronix_tbs.json` | `tektronix_tbs2000b.json` | VISA |
 | 泰克 | TDS5000 | `tektronix_tds.json` | `tektronix_tds5000.json` | VISA |
 | 普源 | MSO5000 | `rigol_mso.json` | `rigol_mso5000.json` | VISA |
@@ -450,6 +502,29 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 优利德 | UTD7000C | `unit_utd.json` | `unit_utd7000c.json` | VISA |
 | 周立功 | ZDS2000/2000B | `zlg_zds.json` | `zlg_zds2000.json` | Socket |
 | 周立功 | ZDS4000/3000 | `zlg_zds.json` | `zlg_zds4000.json` | Socket |
+
+## 测试
+
+项目使用 pytest 进行单元测试，覆盖指令集结构、Profile 校验和 SCPI 通信集成。
+
+```bash
+# 运行全部测试
+pytest
+
+# 运行指定测试文件
+pytest tests/test_mdo3_commands.py
+
+# 查看详细输出
+pytest -v
+```
+
+测试内容：
+
+| 测试文件 | 覆盖范围 |
+|---------|---------|
+| `tests/test_mdo3_commands.py` | MDO3 指令集结构完整性、action/keyword 齐全性、SCPI 组装与手册一致性 |
+| `tests/test_mdo3_profiles.py` | MDO34/MDO32 Profile 参数校验（通道数、带宽、校准点、限值） |
+| `tests/test_mdo3_comm_integration.py` | `scpi_write`/`scpi_query`/`read_measurement`/`setup_impedance` 通信链路 |
 
 ## 依赖
 
@@ -461,6 +536,12 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | [PyVISA-py](https://pyvisa-py.readthedocs.io/) | PyVISA 纯 Python 后端 |
 | [openpyxl](https://openpyxl.readthedocs.io/) | Excel 报告生成 |
 | [matplotlib](https://matplotlib.org/) | 数据绘图 |
+
+开发依赖（测试）：
+
+| 库 | 用途 |
+|---|---|
+| [pytest](https://docs.pytest.org/) | 单元测试框架 |
 
 ## License
 

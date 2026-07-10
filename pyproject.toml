@@ -21,3 +21,11 @@ osccal = "osccal.cli:cli"
 
 [tool.setuptools.packages.find]
 include = ["osccal*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
