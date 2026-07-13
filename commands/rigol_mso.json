@@ -1,6 +1,8 @@
 {
     "name": "RIGOL_MSO",
     "description": "RIGOL MSO5000 series oscilloscope command set, supporting MSO5000",
+    "manufacturer": "Rigol",
+    "models": ["MSO5072", "MSO5074", "MSO5102", "MSO5104", "MSO5204", "MSO5354"],
     "type": "pyvisa",
     "series": [
         "MSO5000"

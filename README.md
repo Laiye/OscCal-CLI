@@ -5,17 +5,19 @@
 ## 功能特性
 
 - **6 项校准项目**：幅度（ΔV）、直流增益、Δt（时间）、频带宽度、上升时间及过冲、全项目校准
-- **多品牌示波器**：泰克、普源、鼎阳、优利德、周立功，覆盖 9+ 系列
+- **多品牌示波器**：泰克、普源、鼎阳、优利德、周立功，覆盖 10+ 系列
 - **FLUKE 9500B 校准仪**：支持 9560、9550、9530 三种有源探头，自动匹配阻抗
+- **一键自动识别**：`--auto` 模式扫描 VISA 资源，自动匹配设备、指令集、特征配置、探头型号
 - **智能阻抗管理**：根据探头型号和信号模式自动设置校准仪输出阻抗，不匹配时自动切换并警告
 - **多种连接方式**：USB（VISA）、网线（TCPIP/Socket）、GPIB、串口（ASRL）
 - **多通道校准**：支持多通道顺序校准，切换通道时等待用户确认接线
+- **循环校准**：一次校准完成后可选择继续测量，重新选择通道和项目
 - **自适应垂直位置**：小电压挡位自动调整示波器垂直位置，确保波形完整显示
-- **配置驱动扩展**：新增示波器只需添加 JSON 文件，无需修改代码
+- **配置驱动扩展**：新增示波器只需添加 JSON 文件，无需修改代码。支持 `manufacturer` / `models` 精确匹配
 - **美观终端输出**：Rich 表格、进度条、超差红色高亮
-- **Excel 报告导出**：含数据表、误差散点图、超差高亮
+- **Excel 报告导出**：数据表格 + 超差红色高亮
 - **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
-- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、SCPI 通信集成
+- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、SCPI 通信集成（174 tests）
 - **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
 
 ## 环境要求
@@ -42,26 +44,50 @@ pip install -e .
 osccal device list
 ```
 
-### 2. 执行校准（交互模式）
+### 2. 一键自动校准（推荐）
+
+```bash
+osccal calibrate --auto
+```
+
+程序将自动：
+1. 扫描所有 VISA 资源
+2. 查询每个资源的 `*IDN?` 识别设备身份
+3. 自动匹配 FLUKE 校准仪和示波器（忽略无关设备）
+4. 根据示波器型号精确匹配指令集和特征配置
+5. 自动查询校准仪装载的探头型号
+6. 打印识别结果供你确认
+7. 确认后自动连接并开始校准
+
+```bash
+# 自动识别 + 指定探头
+osccal calibrate --auto --probe 9530
+
+# 自动识别 + 指定校准项目
+osccal calibrate --auto --items amp,dc_gain
+```
+
+### 3. 交互模式校准
 
 ```bash
 osccal calibrate
 ```
 
 程序将引导你依次选择：
-1. 校准仪配置文件
-2. 校准仪探头型号
-3. 示波器指令集文件
-4. 示波器特征配置文件
-5. 校准通道（支持多通道）
-6. 校准仪 VISA 资源
-7. 示波器 VISA 资源
+1. 校准仪探头型号
+2. 示波器指令集文件
+3. 示波器特征配置文件
+4. 校准通道（支持多通道）
+5. 校准项目
+6. 带宽参数（如涉及带宽校准）
+7. 校准仪 VISA 资源
+8. 示波器 VISA 资源
 
 多通道校准时，切换通道会暂停等待用户移动探头并确认接线。
 
-校准完成后，数据自动保存到 `data/` 目录。
+校准完成后，可选择"继续校准"重新选择通道和项目再测一轮，或直接退出。数据自动保存到 `data/` 目录。
 
-### 3. 查看校准结果
+### 4. 查看校准结果
 
 ```bash
 # 查看最近一次校准数据
@@ -74,7 +100,7 @@ osccal show --file data/calibration_20260427_143000.json
 osccal show
 ```
 
-### 4. 导出 Excel 报告
+### 5. 导出 Excel 报告
 
 ```bash
 # 导出最近一次校准数据为 Excel
@@ -131,12 +157,15 @@ osccal calibrate [OPTIONS]
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
+| `--auto` | 自动扫描 VISA 资源，识别设备并匹配配置 | — |
 | `--osc` | 示波器指令集配置文件路径 | 交互选择 |
 | `--profile` | 示波器特征配置文件路径 | 交互选择 |
-| `--calibrator` | 校准仪配置文件路径 | 交互选择 |
+| `--calibrator` | 校准仪配置文件路径 | 自动加载首个 |
 | `--channel` | 校准通道，逗号分隔（1,2,3,4） | 交互选择 |
-| `--probe` | 校准仪探头型号（9560/9550/9530） | 交互选择 |
+| `--probe` | 校准仪探头型号（9560/9550/9530） | 交互选择 / 自动识别 |
 | `--items` | 校准项目，逗号分隔 | `all` |
+| `--bandwidth` | 示波器标称带宽（MHz） | 交互输入 |
+| `--bd-step` | 带宽扫描步进（MHz） | 交互输入 |
 | `--resource-osc` | 示波器 VISA 资源地址 | 交互选择 |
 | `--resource-cal` | 校准仪 VISA 资源地址 | 交互选择 |
 | `--socket-osc` | 示波器 Socket 地址（host:port） | — |
@@ -155,6 +184,12 @@ osccal calibrate [OPTIONS]
 **示例**：
 
 ```bash
+# 一键自动识别
+osccal calibrate --auto
+
+# 自动识别 + 指定探头和项目
+osccal calibrate --auto --probe 9560 --items amp,dc_gain
+
 # 交互模式，校准全部项目
 osccal calibrate
 
@@ -231,6 +266,7 @@ OscCal-CLI/
 ├── osccal/                          # 主程序包
 │   ├── cli.py                       # CLI 命令入口
 │   ├── core/                        # 核心模块
+│   │   ├── auto_detect.py           # 自动识别设备与配置匹配
 │   │   ├── config.py                # JSON 配置文件加载
 │   │   ├── comm.py                  # SCPI 通信（PyVISA / Socket，含重试）
 │   │   ├── connect.py               # 设备连接与 *IDN? 查询
@@ -248,22 +284,17 @@ OscCal-CLI/
 │   │   ├── transient.py             # 上升时间及过冲校准
 │   │   ├── all.py                   # 全项目校准
 │   │   └── registry.py              # 校准器映射与执行顺序
-│   └── draw/                        # 绘图模块（matplotlib）
-│       ├── amp.py
-│       ├── dc_gain.py
-│       ├── time.py
-│       └── bandwidth.py
 ├── commands/                        # 示波器指令集配置
-│   ├── tektronix_mdo.json           #   泰克 MDO3000/MDO4000
+│   ├── tektronix_mdo.json           #   泰克 MDO3000/MDO4000/MSO4000B/DPO4000B
 │   ├── tektronix_mdo3.json          #   泰克 3 Series MDO（MDO34/MDO32）
 │   ├── tektronix_tbs.json           #   泰克 TBS2000B
 │   ├── tektronix_tds.json           #   泰克 TDS5000
 │   ├── rigol_mso.json               #   普源 MSO5000
-│   ├── siglent_sds.json             #   鼎阳 SDS
+│   ├── siglent_sds.json             #   鼎阳 SDS6000 PRO/SDS6000A
 │   ├── unit_utd.json                #   优利德 UTD2000CEX/UTD7000C
 │   └── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
 ├── profiles/                        # 示波器特征配置
-│   ├── tektronix_mdo3000.json
+│   ├── tektronix_mdo3000.json       #   泰克 MDO3000 全系列
 │   ├── tektronix_mdo34.json         #   泰克 MDO34（4 通道）
 │   ├── tektronix_mdo32.json         #   泰克 MDO32（2 通道）
 │   ├── tektronix_tbs2000b.json
@@ -276,7 +307,7 @@ OscCal-CLI/
 │   └── zlg_zds4000.json
 ├── calibrators/                     # 校准仪配置
 │   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
-├── tests/                           # 单元测试（pytest）
+├── tests/                           # 单元测试（pytest，174 tests）
 │   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
 │   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
@@ -298,6 +329,8 @@ OscCal-CLI/
 {
     "name": "Tektronix_MDO",
     "description": "Tektronix MDO/MSO/DPO series ...",
+    "manufacturer": "Tektronix",
+    "models": ["MDO3052", "MDO3054", "MDO3012", "..."],
     "type": "pyvisa",
     "series": ["MDO4000C", "MDO3000", "..."],
     "feature": {
@@ -328,6 +361,8 @@ OscCal-CLI/
 
 | 字段 | 说明 |
 |------|------|
+| `manufacturer` | 厂商全称，用于自动识别匹配 |
+| `models` | 适用型号列表，`--auto` 模式下精确匹配 `*IDN?` 型号 |
 | `type` | 通信方式：`pyvisa` 或 `socket` |
 | `feature.meas` | 测量模式：`merge`（先设源+类型再读值）或 `split`（同时指定项目和通道） |
 | `keyword` | SCPI 关键字映射（阻抗、测量类型、max/min 等） |
@@ -341,13 +376,13 @@ OscCal-CLI/
 {
     "name": "osc",
     "description": "Tektronix MDO3000 ...",
+    "manufacturer": "Tektronix",
+    "models": ["MDO3012", "MDO3014", "MDO3052", "MDO3054", "..."],
     "factor": "tektronix",
     "series": "MDO3000",
     "imp_has_50": true,
     "vertical_div": 8,
     "horizontal_div": 10,
-    "bandwidth": 350E6,
-    "bd_step": 30E6,
     "calibration_limits": {
         "amp": { "upper": 2.0, "lower": -2.0 },
         "dc_gain": { "upper": 2.0, "lower": -2.0 },
@@ -368,11 +403,12 @@ OscCal-CLI/
 
 | 字段 | 说明 |
 |------|------|
+| `manufacturer` | 厂商全称，用于自动识别匹配 |
+| `models` | 适用型号列表，用于精确匹配 |
+| `series` | 产品系列，用于模糊匹配（回退） |
 | `imp_has_50` | 是否支持 50Ω 阻抗 |
 | `vertical_div` | 垂直方向分度数 |
 | `horizontal_div` | 水平方向分度数 |
-| `bandwidth` | 标称带宽（Hz） |
-| `bd_step` | 带宽扫描步进（Hz） |
 | `calibration_limits` | 各校准项目的允差限 |
 | `points` | 各校准项目的校准点列表 |
 
@@ -410,6 +446,22 @@ OscCal-CLI/
 | `probes` | 探头信息，`edge_rise_times` 为可用的上升时间列表（秒），`max_frequency` 为最大正弦波频率 |
 | `impedance_rules` | 阻抗规则，按探头型号和信号模式定义支持的阻抗列表。`["1M","50"]` 表示两种都支持，`["50"]` 表示仅支持 50Ω |
 
+## 自动识别流程
+
+`osccal calibrate --auto` 的完整识别链条：
+
+```
+扫描 VISA 资源
+  → *IDN? 查询（200ms 超时，超时=不可用，忽略）
+    → 厂商含 "FLUKE" → 校准仪
+    → 厂商为已知示波器厂商 → 示波器（取首个匹配，其余忽略）
+    → 其他 → 忽略
+  → 指令集匹配：models 精确匹配 → series 模糊匹配 → 文件名前缀回退
+  → 特征匹配：同上三级回退
+  → 连接校准仪 → ROUT:FITT? CH1 查询探头 → 自动匹配探头型号
+  → 打印识别结果 → 用户确认 → 执行
+```
+
 ## 探头阻抗规则
 
 校准仪输出阻抗由探头型号和信号模式共同决定，程序自动匹配：
@@ -442,13 +494,19 @@ EDGE 校准时，校准仪上升时间根据探头型号自动设置：
 
 ### 1. 创建指令集文件
 
-在 `commands/` 目录下新建 JSON 文件，定义示波器的 SCPI 命令模板。可参考已有文件（如 `commands/tektronix_mdo.json`）的格式。
+在 `commands/` 目录下新建 JSON 文件，定义示波器的 SCPI 命令模板。需要填写：
+- `manufacturer`：厂商全称（如 `"Tektronix"`）
+- `models`：适用型号列表（如 `["MDO3052", "MDO3054"]`），用于 `--auto` 精确匹配
+- `series`：产品系列（如 `["MDO3000"]`），用于模糊匹配回退
+- SCPI 命令模板
+
+可参考已有文件（如 `commands/tektronix_mdo.json`）的格式。
 
 ### 2. 创建特征文件
 
-在 `profiles/` 目录下新建 JSON 文件，定义示波器的硬件参数和校准点。可参考已有文件（如 `profiles/tektronix_mdo3000.json`）的格式。
+在 `profiles/` 目录下新建 JSON 文件，定义示波器的硬件参数和校准点。同样需要填写 `manufacturer` 和 `models` 字段。可参考已有文件（如 `profiles/tektronix_mdo3000.json`）的格式。
 
-完成后运行 `osccal calibrate`，程序会自动发现新配置文件。
+完成后运行 `osccal calibrate --auto`，程序会自动根据 `*IDN?` 型号匹配新配置。
 
 ## 校准项目说明
 
@@ -535,7 +593,6 @@ pytest -v
 | [PyVISA](https://pyvisa.readthedocs.io/) | VISA 仪器通信 |
 | [PyVISA-py](https://pyvisa-py.readthedocs.io/) | PyVISA 纯 Python 后端 |
 | [openpyxl](https://openpyxl.readthedocs.io/) | Excel 报告生成 |
-| [matplotlib](https://matplotlib.org/) | 数据绘图 |
 
 开发依赖（测试）：
 

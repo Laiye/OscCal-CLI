@@ -1,6 +1,8 @@
 {
     "name": "ZLG_ZDS4000",
     "description": "ZLG ZDS4000 series oscilloscope profile, 500MHz bandwidth, 50-ohm impedance supported",
+    "manufacturer": "ZLG",
+    "models": ["ZDS4054", "ZDS4052", "ZDS4034", "ZDS4024"],
     "factor": "ZLG",
     "series": "ZDS4000",
     "imp_has_50": true,

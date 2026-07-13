@@ -1,6 +1,8 @@
 {
     "name": "Tektronix_TBS",
     "description": "Tektronix TBS2000B series oscilloscope command set, supporting TBS2000B",
+    "manufacturer": "Tektronix",
+    "models": ["TBS2072B", "TBS2074B", "TBS2102B", "TBS2104B", "TBS2202B", "TBS2204B"],
     "type": "pyvisa",
     "series": [
         "TBS2000B"

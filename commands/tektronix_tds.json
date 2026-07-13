@@ -1,6 +1,8 @@
 {
     "name": "Tektronix_TDS",
     "description": "Tektronix TDS5000 series oscilloscope command set, supporting TDS5000",
+    "manufacturer": "Tektronix",
+    "models": ["TDS5032", "TDS5034", "TDS5052", "TDS5054", "TDS5104"],
     "type": "pyvisa",
     "series": [
         "TDS5000"

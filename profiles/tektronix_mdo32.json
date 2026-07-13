@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "Tektronix MDO32 (3 Series MDO, 2-channel) oscilloscope profile. Bandwidth options: 70/100/200 MHz. Supports 50 Ω and 1 MΩ input impedance. Includes an Aux Input connector.",
+    "manufacturer": "Tektronix",
+    "models": ["MDO32"],
     "factor": "tektronix",
     "series": "MDO32",
     "channels": 2,

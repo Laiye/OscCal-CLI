@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "UNI-T UTD7000C oscilloscope profile, 200MHz bandwidth, no 50-ohm impedance",
+    "manufacturer": "UNI-T",
+    "models": ["UTD7102C", "UTD7202C"],
     "factor": "UNI-T",
     "series": "UTD7000C",
     "imp_has_50": false,

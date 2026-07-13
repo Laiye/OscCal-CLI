@@ -53,7 +53,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
                 error = round(100 * (meas_fmt - std_fmt) / std_fmt, 2) if std_fmt != 0 else 0.0
 
                 row_data = [
-                    i,
+                    i + 1,
                     f"CH{self.channel}",
                     format_with_fixed_precision(val, 4),
                     format_with_fixed_precision(std_value, 4),
@@ -63,7 +63,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
                 self.add_result_row(table, row_data, limit_range, check_col=5)
 
                 self.results.append({
-                    "index": i,
+                    "index": i + 1,
                     "channel": self.channel,
                     "scale": val,
                     "std_value": std_value,

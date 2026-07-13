@@ -1,6 +1,8 @@
 {
     "name": "RIGOL_001",
     "description": "RIGOL MSO5000 mixed signal oscilloscope profile, 70MHz bandwidth, no 50-ohm impedance",
+    "manufacturer": "Rigol",
+    "models": ["MSO5072", "MSO5074", "MSO5102", "MSO5104", "MSO5204", "MSO5354"],
     "factor": "RIGOL",
     "series": "MDO5000",
     "imp_has_50": false,

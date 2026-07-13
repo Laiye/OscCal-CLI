@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "Tektronix MDO3000 mixed domain oscilloscope profile, 350MHz bandwidth, 4 channels",
+    "manufacturer": "Tektronix",
+    "models": ["MDO3012", "MDO3014", "MDO3022", "MDO3024", "MDO3032", "MDO3034", "MDO3052", "MDO3054", "MDO3102", "MDO3104"],
     "factor": "tektronix",
     "series": "MDO3000",
     "imp_has_50": true,

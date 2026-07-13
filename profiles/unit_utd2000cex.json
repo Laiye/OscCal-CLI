@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "UNI-T UTD2000CEX oscilloscope profile, 100MHz bandwidth, no 50-ohm impedance",
+    "manufacturer": "UNI-T",
+    "models": ["UTD2052CEX", "UTD2072CEX", "UTD2102CEX", "UTD2152CEX"],
     "factor": "UNI-T",
     "series": "UTD2000CEX",
     "imp_has_50": false,

@@ -1,7 +1,6 @@
 import os
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from openpyxl.chart import ScatterChart, Reference, Series
 from openpyxl.utils import get_column_letter
 from rich.console import Console
 from osccal.core.table_configs import EXCEL_ITEM_CONFIGS as item_configs
@@ -128,29 +127,3 @@ def _create_data_sheet(wb, item_name, config, rows, sheet_title=None):
 
     for col_idx in range(1, len(config["headers"]) + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 18
-
-    chart_config = config.get("chart_config")
-    if chart_config and len(rows) > 1:
-        _add_chart(ws, chart_config, len(rows))
-
-
-def _add_chart(ws, chart_config, data_rows):
-    chart = ScatterChart()
-    chart.title = chart_config["title"]
-    chart.x_axis.title = chart_config["x_label"]
-    chart.y_axis.title = chart_config["y_label"]
-    chart.style = 13
-
-    x_col = chart_config["x_col"] + 1
-    y_col = chart_config["y_col"] + 1
-
-    x_values = Reference(ws, min_col=x_col, min_row=2, max_row=data_rows + 1)
-    y_values = Reference(ws, min_col=y_col, min_row=2, max_row=data_rows + 1)
-
-    series = Series(y_values, x_values, title=chart_config["title"])
-    chart.series.append(series)
-
-    chart.width = 20
-    chart.height = 12
-
-    ws.add_chart(chart, f"A{data_rows + 4}")

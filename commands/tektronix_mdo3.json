@@ -1,6 +1,8 @@
 {
     "name": "Tektronix_3SeriesMDO",
     "description": "Tektronix 3 Series MDO oscilloscope command set, supporting MDO34 (4-channel) and MDO32 (2-channel). Derived from 3 Series MDO Programmer Manual (077-1498-06).",
+    "manufacturer": "Tektronix",
+    "models": ["MDO32", "MDO34"],
     "type": "pyvisa",
     "series": [
         "MDO34",

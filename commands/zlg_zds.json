@@ -1,6 +1,8 @@
 {
     "name": "ZLG_ZDS",
     "description": "ZLG ZDS series oscilloscope command set, supporting ZDS2000, ZDS2000B, ZDS4000, ZDS3000",
+    "manufacturer": "ZLG",
+    "models": ["ZDS2022", "ZDS2024", "ZDS2022B", "ZDS2024B", "ZDS4054", "ZDS4052", "ZDS4034", "ZDS4024"],
     "type": "socket",
     "series": [
         "ZDS2000",

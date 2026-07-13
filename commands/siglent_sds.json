@@ -1,6 +1,8 @@
 {
     "name": "SIGLENT_SDS",
     "description": "SIGLENT SDS6000 series oscilloscope command set, supporting SDS6000 PRO, SDS6000A",
+    "manufacturer": "Siglent",
+    "models": ["SDS6054A", "SDS6104A", "SDS6204A", "SDS6034A"],
     "type": "pyvisa",
     "series": [
         "SDS6000 PRO",

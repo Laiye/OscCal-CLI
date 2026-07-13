@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "Tektronix MDO34 (3 Series MDO, 4-channel) oscilloscope profile. Bandwidth options: 100/200/350/500/1000 MHz. Supports 50 Ω and 1 MΩ input impedance on all analog channels.",
+    "manufacturer": "Tektronix",
+    "models": ["MDO34"],
     "factor": "tektronix",
     "series": "MDO34",
     "channels": 4,

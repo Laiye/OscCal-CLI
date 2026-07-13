@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "Tektronix TDS5000 digital phosphor oscilloscope profile, 500MHz bandwidth, 4 channels",
+    "manufacturer": "Tektronix",
+    "models": ["TDS5032", "TDS5034", "TDS5052", "TDS5054", "TDS5104"],
     "factor": "tektronix",
     "series": "TDS5000",
     "imp_has_50": true,

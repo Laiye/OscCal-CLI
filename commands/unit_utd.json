@@ -1,6 +1,8 @@
 {
     "name": "UNI-T_UTD",
     "description": "UNI-T UTD series oscilloscope command set, supporting UTD2000CEX and UTD7000C",
+    "manufacturer": "UNI-T",
+    "models": ["UTD2052CEX", "UTD2072CEX", "UTD2102CEX", "UTD2152CEX", "UTD7102C", "UTD7202C"],
     "type": "pyvisa",
     "series": [
         "UTD2000CEX",

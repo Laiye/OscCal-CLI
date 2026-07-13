@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "Tektronix TBS2000B basic oscilloscope profile, 100MHz bandwidth, no 50-ohm impedance",
+    "manufacturer": "Tektronix",
+    "models": ["TBS2072B", "TBS2074B", "TBS2102B", "TBS2104B", "TBS2202B", "TBS2204B"],
     "factor": "tektronix",
     "series": "TBS2000B",
     "imp_has_50": false,

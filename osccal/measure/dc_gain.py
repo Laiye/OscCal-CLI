@@ -102,10 +102,10 @@ class DcGainCalibrator(BaseCalibrator):
             task = progress.add_task("直流增益校准", total=total_points)
 
             for i, val in enumerate(points):
-                result = self._measure_dc_pair(val, "1 MΩ", i)
+                result = self._measure_dc_pair(val, "1 MΩ", i + 1)
                 self.add_result_row(table, result["row_data"], limit_range, check_col=8)
                 self.results.append({
-                    "index": i,
+                    "index": i + 1,
                     "channel": self.channel,
                     "impedance": "1MΩ",
                     "scale": result["val"],
@@ -136,10 +136,10 @@ class DcGainCalibrator(BaseCalibrator):
                     if val > 1:
                         continue
 
-                    result = self._measure_dc_pair(val, "50 Ω", offset + i)
+                    result = self._measure_dc_pair(val, "50 Ω", offset + i + 1)
                     self.add_result_row(table, result["row_data"], limit_range, check_col=8)
                     self.results.append({
-                        "index": offset + i,
+                        "index": offset + i + 1,
                         "channel": self.channel,
                         "impedance": "50Ω",
                         "scale": result["val"],

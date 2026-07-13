@@ -1,6 +1,8 @@
 {
     "name": "osc",
     "description": "SIGLENT SDS6000 PRO high-definition oscilloscope profile, 500MHz bandwidth, 4 channels",
+    "manufacturer": "Siglent",
+    "models": ["SDS6054A", "SDS6104A", "SDS6204A", "SDS6034A"],
     "factor": "SIGLENT",
     "series": "SDS6000 PRO",
     "imp_has_50": true,

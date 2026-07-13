@@ -74,11 +74,11 @@ class BandwidthCalibrator(BaseCalibrator):
 
                 bandwidth_mhz = (current_bd - bd_step) * 1E-6
 
-                row_data = [i, f"CH{self.channel}", val, round(bandwidth_mhz, 2)]
+                row_data = [i + 1, f"CH{self.channel}", val, round(bandwidth_mhz, 2)]
                 table.add_row(*[str(v) for v in row_data])
 
                 self.results.append({
-                    "index": i,
+                    "index": i + 1,
                     "channel": self.channel,
                     "scale": val,
                     "bandwidth_mhz": bandwidth_mhz,

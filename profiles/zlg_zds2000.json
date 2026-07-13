@@ -1,6 +1,8 @@
 {
     "name": "ZLG_ZDS2000",
     "description": "ZLG ZDS2000 series oscilloscope profile, 200MHz bandwidth, no 50-ohm impedance",
+    "manufacturer": "ZLG",
+    "models": ["ZDS2022", "ZDS2024", "ZDS2022B", "ZDS2024B"],
     "factor": "ZLG",
     "series": "ZDS2000",
     "imp_has_50": false,

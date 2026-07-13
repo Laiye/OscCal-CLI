@@ -1,6 +1,16 @@
 {
     "name": "Tektronix_MDO",
     "description": "Tektronix MDO/MSO/DPO series oscilloscope command set, supporting MDO4000C, MDO4000B, MDO4000, MSO4000B, DPO4000B, MDO3000",
+    "manufacturer": "Tektronix",
+    "models": [
+        "MDO3012", "MDO3014", "MDO3022", "MDO3024", "MDO3032", "MDO3034",
+        "MDO3052", "MDO3054", "MDO3102", "MDO3104",
+        "MDO4014-3", "MDO4034-3", "MDO4054-3", "MDO4104-3",
+        "MDO4014B", "MDO4034B", "MDO4054B", "MDO4104B",
+        "MDO4014C", "MDO4034C", "MDO4054C", "MDO4104C",
+        "MSO4014B", "MSO4034B", "MSO4054B", "MSO4104B",
+        "DPO4014B", "DPO4034B", "DPO4054B", "DPO4104B"
+    ],
     "type": "pyvisa",
     "series": [
         "MDO4000C",
