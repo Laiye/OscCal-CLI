@@ -25,7 +25,7 @@ ITEM_CONFIGS = {
     },
     "transient": {
         "title": "上升时间及过冲 校准结果",
-        "columns": ["序号", "通道", "上升时间(ns)", "过冲(%)"],
+        "columns": ["通道", "上升时间(ns)", "过冲(%)", "探头上升时间(ps)"],
         "error_col": None,
     },
 }
@@ -57,7 +57,7 @@ EXCEL_ITEM_CONFIGS = {
     },
     "transient": {
         "title": "上升时间及过冲",
-        "headers": ["序号", "通道", "上升时间(ns)", "过冲(%)"],
+        "headers": ["通道", "上升时间(ns)", "过冲(%)", "探头上升时间(ps)"],
         "error_col": None,
     },
 }
