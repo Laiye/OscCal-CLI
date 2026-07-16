@@ -94,12 +94,12 @@ class TestReadMeasurement:
         assert val == pytest.approx(5.678e-3)
 
     def test_merge_read_nan_response(self, mdo3_commands, fake_osc):
-        """9.91E+37 表示 NaN，应被解析为大浮点数而不抛异常。"""
+        """超大数值（>1e30，如 ZDS 的 Invalid 标记）应返回 0.0 而不会进入误差计算。"""
         fake_osc.query_responses = {
             "MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"
         }
         val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
-        assert val == pytest.approx(9.91e37)
+        assert val == 0.0
 
     def test_merge_read_negative_value(self, mdo3_commands, fake_osc):
         fake_osc.query_responses = {

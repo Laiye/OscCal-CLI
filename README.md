@@ -560,6 +560,17 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 优利德 | UTD7000C | `unit_utd.json` | `unit_utd7000c.json` | VISA |
 | 周立功 | ZDS2000/2000B | `zlg_zds.json` | `zlg_zds2000.json` | Socket |
 | 周立功 | ZDS4000/3000 | `zlg_zds.json` | `zlg_zds4000.json` | Socket |
+| 周立功 | ZDS1000 | `zlg_zds1000.json` | `zlg_zds1000.json` | Socket |
+
+## 周立功 ZDS1000 系列特别说明
+
+ZDS1000 系列使用 **完整 SCPI 关键字**（`:CHANnel`/`:MEASure`/`:TIMebase`/`:ACQuire`/`:TRIGger`），与 ZDS2000/4000 系列不兼容。主要差异：
+
+- **无 50Ω 输入阻抗**，EDGE 校准自动切换为 1MΩ + 500ps 上升时间
+- **直流均值测量**使用 `VAVG DISPlay` 替代 `VMEAn`（VMEAn 不支持 DC 信号）
+- **垂直偏置**使用 `:CHANnel<n>:OFFSet`（伏特单位），代码已自动适配
+- **瞬态测量**需提前设好测量项再 SINGLE 捕获，否则返回 Invalid
+- 小挡位（≤5mV/div）跳过自动垂直位置调整（`skip_vertical_adjust: true`）
 
 ## 测试
 

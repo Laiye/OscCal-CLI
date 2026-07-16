@@ -325,61 +325,90 @@ def calibrate(osc, profile, calibrator, channel, probe, items, resource_osc, res
 
         console.print("\n[bold]连接设备...[/bold]")
 
-        try:
-            resources = list_visa_resources()
-            if resources:
-                console.print("[bold]可用 VISA 资源:[/bold]")
+        # Socket 设备不需要扫描 VISA，直接询问 IP + 端口
+        comm_type = cmd_osc.get("type", "pyvisa")
+        if comm_type == "socket":
+            if socket_osc:
+                host, port = socket_osc.split(":")
+                inst_osc, idn_osc = connect_socket(host, int(port))
+            else:
+                # 交互式输入 socket 参数
+                console.print("\n[bold]Socket 连接示波器:[/bold]")
+                host = click.prompt("请输入示波器 IP 地址", type=str)
+                port = click.prompt("请输入示波器端口", type=int, default=5025)
+                inst_osc, idn_osc = connect_socket(host, port)
+
+            # 校准仪连接（VISA）
+            try:
+                resources = list_visa_resources()
+            except Exception:
+                resources = []
+            if resource_cal:
+                inst_calibrator, idn_cal = connect_visa(resource_cal)
+            elif resources:
+                console.print("\n[bold]选择校准仪资源:[/bold]")
                 for i, r in enumerate(resources):
                     console.print(f"  [{i}] {r}")
+                choice = click.prompt("请选择", type=int, default=0)
+                inst_calibrator, idn_cal = connect_visa(resources[choice])
             else:
-                console.print("[yellow]⚠[/yellow] 未发现 VISA 资源")
-        except Exception:
-            console.print("[yellow]⚠[/yellow] VISA 资源扫描失败（可能未安装 VISA 驱动）")
-            resources = []
+                resource_str = click.prompt("\n请输入校准仪 VISA 资源地址", type=str, default="GPIB0::19::INSTR")
+                inst_calibrator, idn_cal = connect_visa(resource_str)
 
-        if resource_cal:
-            inst_calibrator, idn_cal = connect_visa(resource_cal)
-        elif resources:
-            console.print("\n[bold]选择校准仪资源:[/bold]")
-            for i, r in enumerate(resources):
-                console.print(f"  [{i}] {r}")
-            choice = click.prompt("请选择", type=int, default=0)
-            inst_calibrator, idn_cal = connect_visa(resources[choice])
+            if inst_osc is None:
+                console.print("[red]✗[/red] 示波器连接失败")
+                return
+            if inst_calibrator is None:
+                console.print("[red]✗[/red] 校准仪连接失败")
+                return
         else:
-            console.print("[red]✗[/red] 无可用资源连接校准仪")
-            return
+            # VISA 模式
+            try:
+                resources = list_visa_resources()
+                if resources:
+                    console.print("[bold]可用 VISA 资源:[/bold]")
+                    for i, r in enumerate(resources):
+                        console.print(f"  [{i}] {r}")
+                else:
+                    console.print("[yellow]⚠[/yellow] 未发现 VISA 资源")
+            except Exception:
+                console.print("[yellow]⚠[/yellow] VISA 资源扫描失败（可能未安装 VISA 驱动）")
+                resources = []
 
-        if inst_calibrator is None:
-            console.print("[red]✗[/red] 校准仪连接失败")
-            return
-
-        comm_type = cmd_osc.get("type", "pyvisa")
-
-        if socket_osc:
-            host, port = socket_osc.split(":")
-            inst_osc, idn_osc = connect_socket(host, int(port))
-        elif resource_osc:
-            inst_osc, idn_osc = connect_visa(resource_osc)
-        elif resources:
-            console.print("\n[bold]选择示波器资源:[/bold]")
-            for i, r in enumerate(resources):
-                console.print(f"  [{i}] {r}")
-            choice = click.prompt("请选择", type=int, default=0)
-            if comm_type == "socket":
-                host = click.prompt("输入示波器 IP 地址")
-                port = click.prompt("输入示波器端口", type=int, default=5025)
-                inst_osc, idn_osc = connect_socket(host, port)
+            if resource_cal:
+                inst_calibrator, idn_cal = connect_visa(resource_cal)
+            elif resources:
+                console.print("\n[bold]选择校准仪资源:[/bold]")
+                for i, r in enumerate(resources):
+                    console.print(f"  [{i}] {r}")
+                choice = click.prompt("请选择", type=int, default=0)
+                inst_calibrator, idn_cal = connect_visa(resources[choice])
             else:
+                console.print("[red]✗[/red] 无可用资源连接校准仪")
+                return
+
+            if inst_calibrator is None:
+                console.print("[red]✗[/red] 校准仪连接失败")
+                return
+
+            if socket_osc:
+                host, port = socket_osc.split(":")
+                inst_osc, idn_osc = connect_socket(host, int(port))
+            elif resource_osc:
+                inst_osc, idn_osc = connect_visa(resource_osc)
+            elif resources:
+                console.print("\n[bold]选择示波器资源:[/bold]")
+                for i, r in enumerate(resources):
+                    console.print(f"  [{i}] {r}")
+                choice = click.prompt("请选择", type=int, default=0)
                 inst_osc, idn_osc = connect_visa(resources[choice])
-        else:
-            console.print("[red]✗[/red] 无可用资源连接示波器")
-            return
+            else:
+                console.print("[red]✗[/red] 无可用资源连接示波器")
+                return
 
-        if inst_osc is None:
-            console.print("[red]✗[/red] 示波器连接失败")
-            return
-
-    # ── 共享：循环校准（支持继续测） ──
+            if inst_osc is None:
+                console.print("[red]✗[/red] 示波器连接失败")
+                return
     from osccal.measure.registry import CALIBRATORS_MAP
 
     while True:

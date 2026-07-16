@@ -81,6 +81,8 @@ class BaseCalibrator:
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
 
     def _adjust_vertical_position(self, scale):
+        if self.profile.get("skip_vertical_adjust", False):
+            return
         if "set_vertical_position" not in self.cmd_osc["actions"]:
             return
         keywords = self.cmd_osc.get("keyword", {})

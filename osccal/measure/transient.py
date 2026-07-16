@@ -1,5 +1,4 @@
 import time
-import click
 from osccal.measure.base import BaseCalibrator, console
 from osccal.core.utils import format_with_fixed_precision
 
@@ -11,29 +10,56 @@ class TransientCalibrator(BaseCalibrator):
         self.init_devices()
         self.setup_channel()
         self._write_osc("set_vertical_scale", self.channel, 0.2)
-        self._write_osc("set_trigger_level", self.channel, -0.5)
-        self._write_osc("set_vertical_position", self.channel, 2)
-        self._write_osc("set_horizontal_scale", 5E-10)
-        self._write_osc("set_meas_source", self.channel)
+
+        # 触发参数：Tek 系命令需通道号，ZDS 系不需要
+        has_50 = self.profile.get("imp_has_50", False)
+        trg_lev_action = self.cmd_osc["actions"].get("set_trigger_level", {})
+        trg_lev = -0.5  # 触发电平：-0.5V（所有模式通用）
+        if trg_lev_action.get("args_num", 0) >= 2:
+            self._write_osc("set_trigger_level", self.channel, trg_lev)
+        else:
+            self._write_osc("set_trigger_level", trg_lev)
+
+        # 垂直位置：OFFSet 模式用伏特值，POS 模式用格数值
+        vp_action = self.cmd_osc["actions"].get("set_vertical_position", {})
+        vp_cmd = " ".join(vp_action.get("commands", []))
+        if "OFFSET" in vp_cmd.upper():
+            # OFFSET 单位是伏特：2格 × 0.2V/div = 0.4V
+            self._write_osc("set_vertical_position", self.channel, 0.4)
+        else:
+            self._write_osc("set_vertical_position", self.channel, 2)
+
+        # 水平时基：50Ω 快沿用 500ps/div，1MΩ 慢沿用 5ns/div
+        h_scale = 5E-10 if has_50 else 5E-9
+        self._write_osc("set_horizontal_scale", h_scale)
+
+        # ItemChannel 模式不需要 set_meas_source
+        if "set_meas_source" in self.cmd_osc["actions"]:
+            self._write_osc("set_meas_source", self.channel)
 
         self._write_calibrator("set_shap", "EDGE")
-        self._setup_signal_impedance("EDGE", "50")
+
+        # 示波器无 50Ω → 用 1MΩ + 最大可选上升时间（9530 的 500ps）
+        if has_50:
+            self._setup_signal_impedance("EDGE", "50")
+        else:
+            self._setup_signal_impedance("EDGE", "1M")
 
         rise_times = self._get_probe_edge_rise_times()
-        if len(rise_times) == 1:
+        if has_50:
+            # 50Ω: 优先选最快的上升时间
             edge_speed = rise_times[0]
         else:
-            console.print("\n[bold]选择上升时间:[/bold]")
-            for i, rt in enumerate(rise_times):
-                rt_ps = rt * 1E12
-                console.print(f"  [{i}] {rt_ps:.0f} ps")
-            idx = click.prompt("请选择", type=int, default=0)
-            edge_speed = rise_times[idx]
+            # 1MΩ: 选最慢的上升时间（500ps，兼容 1MΩ 输出）
+            edge_speed = rise_times[-1]
 
         self._write_calibrator("set_edge_speed", edge_speed)
         self._write_calibrator("set_output", "ON")
 
         time.sleep(3)
+        # 提前设好测量项，SINGLE 捕获后直接查询（避免死数据/0.0）
+        self.setup_measurement("meas_risetime")
+        self.setup_measurement("meas_pos_overshoot")
         self._write_osc("set_acquire_stop_after", self.cmd_osc["keyword"]["acquire_stop_after_single"])
         time.sleep(2)
 

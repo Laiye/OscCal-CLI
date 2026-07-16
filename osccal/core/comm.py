@@ -67,7 +67,13 @@ def scpi_setup_measurement(inst, cmd_osc: dict, channel: str, meas_keyword: str)
                     comm_type,
                 )
         elif set_meas == "ItemChannel":
-            if "set_meas_item_and_source" in cmd_osc.get("actions", {}):
+            if meas_keyword == "VAVG" and "set_meas_vavg" in cmd_osc.get("actions", {}):
+                scpi_write(
+                    inst,
+                    assemble_cmd(cmd_osc["actions"]["set_meas_vavg"], channel),
+                    comm_type,
+                )
+            elif "set_meas_item_and_source" in cmd_osc.get("actions", {}):
                 scpi_write(
                     inst,
                     assemble_cmd(
@@ -89,8 +95,11 @@ def read_measurement(
     try:
         scpi_setup_measurement(inst, cmd_osc, channel, meas_keyword)
 
+        # ZDS 系列 split 模式设置测量项后需短暂等待示波器计算
         feature = cmd_osc.get("feature", {})
         meas_mode = feature.get("meas", "split")
+        if meas_mode == "split":
+            time.sleep(0.3)  # 等测量结果稳定
         return_value_index = feature.get("return_value_index", 0)
         get_value_mode = feature.get("get_value", "ByItemAndSource")
         comm_type = cmd_osc.get("type", "pyvisa")
@@ -118,7 +127,16 @@ def read_measurement(
                         comm_type,
                     )
             else:
-                if "get_value_from_item_and_source" in cmd_osc.get("actions", {}):
+                if meas_keyword == "VAVG" and "get_value_vavg" in cmd_osc.get("actions", {}):
+                    res = scpi_query(
+                        inst,
+                        assemble_cmd(
+                            cmd_osc["actions"]["get_value_vavg"],
+                            channel,
+                        ),
+                        comm_type,
+                    )
+                elif "get_value_from_item_and_source" in cmd_osc.get("actions", {}):
                     res = scpi_query(
                         inst,
                         assemble_cmd(
@@ -131,7 +149,15 @@ def read_measurement(
 
             value = res.split("\n")[0].split(" ")[return_value_index]
 
-        return float(value)
+        measured = float(value)
+        # ZDS 系列返回 3.40282e+38 表示 Invalid
+        if measured > 1E30:
+            console.print(
+                f"[yellow]⚠[/yellow] 测量值异常 ({measured:.4g})，"
+                f"可能是示波器不支持此测量项或信号条件不满足"
+            )
+            return 0.0
+        return measured
     except (ValueError, IndexError) as e:
         console.print(f"[red]✗[/red] 测量值解析失败: {e} (原始响应: '{res}')")
         return 0.0

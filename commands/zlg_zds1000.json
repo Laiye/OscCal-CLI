@@ -1,0 +1,300 @@
+{
+    "name": "ZLG_ZDS1000",
+    "description": "ZLG ZDS1000 series oscilloscope command set (SCPI full-form keywords, no 50ohm impedance). Based on ZDS1000 Programming Manual V1.03.",
+    "manufacturer": "ZLG",
+    "models": ["ZDS1102", "ZDS1104", "ZDS1202", "ZDS1204"],
+    "type": "socket",
+    "series": [
+        "ZDS1000"
+    ],
+    "feature": {
+        "meas": "split",
+        "return_value_index": 0,
+        "get_value": "ByItemAndSource",
+        "set_meas": "ItemChannel"
+    },
+    "keyword": {
+        "imp_fif": "50",
+        "imp_meg": "1M",
+        "acquisition_mode_sample": "NORMal",
+        "acquisition_mode_average": "AVERages",
+        "acquisition_mode_peak": "PEAK",
+        "meas_amp": "VAMP",
+        "meas_mean": "VAVG",
+        "meas_risetime": "RISetime",
+        "meas_freq": "FREQuency",
+        "meas_period": "PERiod",
+        "meas_pos_overshoot": "ROVErshoot",
+        "meas_max": "VMAX",
+        "meas_min": "VMIN",
+        "acquire_stop_after_single": "SINGle",
+        "acquire_stop_after_run_stop": "STOP"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*RST\n"
+            ],
+            "args": []
+        },
+        "initialize": {
+            "name": "initialize",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*CLS;*RST"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":DISPlay "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":SCALe "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_vertical_position": {
+            "name": "set_vertical_position",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":OFFSet "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TRIGger:EDGE:SOURce CHANnel"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TRIGger:EDGE:LEVel "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":TIMebase:SCALe "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":ACQuire:TYPE "
+            ],
+            "args": [
+                [
+                    "NORMal",
+                    "AVERages",
+                    "PEAK"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":ACQuire:AVERages "
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_item_and_source": {
+            "name": "set_meas_item_and_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":MEASure:",
+                " CHANnel"
+            ],
+            "args": [
+                [
+                    "VAMP",
+                    "VMEAn",
+                    "PERiod",
+                    "FREQuency",
+                    "RISetime",
+                    "ROVErshoot",
+                    "VMAX",
+                    "VMIN"
+                ],
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "get_value_from_item_and_source": {
+            "name": "get_value_from_item_and_source",
+            "type": "query",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                ":MEASure:",
+                "? CHANnel"
+            ],
+            "args": [
+                [
+                    "VAMP",
+                    "VMEAn",
+                    "PERiod",
+                    "FREQuency",
+                    "RISetime",
+                    "ROVErshoot",
+                    "VMAX",
+                    "VMIN"
+                ],
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_acquire_stop_after": {
+            "name": "set_acquire_stop_after",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":"
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "SINGle",
+                    "STOP"
+                ]
+            ]
+        },
+        "set_meas_vavg": {
+            "name": "set_meas_vavg",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":MEASure:VAVG DISPlay,CHANnel"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "get_value_vavg": {
+            "name": "get_value_vavg",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                ":MEASure:VAVG? DISPlay,CHANnel"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        }
+    }
+}
