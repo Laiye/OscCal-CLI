@@ -8,16 +8,17 @@
 5. assemble_cmd 组装出的 SCPI 字符串与 3 Series MDO Programmer Manual 一致
 6. 关键助记符采用手册文档形式（FIFty/MEG、AMPlitude 等）
 """
+
 import json
 
 import pytest
 
 from osccal.core.command import assemble_cmd
 
-
 # ===========================================================================
 # 1. 顶层结构与合法性
 # ===========================================================================
+
 
 class TestMdo3Structure:
     """指令集顶层字段校验。"""
@@ -59,20 +60,20 @@ class TestMdo3Structure:
 
 # measure 模块实际调用 _write_osc/_query_osc/setup_* 时用到的 action 集合
 REQUIRED_ACTIONS = {
-    "preset",                       # base.init_devices
-    "set_channel",                  # base.setup_channel
-    "set_trigger_source",           # base.setup_channel / bandwidth
-    "set_vertical_scale",           # amp/dc_gain/bandwidth/delta_time/transient
-    "set_vertical_position",        # base._adjust_vertical_position / transient
-    "set_horizontal_scale",         # amp/bandwidth/delta_time/transient
-    "set_acquisition_mode",         # amp/dc_gain/bandwidth
-    "set_number_of_acquisitions",   # amp/dc_gain/bandwidth
-    "set_trigger_level",            # transient
-    "set_meas_source",              # comm.scpi_setup_measurement (merge)
-    "set_meas_type",                # comm.scpi_setup_measurement (merge)
-    "get_value",                    # comm.read_measurement (merge)
-    "set_impedance",                # base.setup_impedance
-    "set_acquire_stop_after",       # transient
+    "preset",  # base.init_devices
+    "set_channel",  # base.setup_channel
+    "set_trigger_source",  # base.setup_channel / bandwidth
+    "set_vertical_scale",  # amp/dc_gain/bandwidth/delta_time/transient
+    "set_vertical_position",  # base._adjust_vertical_position / transient
+    "set_horizontal_scale",  # amp/bandwidth/delta_time/transient
+    "set_acquisition_mode",  # amp/dc_gain/bandwidth
+    "set_number_of_acquisitions",  # amp/dc_gain/bandwidth
+    "set_trigger_level",  # transient
+    "set_meas_source",  # comm.scpi_setup_measurement (merge)
+    "set_meas_type",  # comm.scpi_setup_measurement (merge)
+    "get_value",  # comm.read_measurement (merge)
+    "set_impedance",  # base.setup_impedance
+    "set_acquire_stop_after",  # transient
 }
 
 
@@ -100,25 +101,28 @@ class TestMdo3Actions:
         assert action["name"] == action_name
 
     # args_num 必须与 measure 模块实际调用时传入的参数个数一致
-    @pytest.mark.parametrize("action_name,expected_argc", [
-        ("preset", 0),
-        ("initialize", 0),          # *CLS;*RST 不带参数
-        ("set_channel", 2),
-        ("set_vertical_scale", 2),
-        ("set_vertical_position", 2),
-        ("set_trigger_source", 1),
-        ("set_trigger_level", 2),
-        ("set_horizontal_scale", 1),
-        ("set_acquisition_mode", 1),
-        ("set_number_of_acquisitions", 1),
-        ("set_meas_source", 1),
-        ("set_impedance", 2),
-        ("set_meas_type", 1),
-        ("get_value", 0),
-        ("set_meas_method", 1),
-        ("set_acquire_state", 1),
-        ("set_acquire_stop_after", 1),
-    ])
+    @pytest.mark.parametrize(
+        "action_name,expected_argc",
+        [
+            ("preset", 0),
+            ("initialize", 0),  # *CLS;*RST 不带参数
+            ("set_channel", 2),
+            ("set_vertical_scale", 2),
+            ("set_vertical_position", 2),
+            ("set_trigger_source", 1),
+            ("set_trigger_level", 2),
+            ("set_horizontal_scale", 1),
+            ("set_acquisition_mode", 1),
+            ("set_number_of_acquisitions", 1),
+            ("set_meas_source", 1),
+            ("set_impedance", 2),
+            ("set_meas_type", 1),
+            ("get_value", 0),
+            ("set_meas_method", 1),
+            ("set_acquire_state", 1),
+            ("set_acquire_stop_after", 1),
+        ],
+    )
     def test_action_args_num_contract(self, mdo3_commands, action_name, expected_argc):
         """action 声明的 args_num 应与调用方传入的参数个数一致。"""
         actions = mdo3_commands["actions"]
@@ -134,17 +138,17 @@ class TestMdo3Actions:
 # ===========================================================================
 
 REQUIRED_KEYWORDS = {
-    "imp_fif",                       # base._setup_signal_impedance
-    "imp_meg",                       # base._setup_signal_impedance
-    "acquisition_mode_average",      # amp/dc_gain/bandwidth
-    "meas_amp",                      # amp/bandwidth
-    "meas_period",                   # delta_time
-    "meas_mean",                     # dc_gain
-    "meas_risetime",                 # transient
-    "meas_pos_overshoot",            # transient
-    "meas_max",                      # base._adjust_vertical_position
-    "meas_min",                      # base._adjust_vertical_position
-    "acquire_stop_after_single",     # transient
+    "imp_fif",  # base._setup_signal_impedance
+    "imp_meg",  # base._setup_signal_impedance
+    "acquisition_mode_average",  # amp/dc_gain/bandwidth
+    "meas_amp",  # amp/bandwidth
+    "meas_period",  # delta_time
+    "meas_mean",  # dc_gain
+    "meas_risetime",  # transient
+    "meas_pos_overshoot",  # transient
+    "meas_max",  # base._adjust_vertical_position
+    "meas_min",  # base._adjust_vertical_position
+    "acquire_stop_after_single",  # transient
 }
 
 
@@ -169,16 +173,19 @@ class TestMdo3Keywords:
         assert kw["acquisition_mode_average"] == "AVErage"
         assert kw["acquisition_mode_peak"] == "PEAKdetect"
 
-    @pytest.mark.parametrize("kw_key,expected", [
-        ("meas_amp", "AMPlitude"),
-        ("meas_period", "PERIod"),
-        ("meas_risetime", "RISe"),
-        ("meas_freq", "FREQuency"),
-        ("meas_mean", "MEAN"),
-        ("meas_pos_overshoot", "POVershoot"),
-        ("meas_max", "MAXimum"),
-        ("meas_min", "MINimum"),
-    ])
+    @pytest.mark.parametrize(
+        "kw_key,expected",
+        [
+            ("meas_amp", "AMPlitude"),
+            ("meas_period", "PERIod"),
+            ("meas_risetime", "RISe"),
+            ("meas_freq", "FREQuency"),
+            ("meas_mean", "MEAN"),
+            ("meas_pos_overshoot", "POVershoot"),
+            ("meas_max", "MAXimum"),
+            ("meas_min", "MINimum"),
+        ],
+    )
     def test_measurement_keywords_match_manual(self, mdo3_commands, kw_key, expected):
         """测量类型助记符采用手册文档形式。"""
         assert mdo3_commands["keyword"][kw_key] == expected
@@ -247,20 +254,18 @@ SCPI_CASES = [
 ]
 
 
-@pytest.mark.parametrize("action_name,args,expected", SCPI_CASES,
-                         ids=[c[0] for c in SCPI_CASES])
+@pytest.mark.parametrize("action_name,args,expected", SCPI_CASES, ids=[c[0] for c in SCPI_CASES])
 def test_scpi_assembly_matches_manual(mdo3_commands, action_name, args, expected):
     """组装后的 SCPI 字符串应与 3 Series MDO Programmer Manual 一致。"""
     action = mdo3_commands["actions"][action_name]
     actual = assemble_cmd(action, *args)
-    assert actual == expected, (
-        f"{action_name}: 组装结果 {actual!r} 与手册期望 {expected!r} 不符"
-    )
+    assert actual == expected, f"{action_name}: 组装结果 {actual!r} 与手册期望 {expected!r} 不符"
 
 
 # ===========================================================================
 # 5. assemble_cmd 参数个数契约（错误参数返回空串）
 # ===========================================================================
+
 
 class TestAssembleCmdArgContract:
     """assemble_cmd 在参数个数不匹配时应返回空串（validate_args 机制）。"""

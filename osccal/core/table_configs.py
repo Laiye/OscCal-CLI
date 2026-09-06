@@ -7,8 +7,14 @@ ITEM_CONFIGS = {
     "dc_gain": {
         "title": "直流增益 校准结果",
         "columns": [
-            "序号", "通道", "阻抗", "挡位(V/div)",
-            "标准值U+(V)", "标准值U-(V)", "被校示值Ur+(V)", "被校示值Ur-(V)",
+            "序号",
+            "通道",
+            "阻抗",
+            "挡位(V/div)",
+            "标准值U+(V)",
+            "标准值U-(V)",
+            "被校示值Ur+(V)",
+            "被校示值Ur-(V)",
             "直流增益误差(%)",
         ],
         "error_col": 8,
@@ -22,6 +28,7 @@ ITEM_CONFIGS = {
         "title": "频带宽度 校准结果",
         "columns": ["序号", "通道", "挡位(V/div)", "实测值(MHz)"],
         "error_col": None,
+        "min_col": 3,
     },
     "transient": {
         "title": "上升时间及过冲 校准结果",
@@ -39,8 +46,14 @@ EXCEL_ITEM_CONFIGS = {
     "dc_gain": {
         "title": "直流增益",
         "headers": [
-            "序号", "通道", "阻抗", "挡位(V/div)",
-            "标准值U+(V)", "标准值U-(V)", "被校示值Ur+(V)", "被校示值Ur-(V)",
+            "序号",
+            "通道",
+            "阻抗",
+            "挡位(V/div)",
+            "标准值U+(V)",
+            "标准值U-(V)",
+            "被校示值Ur+(V)",
+            "被校示值Ur-(V)",
             "直流增益误差(%)",
         ],
         "error_col": 8,
@@ -54,6 +67,7 @@ EXCEL_ITEM_CONFIGS = {
         "title": "频带宽度",
         "headers": ["序号", "通道", "挡位(V/div)", "实测值(MHz)"],
         "error_col": None,
+        "min_col": 3,
     },
     "transient": {
         "title": "上升时间及过冲",

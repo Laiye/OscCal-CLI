@@ -11,3 +11,10 @@ build/
 data/*.json
 data/*.xlsx
 !data/.gitkeep
+show_out.txt
+sim_output.txt
+sim_transient.txt
+.pytest-tmp/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

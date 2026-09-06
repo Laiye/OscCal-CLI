@@ -15,8 +15,5 @@ def format_with_fixed_precision(number, precision):
         decimal_part += "0" * (decimals - len(decimal_part))
     else:
         decimal_part = ""
-    if not decimal_part:
-        formatted_number = integer_part
-    else:
-        formatted_number = f"{integer_part}.{decimal_part}"
+    formatted_number = integer_part if not decimal_part else f"{integer_part}.{decimal_part}"
     return formatted_number

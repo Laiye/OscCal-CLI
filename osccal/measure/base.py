@@ -1,16 +1,19 @@
 import time
+
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from osccal.core.comm import scpi_write, scpi_query, read_measurement, scpi_setup_measurement
+from rich.table import Table
+
+from osccal.core.comm import read_measurement, scpi_query, scpi_setup_measurement, scpi_write
 from osccal.core.command import assemble_cmd
 
 console = Console()
 
 
 class BaseCalibrator:
-
-    def __init__(self, inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe=None):
+    def __init__(
+        self, inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe=None
+    ):
         self.inst_osc = inst_osc
         self.inst_calibrator = inst_calibrator
         self.cmd_osc = cmd_osc
@@ -66,14 +69,14 @@ class BaseCalibrator:
     def _get_probe_edge_rise_times(self):
         probe = self.probe or "9550"
         probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
-        return probe_info.get("edge_rise_times", [150E-12])
+        return probe_info.get("edge_rise_times", [150e-12])
 
     def _get_probe_max_frequency_hz(self) -> float:
         probe = self.probe or "9550"
         probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
         max_freq = probe_info.get("max_frequency_hz", 0)
         if max_freq <= 0:
-            return 600E6
+            return 600e6
         return float(max_freq)
 
     def _read_meas(self, meas_keyword):
@@ -89,7 +92,9 @@ class BaseCalibrator:
         has_max = "meas_max" in keywords
         has_min = "meas_min" in keywords
         if not has_max or not has_min:
-            console.print("[yellow]⚠ 指令集缺少 meas_max/meas_min 关键字，跳过垂直位置自动调整[/yellow]")
+            console.print(
+                "[yellow]⚠ 指令集缺少 meas_max/meas_min 关键字，跳过垂直位置自动调整[/yellow]"
+            )
             return
 
         self._write_osc("set_vertical_position", self.channel, 0.0)
@@ -139,21 +144,29 @@ class BaseCalibrator:
         time.sleep(self.profile.get("init_time", 2))
 
     def setup_channel(self):
-        if self.profile.get("probe_default", 1) != 1:
-            if "set_probe_gain" in self.cmd_osc["actions"]:
-                self._write_osc("set_probe_gain", self.channel, 1)
+        if (
+            self.profile.get("probe_default", 1) != 1
+            and "set_probe_gain" in self.cmd_osc["actions"]
+        ):
+            self._write_osc("set_probe_gain", self.channel, 1)
         self._write_osc("set_channel", self.channel, "ON")
         self._write_osc("set_trigger_source", self.channel)
 
     def setup_impedance(self, impedance_keyword):
         if "set_impedance" in self.cmd_osc["actions"]:
-            self._write_osc("set_impedance", self.channel, self.cmd_osc["keyword"][impedance_keyword])
+            self._write_osc(
+                "set_impedance", self.channel, self.cmd_osc["keyword"][impedance_keyword]
+            )
 
     def setup_measurement(self, meas_keyword):
-        scpi_setup_measurement(self.inst_osc, self.cmd_osc, self.channel, self.cmd_osc["keyword"][meas_keyword])
+        scpi_setup_measurement(
+            self.inst_osc, self.cmd_osc, self.channel, self.cmd_osc["keyword"][meas_keyword]
+        )
 
     def print_title(self, title):
-        console.print(Panel(f"[bold blue]{title}[/bold blue]  通道: CH{self.channel}", expand=False))
+        console.print(
+            Panel(f"[bold blue]{title}[/bold blue]  通道: CH{self.channel}", expand=False)
+        )
 
     def make_table(self, title, columns):
         table = Table(title=title, show_lines=True)
@@ -167,9 +180,8 @@ class BaseCalibrator:
         styled_row = list(row_data)
         if limits and check_col is not None:
             val = row_data[check_col]
-            if isinstance(val, (int, float)):
-                if val < limits[0] or val > limits[1]:
-                    styled_row[check_col] = f"[red]{val}[/red]"
+            if isinstance(val, (int, float)) and (val < limits[0] or val > limits[1]):
+                styled_row[check_col] = f"[red]{val}[/red]"
         table.add_row(*[str(v) for v in styled_row])
 
     def run(self):

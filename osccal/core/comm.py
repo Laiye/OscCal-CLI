@@ -1,33 +1,52 @@
-from rich.console import Console
-import socket as sock
 import time
+
+from rich.console import Console
+
+from osccal.core import scpi_trace
 from osccal.core.command import assemble_cmd
 
 console = Console()
+
+
+def _socket_read_response(sock, max_bytes: int = 65536) -> str:
+    """循环读取 Socket 响应直到换行或达到上限，避免单次 recv 截断长响应。"""
+    data = b""
+    while b"\n" not in data and len(data) < max_bytes:
+        try:
+            chunk = sock.recv(4096)
+        except sock.timeout:
+            break
+        if not chunk:
+            break
+        data += chunk
+    return data.decode(errors="replace")
 
 
 def _retry_query_or_write(inst, cmd: str, comm_type: str, is_query: bool) -> str:
     for attempt in range(2):
         try:
             if comm_type == "pyvisa":
-                return inst.query(cmd) if is_query else (inst.write(cmd) or "")
-            if comm_type == "socket":
+                result = inst.query(cmd) if is_query else (inst.write(cmd) or "")
+            elif comm_type == "socket":
                 inst.send(cmd.encode() + b"\n")
-                return inst.recv(4096).decode() if is_query else ""
-            console.print(f"[red]✗[/red] 不支持的通信类型: {comm_type}")
-            return ""
-        except sock.timeout:
+                result = _socket_read_response(inst) if is_query else ""
+            else:
+                console.print(f"[red]✗[/red] 不支持的通信类型: {comm_type}")
+                return ""
+            scpi_trace.log_entry("Q" if is_query else "W", cmd, str(result))
+            return result
+        except TimeoutError:
             if attempt == 0:
                 time.sleep(0.5)
                 continue
             console.print(f"[red]✗[/red] SCPI {'查询' if is_query else '写入'}超时 ({cmd})")
-            return ""
         except Exception as e:
             if attempt == 0:
                 time.sleep(0.5)
                 continue
             console.print(f"[red]✗[/red] SCPI {'查询' if is_query else '写入'}失败 ({cmd}): {e}")
-            return ""
+        scpi_trace.record_failure()
+        scpi_trace.log_entry("Q" if is_query else "W", cmd, "ERROR")
     return ""
 
 
@@ -151,7 +170,7 @@ def read_measurement(
 
         measured = float(value)
         # ZDS 系列返回 3.40282e+38 表示 Invalid
-        if measured > 1E30:
+        if measured > 1e30:
             console.print(
                 f"[yellow]⚠[/yellow] 测量值异常 ({measured:.4g})，"
                 f"可能是示波器不支持此测量项或信号条件不满足"

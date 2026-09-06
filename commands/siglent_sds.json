@@ -28,7 +28,8 @@
         "meas_max": "MAX",
         "meas_min": "MIN",
         "acquire_stop_after_single": "SEQ",
-        "acquire_stop_after_run_stop": "RUNST"
+        "acquire_stop_after_run_stop": "RUNST",
+        "acquire_state_run": "RUN"
     },
     "actions": {
         "preset": {
@@ -45,7 +46,7 @@
             "name": "initialize",
             "type": "write",
             "commands_num": 1,
-            "args_num": 1,
+            "args_num": 0,
             "commands": [
                 "*CLS;*RST"
             ],
@@ -262,17 +263,24 @@
             "args": []
         },
         "get_value_from_item": {
-            "name": "get_value",
+            "name": "get_value_from_item",
             "type": "query",
             "commands_num": 1,
             "args_num": 1,
             "commands": [
-                ":MEAS:SIMP:VAL?",
-                " "
+                ":MEAS:SIMP:VAL? "
             ],
             "args": [
-                "AMPL",
-                "MEAN"
+                [
+                    "AMPL",
+                    "MEAN",
+                    "PER",
+                    "RIS",
+                    "FREQ",
+                    "MAX",
+                    "MIN",
+                    "POV"
+                ]
             ]
         },
         "set_meas_method": {

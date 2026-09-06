@@ -1,17 +1,18 @@
 import time
+
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, console
+
 from osccal.core.utils import format_with_fixed_precision
+from osccal.measure.base import BaseCalibrator, console
 
 
 class AmpCalibrator(BaseCalibrator):
-
     def run(self):
         self.print_title("校准ΔV(幅度)")
         self.init_devices()
         self.setup_channel()
 
-        self._write_osc("set_horizontal_scale", 1E-3)
+        self._write_osc("set_horizontal_scale", 1e-3)
         self.setup_measurement("meas_amp")
 
         self._write_osc("set_acquisition_mode", self.cmd_osc["keyword"]["acquisition_mode_average"])
@@ -67,14 +68,16 @@ class AmpCalibrator(BaseCalibrator):
                 ]
                 self.add_result_row(table, row_data, limit_range, check_col=5)
 
-                self.results.append({
-                    "index": i + 1,
-                    "channel": self.channel,
-                    "scale": val,
-                    "std_value": std_value,
-                    "measured": measured,
-                    "error": error,
-                })
+                self.results.append(
+                    {
+                        "index": i + 1,
+                        "channel": self.channel,
+                        "scale": val,
+                        "std_value": std_value,
+                        "measured": measured,
+                        "error": error,
+                    }
+                )
 
                 progress.update(task, advance=1)
 

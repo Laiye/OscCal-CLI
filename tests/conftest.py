@@ -5,6 +5,7 @@
 - 加载指令集 / Profile JSON 的会话级 fixture
 - 用于集成测试的 FakeInstrument（模拟 pyvisa 仪器，记录写入/查询指令）
 """
+
 import json
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ CALIBRATORS_DIR = PROJECT_ROOT / "calibrators"
 # ---------------------------------------------------------------------------
 # 指令集 / Profile 加载 fixture
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def mdo3_commands() -> dict:
@@ -66,6 +68,7 @@ def fluke_calibrator() -> dict:
 # FakeInstrument：模拟 pyvisa 仪器
 # ---------------------------------------------------------------------------
 
+
 class FakeInstrument:
     """模拟 pyvisa 仪器，记录所有写入/查询指令，并按预设返回查询结果。
 
@@ -74,8 +77,11 @@ class FakeInstrument:
     - query(cmd) 记录指令并返回预设响应；未预设时返回默认响应。
     """
 
-    def __init__(self, query_responses: dict | None = None,
-                 default_response: str = ":MEASUREMENT:IMMED:VALUE 1.2340E+0"):
+    def __init__(
+        self,
+        query_responses: dict | None = None,
+        default_response: str = ":MEASUREMENT:IMMED:VALUE 1.2340E+0",
+    ):
         self.written: list[str] = []
         self.query_responses = query_responses or {}
         self.default_response = default_response

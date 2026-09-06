@@ -1,14 +1,15 @@
 from rich.console import Console
 
+from osccal.core import scpi_trace
+
 console = Console()
 
 
 def validate_args(action: dict, *args) -> bool:
     expected = action.get("args_num", 0)
     if len(args) != expected:
-        console.print(
-            f"[red]✗[/red] 参数数量错误: 期望 {expected}, 实际 {len(args)}"
-        )
+        console.print(f"[red]✗[/red] 参数数量错误: 期望 {expected}, 实际 {len(args)}")
+        scpi_trace.record_failure()
         return False
     return True
 

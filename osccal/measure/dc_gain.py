@@ -1,11 +1,12 @@
 import time
+
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, console
+
 from osccal.core.utils import format_with_fixed_precision
+from osccal.measure.base import BaseCalibrator, console
 
 
 class DcGainCalibrator(BaseCalibrator):
-
     def _measure_dc_pair(self, val, impedance_label, row_index):
         vertical_div = self.profile.get("vertical_div", 8)
 
@@ -104,17 +105,19 @@ class DcGainCalibrator(BaseCalibrator):
             for i, val in enumerate(points):
                 result = self._measure_dc_pair(val, "1 MΩ", i + 1)
                 self.add_result_row(table, result["row_data"], limit_range, check_col=8)
-                self.results.append({
-                    "index": i + 1,
-                    "channel": self.channel,
-                    "impedance": "1MΩ",
-                    "scale": result["val"],
-                    "std_value_p": result["std_value_p"],
-                    "std_value_n": result["std_value_n"],
-                    "measured_p": result["measured_p"],
-                    "measured_n": result["measured_n"],
-                    "error": result["error"],
-                })
+                self.results.append(
+                    {
+                        "index": i + 1,
+                        "channel": self.channel,
+                        "impedance": "1MΩ",
+                        "scale": result["val"],
+                        "std_value_p": result["std_value_p"],
+                        "std_value_n": result["std_value_n"],
+                        "measured_p": result["measured_p"],
+                        "measured_n": result["measured_n"],
+                        "error": result["error"],
+                    }
+                )
                 progress.update(task, advance=1)
 
             self._write_calibrator("set_output", "OFF")
@@ -138,17 +141,19 @@ class DcGainCalibrator(BaseCalibrator):
 
                     result = self._measure_dc_pair(val, "50 Ω", offset + i + 1)
                     self.add_result_row(table, result["row_data"], limit_range, check_col=8)
-                    self.results.append({
-                        "index": offset + i + 1,
-                        "channel": self.channel,
-                        "impedance": "50Ω",
-                        "scale": result["val"],
-                        "std_value_p": result["std_value_p"],
-                        "std_value_n": result["std_value_n"],
-                        "measured_p": result["measured_p"],
-                        "measured_n": result["measured_n"],
-                        "error": result["error"],
-                    })
+                    self.results.append(
+                        {
+                            "index": offset + i + 1,
+                            "channel": self.channel,
+                            "impedance": "50Ω",
+                            "scale": result["val"],
+                            "std_value_p": result["std_value_p"],
+                            "std_value_n": result["std_value_n"],
+                            "measured_p": result["measured_p"],
+                            "measured_n": result["measured_n"],
+                            "error": result["error"],
+                        }
+                    )
                     progress.update(task, advance=1)
 
         console.print(table)

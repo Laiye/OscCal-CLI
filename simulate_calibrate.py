@@ -12,10 +12,10 @@
     python simulate_calibrate.py --probe 9530            # 切换探头
     python simulate_calibrate.py --log-scpi --export     # 打印 SCPI 日志并导出 Excel
 """
+
 import argparse
 import json
 import math
-import os
 import sys
 import time
 from pathlib import Path
@@ -45,6 +45,7 @@ def _patch_fast_mode(enable: bool):
     time.sleep = lambda x: None
     try:
         import click as _click
+
         _real_prompt = _click.prompt
 
         def _auto_prompt(*args, **kwargs):
@@ -59,17 +60,18 @@ def _patch_fast_mode(enable: bool):
 # 共享状态：校准仪输出信号（示波器据此"测量"）
 # ---------------------------------------------------------------------------
 
+
 class SimState:
     """校准仪输出信号状态，示波器模拟器读取此状态计算测量响应。"""
 
     def __init__(self):
-        self.shape = None          # DC / SQU / MARK / SIN / EDGE
-        self.volt = 0.0            # 输出幅度（方波为 p-p，DC 为电平）
-        self.freq = 0.0            # 正弦频率
-        self.mark_period = 0.0     # MARK 周期
-        self.edge_speed = 0.0      # EDGE 上升时间
-        self.output = False        # 输出开关
-        self.impedance = "10000"   # 校准仪输出阻抗（10000=1M, 50=50Ω）
+        self.shape = None  # DC / SQU / MARK / SIN / EDGE
+        self.volt = 0.0  # 输出幅度（方波为 p-p，DC 为电平）
+        self.freq = 0.0  # 正弦频率
+        self.mark_period = 0.0  # MARK 周期
+        self.edge_speed = 0.0  # EDGE 上升时间
+        self.output = False  # 输出开关
+        self.impedance = "10000"  # 校准仪输出阻抗（10000=1M, 50=50Ω）
         self.squ_polarity = "SYMM"
 
     def reset(self):
@@ -79,6 +81,7 @@ class SimState:
 # ---------------------------------------------------------------------------
 # 模拟 FLUKE 9500B 校准仪（pyvisa 接口）
 # ---------------------------------------------------------------------------
+
 
 class SimulatedCalibrator:
     """模拟校准仪：解析 SCPI write 更新 SimState；仅响应 *IDN? 查询。"""
@@ -129,14 +132,26 @@ class SimulatedCalibrator:
 
 # 已知测量助记符 → 规范类型（兼容 long/short 形式与多厂家命名）
 _MEAS_TYPE_MAP = {
-    "AMPLITUDE": "amp", "AMP": "amp",
-    "MEAN": "mean", "CMEAN": "mean",
-    "PERIOD": "period", "PERI": "period", "PER": "period",
-    "MAXIMUM": "max", "MAX": "max", "VMAX": "max",
-    "MINIMUM": "min", "MIN": "min", "VMIN": "min",
-    "RISE": "risetime", "RIS": "risetime",
-    "POVERSHOOT": "overshoot", "POV": "overshoot", "ROVE": "overshoot",
-    "FREQUENCY": "freq", "FREQ": "freq",
+    "AMPLITUDE": "amp",
+    "AMP": "amp",
+    "MEAN": "mean",
+    "CMEAN": "mean",
+    "PERIOD": "period",
+    "PERI": "period",
+    "PER": "period",
+    "MAXIMUM": "max",
+    "MAX": "max",
+    "VMAX": "max",
+    "MINIMUM": "min",
+    "MIN": "min",
+    "VMIN": "min",
+    "RISE": "risetime",
+    "RIS": "risetime",
+    "POVERSHOOT": "overshoot",
+    "POV": "overshoot",
+    "ROVE": "overshoot",
+    "FREQUENCY": "freq",
+    "FREQ": "freq",
 }
 
 
@@ -153,17 +168,21 @@ class SimulatedOscilloscope:
     频率衰减：一阶低通 1/sqrt(1+(f/bw)^2)，bw=SIM_BANDWIDTH_HZ，使带宽校准得 ~bw
     """
 
-    def __init__(self, state: SimState, cmd_osc: dict,
-                 idn: str = "TEK,MDO34,SIM001,v1.0",
-                 sim_bandwidth_hz: float = 200e6):
+    def __init__(
+        self,
+        state: SimState,
+        cmd_osc: dict,
+        idn: str = "TEK,MDO34,SIM001,v1.0",
+        sim_bandwidth_hz: float = 200e6,
+    ):
         self.state = state
         self.cmd_osc = cmd_osc
         self.idn = idn
         self.sim_bandwidth_hz = sim_bandwidth_hz
         self.log: list[tuple[str, str]] = []
 
-        self.meas_type = None        # 当前测量类型助记符（原始字符串）
-        self.meas_source = None      # 当前测量源（如 CH1）
+        self.meas_type = None  # 当前测量类型助记符（原始字符串）
+        self.meas_source = None  # 当前测量源（如 CH1）
         self.vertical_scale: dict[str, float] = {}
         self.vertical_position: dict[str, float] = {}
         self.impedance: dict[str, str] = {}
@@ -201,7 +220,7 @@ class SimulatedOscilloscope:
             self._reset_state()
             return
         if cu.startswith("SELECT:CH"):
-            rest = cu[len("SELECT:CH"):]
+            rest = cu[len("SELECT:CH") :]
             ch = rest.split(" ")[0]
             val = c.split(" ", 1)[1] if " " in c else ""
             self.channel_on[ch] = val
@@ -217,7 +236,7 @@ class SimulatedOscilloscope:
         elif cu.startswith("TRIGGER:A:EDGE:SOURCE"):
             self.trigger_source = c.split(" ", 1)[1] if " " in c else ""
         elif cu.startswith("TRIGGER:A:LEVEL:CH"):
-            ch = cu[len("TRIGGER:A:LEVEL:CH"):].split(" ")[0]
+            ch = cu[len("TRIGGER:A:LEVEL:CH") :].split(" ")[0]
             self.trigger_level[ch] = float(c.split(" ", 1)[1]) if " " in c else 0.0
         elif cu.startswith("HORIZONTAL:SCA"):
             self.horizontal_scale = float(c.split(" ", 1)[1])
@@ -323,6 +342,7 @@ class SimulatedOscilloscope:
 # 配置加载
 # ---------------------------------------------------------------------------
 
+
 def _load_json(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -339,6 +359,7 @@ def load_configs(commands_name: str, profile_name: str, calibrator_name: str):
 # 运行校准流程
 # ---------------------------------------------------------------------------
 
+
 def run_calibration(args):
     cmd_osc, profile, cmd_cal = load_configs(args.commands, args.profile, args.calibrator)
 
@@ -349,20 +370,25 @@ def run_calibration(args):
     # 构造模拟仪器
     state = SimState()
     idn_osc = f"TEK,{profile.get('series', 'MDO34')},SIM001,v1.0"
-    inst_cal = SimulatedCalibrator(state, idn=f"FLUKE,9500B,SIM001,1.0")
+    inst_cal = SimulatedCalibrator(state, idn="FLUKE,9500B,SIM001,1.0")
     inst_osc = SimulatedOscilloscope(
-        state, cmd_osc, idn=idn_osc,
+        state,
+        cmd_osc,
+        idn=idn_osc,
         sim_bandwidth_hz=args.sim_bandwidth * 1e6,
     )
 
-    console.print(Panel.fit(
-        f"[bold blue]模拟校准流程[/bold blue]\n"
-        f"示波器: {profile.get('series')}  通道: {args.channel}  探头: {args.probe}\n"
-        f"指令集: {cmd_osc.get('name')}  校准仪: {cmd_cal.get('name')}\n"
-        f"校准项目: {args.items}  带宽: {args.bandwidth}MHz  步进: {args.bd_step}MHz\n"
-        f"模拟 -3dB 带宽: {args.sim_bandwidth}MHz",
-        title="OscCal-CLI 模拟运行", border_style="blue",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold blue]模拟校准流程[/bold blue]\n"
+            f"示波器: {profile.get('series')}  通道: {args.channel}  探头: {args.probe}\n"
+            f"指令集: {cmd_osc.get('name')}  校准仪: {cmd_cal.get('name')}\n"
+            f"校准项目: {args.items}  带宽: {args.bandwidth}MHz  步进: {args.bd_step}MHz\n"
+            f"模拟 -3dB 带宽: {args.sim_bandwidth}MHz",
+            title="OscCal-CLI 模拟运行",
+            border_style="blue",
+        )
+    )
 
     item_list = [x.strip() for x in args.items.split(",") if x.strip()]
     channel_list = [c.strip() for c in args.channel.split(",") if c.strip()]
@@ -372,6 +398,7 @@ def run_calibration(args):
         console.rule(f"[bold magenta]通道 CH{ch}[/bold magenta]")
         if "all" in item_list:
             from osccal.measure.all import run_all
+
             ch_results = run_all(inst_osc, inst_cal, cmd_osc, cmd_cal, profile, ch, args.probe)
             for key, val in ch_results.items():
                 result_key = f"{key}_ch{ch}" if len(channel_list) > 1 else key
@@ -379,6 +406,7 @@ def run_calibration(args):
         else:
             for item in item_list:
                 from osccal.measure.registry import CALIBRATORS_MAP
+
                 CalClass = CALIBRATORS_MAP.get(item)
                 if not CalClass:
                     console.print(f"[red]✗[/red] 未知校准项目: {item}")
@@ -394,6 +422,7 @@ def run_calibration(args):
 # ---------------------------------------------------------------------------
 # SCPI 日志与结果汇总
 # ---------------------------------------------------------------------------
+
 
 def print_scpi_log(inst_osc: SimulatedOscilloscope, inst_cal: SimulatedCalibrator, full: bool):
     console.rule("[bold cyan]SCPI 指令日志[/bold cyan]")
@@ -463,15 +492,22 @@ def print_results_summary(all_results: dict):
             errs = [r.get("error", 0) for r in rows if "error" in r]
             if errs:
                 max_err = max(abs(e) for e in errs)
-                status = "[green]合格[/green]" if max_err <= 2.0 else f"[red]超差(最大{max_err:.2f}%)[/red]"
+                status = (
+                    "[green]合格[/green]"
+                    if max_err <= 2.0
+                    else f"[red]超差(最大{max_err:.2f}%)[/red]"
+                )
                 table.add_row(key, str(len(rows)), f"误差范围 ±{max_err:.2f}%  {status}")
             elif "bandwidth_mhz" in rows[0]:
                 bws = [r.get("bandwidth_mhz", 0) for r in rows]
                 table.add_row(key, str(len(rows)), f"带宽 {min(bws):.1f}~{max(bws):.1f} MHz")
             elif "risetime_ns" in rows[0]:
                 r = rows[0]
-                table.add_row(key, str(len(rows)),
-                              f"上升时间 {r.get('risetime_ns', 0):.2f} ns, 过冲 {r.get('pos_overshoot', 0):.2f}%")
+                table.add_row(
+                    key,
+                    str(len(rows)),
+                    f"上升时间 {r.get('risetime_ns', 0):.2f} ns, 过冲 {r.get('pos_overshoot', 0):.2f}%",
+                )
             else:
                 table.add_row(key, str(len(rows)), "")
         else:
@@ -479,20 +515,31 @@ def print_results_summary(all_results: dict):
     console.print(table)
 
 
-def save_and_export(all_results: dict, profile: dict):
+def save_and_export(all_results: dict, profile: dict, probe: str = ""):
     """保存校准数据 JSON 并导出 Excel 报告。"""
     metadata = {
         "channel": "",
-        "probe": "",
-        "oscilloscope": {"manufacturer": "TEK", "model": profile.get("series", ""),
-                         "serial": "SIM001", "firmware": "v1.0"},
-        "calibrator": {"manufacturer": "FLUKE", "model": "9500B", "serial": "SIM001", "firmware": "1.0"},
+        "probe": probe,
+        "oscilloscope": {
+            "manufacturer": "TEK",
+            "model": profile.get("series", ""),
+            "serial": "SIM001",
+            "firmware": "v1.0",
+        },
+        "calibrator": {
+            "manufacturer": "FLUKE",
+            "model": "9500B",
+            "serial": "SIM001",
+            "firmware": "1.0",
+        },
         "commands_file": "tektronix_mdo3",
         "profile_file": profile.get("series", ""),
         "calibrator_file": "fluke_9500b",
         "simulated": True,
+        "limits": profile.get("calibration_limits", {}),
     }
     from osccal.core.storage import save_calibration_data
+
     data_dir = PROJECT_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
     json_path = save_calibration_data(all_results, metadata)
@@ -500,6 +547,7 @@ def save_and_export(all_results: dict, profile: dict):
 
     try:
         from osccal.core.export import export_to_excel
+
         ts = time.strftime("%Y%m%d_%H%M%S")
         xlsx_path = str(data_dir / f"sim_calibration_{ts}.xlsx")
         export_to_excel({"metadata": metadata, "results": all_results}, xlsx_path)
@@ -512,17 +560,24 @@ def save_and_export(all_results: dict, profile: dict):
 # main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="用模拟仪器本地运行完整校准流程")
     parser.add_argument("--commands", default="tektronix_mdo3", help="指令集文件名（不含.json）")
     parser.add_argument("--profile", default="tektronix_mdo34", help="Profile 文件名（不含.json）")
     parser.add_argument("--calibrator", default="fluke_9500b", help="校准仪配置文件名（不含.json）")
-    parser.add_argument("--items", default="all", help="校准项目，逗号分隔（amp,dc_gain,delta_time,bandwidth,transient,all）")
+    parser.add_argument(
+        "--items",
+        default="all",
+        help="校准项目，逗号分隔（amp,dc_gain,delta_time,bandwidth,transient,all）",
+    )
     parser.add_argument("--channel", default="1", help="通道，逗号分隔（如 1,2）")
     parser.add_argument("--probe", default="9560", help="探头型号（9560/9550/9530）")
     parser.add_argument("--bandwidth", type=float, default=100.0, help="起始带宽（MHz）")
     parser.add_argument("--bd-step", type=float, default=20.0, help="带宽扫描步进（MHz）")
-    parser.add_argument("--sim-bandwidth", type=float, default=200.0, help="模拟示波器 -3dB 带宽（MHz）")
+    parser.add_argument(
+        "--sim-bandwidth", type=float, default=200.0, help="模拟示波器 -3dB 带宽（MHz）"
+    )
     parser.add_argument("--log-scpi", action="store_true", help="打印完整 SCPI 指令日志")
     parser.add_argument("--export", action="store_true", help="保存数据并导出 Excel")
     parser.add_argument("--real-sleep", action="store_true", help="保留真实 sleep 延时（默认加速）")
@@ -535,10 +590,11 @@ def main():
         print_results_summary(all_results)
         print_scpi_log(inst_osc, inst_cal, args.log_scpi)
         if args.export:
-            save_and_export(all_results, profile)
+            save_and_export(all_results, profile, args.probe)
     except Exception as e:
         console.print(f"[red]✗ 模拟运行失败: {e}[/red]")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

@@ -6,13 +6,20 @@
 - points 各校准点表（delta_amp / dc_gain / delta_time / bandwidth）合法
 - MDO34=4 通道、MDO32=2 通道，均支持 50Ω
 """
+
 import pytest
 
-
 REQUIRED_PROFILE_KEYS = {
-    "name", "description", "factor", "series",
-    "imp_has_50", "vertical_div", "probe_default", "init_time",
-    "calibration_limits", "points",
+    "name",
+    "description",
+    "factor",
+    "series",
+    "imp_has_50",
+    "vertical_div",
+    "probe_default",
+    "init_time",
+    "calibration_limits",
+    "points",
 }
 
 REQUIRED_POINT_TABLES = {"bandwidth", "delta_amp", "dc_gain", "delta_time"}
@@ -23,6 +30,7 @@ REQUIRED_LIMIT_ITEMS = {"amp", "dc_gain", "delta_time", "bandwidth", "transient"
 # ===========================================================================
 # 共用 profile 校验逻辑（参数化覆盖 MDO34 / MDO32）
 # ===========================================================================
+
 
 @pytest.fixture(params=["mdo34_profile", "mdo32_profile"])
 def any_profile(request):
@@ -122,6 +130,7 @@ def test_profile_bandwidth_points_sorted_positive(any_profile):
 # MDO34 / MDO32 差异化校验
 # ===========================================================================
 
+
 def test_mdo34_is_4_channel(mdo34_profile):
     assert mdo34_profile.get("channels") == 4
     assert mdo34_profile["series"] == "MDO34"
@@ -145,11 +154,18 @@ def test_mdo32_bandwidth_min_lower_than_mdo34(mdo34_profile, mdo32_profile):
 # 指令集通道参数应覆盖 MDO34 的 4 通道（超集）
 # ===========================================================================
 
+
 def test_commands_channel_args_cover_4_channels(mdo3_commands):
     """共享指令集的通道参数取 4 通道超集（MDO32 仅用 1、2）。"""
     actions = mdo3_commands["actions"]
-    for action_name in ("set_channel", "set_vertical_scale", "set_vertical_position",
-                        "set_trigger_source", "set_trigger_level", "set_impedance"):
+    for action_name in (
+        "set_channel",
+        "set_vertical_scale",
+        "set_vertical_position",
+        "set_trigger_source",
+        "set_trigger_level",
+        "set_impedance",
+    ):
         channel_choices = actions[action_name]["args"][0]
         assert channel_choices == ["1", "2", "3", "4"], (
             f"{action_name} 通道参数应为 1-4 超集，实际 {channel_choices}"

@@ -8,19 +8,20 @@
 - 各通道（1-4）、各测量类型（AMPlitude/PERIod/MAXimum/MINimum/RISe 等）均工作正常
 - NaN 响应（9.91E+37）可被解析为浮点数（不抛异常）
 """
+
 import pytest
 
 from osccal.core.comm import (
-    scpi_write,
+    read_measurement,
     scpi_query,
     scpi_setup_measurement,
-    read_measurement,
+    scpi_write,
 )
-
 
 # ===========================================================================
 # scpi_write / scpi_query 与 FakeInstrument 接口契约
 # ===========================================================================
+
 
 class TestScpiWriteQuery:
     def test_scpi_write_records_command(self, fake_osc):
@@ -38,6 +39,7 @@ class TestScpiWriteQuery:
 # scpi_setup_measurement（merge 模式）
 # ===========================================================================
 
+
 class TestSetupMeasurement:
     def test_merge_writes_source_then_type(self, mdo3_commands, fake_osc):
         scpi_setup_measurement(fake_osc, mdo3_commands, "1", "AMPlitude")
@@ -53,15 +55,18 @@ class TestSetupMeasurement:
         assert f"MEASUrement:IMMed:SOUrce1 CH{channel}" in fake_osc.written
         assert "MEASUrement:IMMed:TYPe AMPlitude" in fake_osc.written
 
-    @pytest.mark.parametrize("meas_key,keyword_val", [
-        ("meas_amp", "AMPlitude"),
-        ("meas_period", "PERIod"),
-        ("meas_mean", "MEAN"),
-        ("meas_risetime", "RISe"),
-        ("meas_max", "MAXimum"),
-        ("meas_min", "MINimum"),
-        ("meas_pos_overshoot", "POVershoot"),
-    ])
+    @pytest.mark.parametrize(
+        "meas_key,keyword_val",
+        [
+            ("meas_amp", "AMPlitude"),
+            ("meas_period", "PERIod"),
+            ("meas_mean", "MEAN"),
+            ("meas_risetime", "RISe"),
+            ("meas_max", "MAXimum"),
+            ("meas_min", "MINimum"),
+            ("meas_pos_overshoot", "POVershoot"),
+        ],
+    )
     def test_setup_all_meas_types(self, mdo3_commands, fake_osc, meas_key, keyword_val):
         scpi_setup_measurement(fake_osc, mdo3_commands, "1", keyword_val)
         assert f"MEASUrement:IMMed:TYPe {keyword_val}" in fake_osc.written
@@ -70,6 +75,7 @@ class TestSetupMeasurement:
 # ===========================================================================
 # read_measurement（merge 模式）—— 完整链路
 # ===========================================================================
+
 
 class TestReadMeasurement:
     def test_merge_read_parses_value(self, mdo3_commands, fake_osc):
@@ -87,24 +93,18 @@ class TestReadMeasurement:
         ]
 
     def test_merge_read_custom_response(self, mdo3_commands, fake_osc):
-        fake_osc.query_responses = {
-            "MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 5.678E-3"
-        }
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 5.678E-3"}
         val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert val == pytest.approx(5.678e-3)
 
     def test_merge_read_nan_response(self, mdo3_commands, fake_osc):
         """超大数值（>1e30，如 ZDS 的 Invalid 标记）应返回 0.0 而不会进入误差计算。"""
-        fake_osc.query_responses = {
-            "MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"
-        }
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"}
         val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert val == 0.0
 
     def test_merge_read_negative_value(self, mdo3_commands, fake_osc):
-        fake_osc.query_responses = {
-            "MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE -1.5E+0"
-        }
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE -1.5E+0"}
         val = read_measurement(fake_osc, None, mdo3_commands, "1", "MEAN")
         assert val == pytest.approx(-1.5)
 
@@ -119,11 +119,13 @@ class TestReadMeasurement:
 # 通过 BaseCalibrator._read_meas 间接验证 keyword 解析链路
 # ===========================================================================
 
+
 class TestBaseCalibratorReadMeas:
     """构造一个最小 BaseCalibrator，验证 _read_meas 经 keyword 映射后调用 read_measurement。"""
 
     def _make_calibrator(self, mdo3_commands, fake_osc):
         from osccal.measure.base import BaseCalibrator
+
         # 仅需要 cmd_osc / inst_osc / channel，其余参数传 None
         return BaseCalibrator(
             inst_osc=fake_osc,
@@ -156,9 +158,11 @@ class TestBaseCalibratorReadMeas:
 # 阻抗设置链路（base.setup_impedance）
 # ===========================================================================
 
+
 class TestImpedanceSetup:
     def _make_calibrator(self, mdo3_commands, fake_osc):
         from osccal.measure.base import BaseCalibrator
+
         return BaseCalibrator(
             inst_osc=fake_osc,
             inst_calibrator=None,

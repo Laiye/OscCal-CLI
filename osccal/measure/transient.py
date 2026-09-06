@@ -1,10 +1,10 @@
 import time
-from osccal.measure.base import BaseCalibrator, console
+
 from osccal.core.utils import format_with_fixed_precision
+from osccal.measure.base import BaseCalibrator, console
 
 
 class TransientCalibrator(BaseCalibrator):
-
     def run(self):
         self.print_title("上升时间及过冲")
         self.init_devices()
@@ -30,7 +30,7 @@ class TransientCalibrator(BaseCalibrator):
             self._write_osc("set_vertical_position", self.channel, 2)
 
         # 水平时基：50Ω 快沿用 500ps/div，1MΩ 慢沿用 5ns/div
-        h_scale = 5E-10 if has_50 else 5E-9
+        h_scale = 5e-10 if has_50 else 5e-9
         self._write_osc("set_horizontal_scale", h_scale)
 
         # ItemChannel 模式不需要 set_meas_source
@@ -46,12 +46,8 @@ class TransientCalibrator(BaseCalibrator):
             self._setup_signal_impedance("EDGE", "1M")
 
         rise_times = self._get_probe_edge_rise_times()
-        if has_50:
-            # 50Ω: 优先选最快的上升时间
-            edge_speed = rise_times[0]
-        else:
-            # 1MΩ: 选最慢的上升时间（500ps，兼容 1MΩ 输出）
-            edge_speed = rise_times[-1]
+        # 50Ω: 优先选最快的上升时间；1MΩ: 选最慢的上升时间（500ps，兼容 1MΩ 输出）
+        edge_speed = rise_times[0] if has_50 else rise_times[-1]
 
         self._write_calibrator("set_edge_speed", edge_speed)
         self._write_calibrator("set_output", "ON")
@@ -60,14 +56,22 @@ class TransientCalibrator(BaseCalibrator):
         # 提前设好测量项，SINGLE 捕获后直接查询（避免死数据/0.0）
         self.setup_measurement("meas_risetime")
         self.setup_measurement("meas_pos_overshoot")
-        self._write_osc("set_acquire_stop_after", self.cmd_osc["keyword"]["acquire_stop_after_single"])
+        self._write_osc(
+            "set_acquire_stop_after", self.cmd_osc["keyword"]["acquire_stop_after_single"]
+        )
+        # 触发单次采集：STOPAfter=SEQuence/SINGle 模式下 RUN 后完成一个序列自动停止。
+        # ZLG 系（zlg_zds/zlg_zds1000）无 set_acquire_state，其 SING 命令本身即触发捕获，无需下发。
+        if "set_acquire_state" in self.cmd_osc.get("actions", {}):
+            self._write_osc(
+                "set_acquire_state", self.cmd_osc["keyword"].get("acquire_state_run", "RUN")
+            )
         time.sleep(2)
 
         risetime = self._read_meas("meas_risetime")
         pos_overshoot = self._read_meas("meas_pos_overshoot")
 
-        risetime_ns = risetime * 1E9
-        edge_speed_ps = edge_speed * 1E12
+        risetime_ns = risetime * 1e9
+        edge_speed_ps = edge_speed * 1e12
 
         columns = [
             {"name": "通道"},
@@ -85,12 +89,14 @@ class TransientCalibrator(BaseCalibrator):
         ]
         table.add_row(*[str(v) for v in row_data])
 
-        self.results.append({
-            "channel": self.channel,
-            "risetime_ns": risetime_ns,
-            "pos_overshoot": pos_overshoot,
-            "edge_speed_ps": edge_speed_ps,
-        })
+        self.results.append(
+            {
+                "channel": self.channel,
+                "risetime_ns": risetime_ns,
+                "pos_overshoot": pos_overshoot,
+                "edge_speed_ps": edge_speed_ps,
+            }
+        )
 
         console.print(table)
         self._write_calibrator("set_output", "OFF")

@@ -1,11 +1,14 @@
 import json
 import os
 from datetime import datetime
+
 from rich.console import Console
 
 console = Console()
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data"
+)
 
 
 def save_calibration_data(cal_results: dict, metadata: dict) -> str:
@@ -19,11 +22,14 @@ def save_calibration_data(cal_results: dict, metadata: dict) -> str:
         "metadata": {
             "timestamp": datetime.now().isoformat(),
             "channel": metadata.get("channel", ""),
+            "probe": metadata.get("probe", ""),
             "oscilloscope": metadata.get("oscilloscope", {}),
             "calibrator": metadata.get("calibrator", {}),
             "commands_file": metadata.get("commands_file", ""),
             "profile_file": metadata.get("profile_file", ""),
             "calibrator_file": metadata.get("calibrator_file", ""),
+            "simulated": metadata.get("simulated", False),
+            "limits": metadata.get("limits", {}),
         },
         "results": cal_results,
     }
@@ -37,7 +43,7 @@ def save_calibration_data(cal_results: dict, metadata: dict) -> str:
 
 def load_calibration_data(filepath: str) -> dict:
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
         return data
     except FileNotFoundError:

@@ -1,11 +1,12 @@
 import time
+
 from rich.progress import Progress
-from osccal.measure.base import BaseCalibrator, console
+
 from osccal.core.utils import format_with_fixed_precision
+from osccal.measure.base import BaseCalibrator, console
 
 
 class DeltaTimeCalibrator(BaseCalibrator):
-
     def run(self):
         self.print_title("校准Δt(时间)")
         self.init_devices()
@@ -62,14 +63,16 @@ class DeltaTimeCalibrator(BaseCalibrator):
                 ]
                 self.add_result_row(table, row_data, limit_range, check_col=5)
 
-                self.results.append({
-                    "index": i + 1,
-                    "channel": self.channel,
-                    "scale": val,
-                    "std_value": std_value,
-                    "measured": measured,
-                    "error": error,
-                })
+                self.results.append(
+                    {
+                        "index": i + 1,
+                        "channel": self.channel,
+                        "scale": val,
+                        "std_value": std_value,
+                        "measured": measured,
+                        "error": error,
+                    }
+                )
 
                 progress.update(task, advance=1)
 

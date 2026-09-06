@@ -1,7 +1,7 @@
 from osccal.measure.amp import AmpCalibrator
+from osccal.measure.bandwidth import BandwidthCalibrator
 from osccal.measure.dc_gain import DcGainCalibrator
 from osccal.measure.delta_time import DeltaTimeCalibrator
-from osccal.measure.bandwidth import BandwidthCalibrator
 from osccal.measure.transient import TransientCalibrator
 
 CALIBRATORS_MAP = {

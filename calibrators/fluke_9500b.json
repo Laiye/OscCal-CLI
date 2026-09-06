@@ -59,7 +59,7 @@
             "name": "initialize",
             "type": "write",
             "commands_num": 1,
-            "args_num": 1,
+            "args_num": 0,
             "commands": ["*CLS;*RST"],
             "args": []
         },
@@ -128,7 +128,7 @@
             "args": [["<float>"]]
         },
         "query_head_type": {
-            "name": "get_value",
+            "name": "query_head_type",
             "type": "query",
             "commands_num": 1,
             "args_num": 0,

@@ -17,12 +17,12 @@
 - **美观终端输出**：Rich 表格、进度条、超差红色高亮
 - **Excel 报告导出**：数据表格 + 超差红色高亮
 - **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
-- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、SCPI 通信集成（174 tests）
+- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（233 tests）
 - **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
 
 ## 环境要求
 
-- Python >= 3.9
+- Python >= 3.10
 - VISA 运行时（如 [NI-VISA](https://www.ni.com/zh-cn/support/downloads/drivers/download.ni-visa.html)），用于 USB/GPIB/串口连接
 - 网线连接无需 VISA 运行时
 
@@ -35,6 +35,42 @@ pip install -e .
 ```
 
 安装完成后即可使用 `osccal` 命令。
+
+### 检查当前安装状态
+
+`osccal` 默认以可编辑安装（editable）方式安装，`osccal` 命令和 `import osccal` 都直接指向安装时的项目目录。检查当前指向：
+
+```bash
+# 查看 osccal 安装信息（Editable project location 即当前指向的源码目录）
+pip show osccal
+
+# 列出所有可编辑安装
+pip list -e
+```
+
+若 `Editable project location` 指向了其他目录（例如从旧项目路径安装过），需要先卸载再重装。
+
+### 卸载并重装（切换到当前项目）
+
+```bash
+# 1. 卸载旧安装（移除 .pth 指向与 osccal 命令脚本）
+pip uninstall -y osccal
+
+# 2. 进入当前项目目录，重新安装
+cd <当前项目目录>
+pip install -e .
+
+# 3. 验证指向已切换
+pip show osccal          # Editable project location 应指向当前目录
+osccal --version         # 命令可用
+python -c "import osccal; print(osccal.__file__)"   # 应输出当前目录下的 osccal/__init__.py
+```
+
+说明：
+
+- 卸载只移除 Python 环境中的注册信息，**不会删除旧目录下的源码文件**；确认不再需要后可手动删除旧项目文件夹。
+- 重装时会重新生成当前项目下的 `osccal.egg-info/`（已被 `.gitignore` 忽略）。
+- 若曾在其他机器/环境遇到同样问题，执行上述 `pip uninstall` + `pip install -e .` 两步即可。
 
 ## 快速开始
 
@@ -169,6 +205,9 @@ osccal calibrate [OPTIONS]
 | `--resource-osc` | 示波器 VISA 资源地址 | 交互选择 |
 | `--resource-cal` | 校准仪 VISA 资源地址 | 交互选择 |
 | `--socket-osc` | 示波器 Socket 地址（host:port） | — |
+| `--log-scpi` | 打印完整 SCPI 指令日志与失败统计（现场排障用） | 关闭 |
+
+校准完成后若存在 SCPI 通信/组装失败，会在退出前提示失败次数，并将计数写入校准数据 `metadata.scpi_errors` 供报告追溯。
 
 **校准项目名称**：
 
@@ -307,11 +346,12 @@ OscCal-CLI/
 │   └── zlg_zds4000.json
 ├── calibrators/                     # 校准仪配置
 │   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
-├── tests/                           # 单元测试（pytest，174 tests）
+├── tests/                           # 单元测试（pytest，233 tests）
 │   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
 │   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
-│   └── test_mdo3_comm_integration.py # SCPI 通信集成测试
+│   ├── test_mdo3_comm_integration.py # SCPI 通信集成测试
+│   └── test_all_configs.py          # 全量配置结构测试（commands/profiles/calibrators）
 ├── data/                            # 校准数据存储目录
 ├── simulate_calibrate.py            # 本地模拟校准脚本
 └── pyproject.toml                   # 项目配置
@@ -411,6 +451,9 @@ OscCal-CLI/
 | `horizontal_div` | 水平方向分度数 |
 | `calibration_limits` | 各校准项目的允差限 |
 | `points` | 各校准项目的校准点列表 |
+| `bd_scan` | 带宽扫描模式：`bisect`（默认，指数粗定位+二分精化）或 `linear`（固定步进，旧方案） |
+
+> **带宽扫描算法**：默认 `bisect` 模式利用频响单调性，用"指数粗定位（×2 探测）+ 栅格二分精化"定位 -3dB 点，测量次数从线性扫描的 O(范围/步长) 降为 O(log₂(范围/步长))（实测 1GHz 场景约 3.4× 提速）。每步的稳定/采集延时与线性模式完全一致，不改变校准仪与示波器间的时序；报告值仍落在 `bd_step` 栅格上。若某机型频响非单调（出现 peaking），可将 profile 的 `bd_scan` 改为 `linear` 回退旧方案。
 
 ### 校准仪文件（calibrators/）
 
@@ -594,6 +637,12 @@ pytest -v
 | `tests/test_mdo3_commands.py` | MDO3 指令集结构完整性、action/keyword 齐全性、SCPI 组装与手册一致性 |
 | `tests/test_mdo3_profiles.py` | MDO34/MDO32 Profile 参数校验（通道数、带宽、校准点、限值） |
 | `tests/test_mdo3_comm_integration.py` | `scpi_write`/`scpi_query`/`read_measurement`/`setup_impedance` 通信链路 |
+| `tests/test_all_configs.py` | 全量配置结构校验：commands/ 指令集 action/keyword 契约、profiles/ 校准点与限值、calibrators/ 探头阻抗规则 |
+| `tests/test_sim_integration.py` | 模拟仪器端到端集成测试：无硬件跑通全部校准项目，含带宽向下扫描边界用例 |
+| `tests/test_cli_flow.py` | CLI 校准流程测试：手动/自动模式、`--log-scpi`、SCPI 失败统计（mock 设备） |
+
+> 配置结构校验规则与运行时加载校验共用同一实现（`osccal/core/config_validation.py`）：
+> 加载配置时即校验结构，出错会直接指出具体 JSON 文件与字段，而非运行时才报错。
 
 ## 依赖
 
@@ -605,11 +654,25 @@ pytest -v
 | [PyVISA-py](https://pyvisa-py.readthedocs.io/) | PyVISA 纯 Python 后端 |
 | [openpyxl](https://openpyxl.readthedocs.io/) | Excel 报告生成 |
 
-开发依赖（测试）：
+开发依赖（`pip install -e ".[dev]"`）：
 
 | 库 | 用途 |
 |---|---|
-| [pytest](https://docs.pytest.org/) | 单元测试框架 |
+| [pytest](https://docs.pytest.org/) | 单元测试与集成测试框架 |
+| [ruff](https://docs.astral.sh/ruff/) | 代码 lint 与格式化 |
+| [mypy](https://mypy.readthedocs.io/) | 静态类型检查（配置类型模块） |
+| [pre-commit](https://pre-commit.com/) | Git 提交前钩子（可选） |
+
+代码质量检查（CI 与本地一致）：
+
+```bash
+ruff check .                 # lint
+ruff format --check osccal tests simulate_calibrate.py   # 格式检查
+mypy                         # 类型检查
+pytest                       # 全量测试
+```
+
+项目自带 GitHub Actions CI（`.github/workflows/ci.yml`），在 Python 3.10–3.13 上执行上述全部检查。
 
 ## License
 

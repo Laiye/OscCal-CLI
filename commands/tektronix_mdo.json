@@ -40,7 +40,8 @@
         "meas_max": "MAX",
         "meas_min": "MIN",
         "acquire_stop_after_single": "SEQ",
-        "acquire_stop_after_run_stop": "RUNST"
+        "acquire_stop_after_run_stop": "RUNST",
+        "acquire_state_run": "RUN"
     },
     "actions": {
         "preset": {
@@ -57,7 +58,7 @@
             "name": "initialize",
             "type": "write",
             "commands_num": 1,
-            "args_num": 1,
+            "args_num": 0,
             "commands": [
                 "*CLS;*RST"
             ],

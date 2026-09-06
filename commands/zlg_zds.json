@@ -48,7 +48,7 @@
             "name": "initialize",
             "type": "write",
             "commands_num": 1,
-            "args_num": 1,
+            "args_num": 0,
             "commands": [
                 "*CLS;*RST"
             ],

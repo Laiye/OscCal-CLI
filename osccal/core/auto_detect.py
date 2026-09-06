@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -24,7 +23,7 @@ _BRAND_KEYWORDS: dict[str, str] = {
 }
 
 
-def _identify_brand(manufacturer: str) -> Optional[str]:
+def _identify_brand(manufacturer: str) -> str | None:
     """根据 *IDN? 厂商字段返回配置文件名前缀，无法识别则返回 None。"""
     upper = manufacturer.strip().upper()
     for keyword, prefix in _BRAND_KEYWORDS.items():
@@ -36,7 +35,7 @@ def _identify_brand(manufacturer: str) -> Optional[str]:
 def _fuzzy_match_series(
     model: str,
     candidates: dict[str, list[str] | str],
-) -> Optional[str]:
+) -> str | None:
     """模糊匹配型号到系列（series）字段。
 
     每个候选项可以有单个 series 字符串或 series 列表。
@@ -44,7 +43,7 @@ def _fuzzy_match_series(
     """
     model_upper = model.strip().upper()
 
-    best_key: Optional[str] = None
+    best_key: str | None = None
     best_score: int = 0
 
     for key, series_raw in candidates.items():
@@ -65,7 +64,7 @@ def _fuzzy_match_series(
                 score = 65
             else:
                 common = 0
-                for a, b in zip(model_upper, series_upper):
+                for a, b in zip(model_upper, series_upper, strict=False):
                     if a == b:
                         common += 1
                     else:
@@ -84,7 +83,7 @@ def _fuzzy_match_series(
 def _load_json_silently(filepath: str) -> dict:
     """加载 JSON，失败返回空 dict。"""
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -93,7 +92,7 @@ def _load_json_silently(filepath: str) -> dict:
 def _exact_model_match(
     model: str,
     candidates: dict[str, list[str]],
-) -> Optional[str]:
+) -> str | None:
     """在候选项的 models 列表中精确匹配型号，返回文件名。"""
     model_upper = model.strip().upper()
     for fname, models in candidates.items():
@@ -126,9 +125,12 @@ def _filter_by_manufacturer(
 
         # 优先用 manufacturer 字段匹配
         file_mfr = data.get("manufacturer", "")
-        if file_mfr and file_mfr.strip().upper() in idn_mfr_upper:
-            candidates[fname] = data
-        elif file_mfr and idn_mfr_upper in file_mfr.strip().upper():
+        if (
+            file_mfr
+            and file_mfr.strip().upper() in idn_mfr_upper
+            or file_mfr
+            and idn_mfr_upper in file_mfr.strip().upper()
+        ):
             candidates[fname] = data
 
     # manufacturer 字段没匹配到，回退到文件名前缀
@@ -159,7 +161,7 @@ def detect_configs(
     commands_dir: str,
     profiles_dir: str,
     oscilloscope_idn: dict,
-) -> tuple[Optional[dict], Optional[dict], Optional[str], Optional[str]]:
+) -> tuple[dict | None, dict | None, str | None, str | None]:
     """根据示波器 *IDN? 匹配指令集和特征配置。
 
     匹配优先级：
@@ -197,9 +199,7 @@ def detect_configs(
         matched_cmd = _fuzzy_match_series(model, cmd_series)
 
     if not matched_cmd:
-        console.print(
-            f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的指令集"
-        )
+        console.print(f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的指令集")
 
     # ── 特征配置匹配 ──
     profile_candidates = _filter_by_manufacturer(profiles_dir, manufacturer)
@@ -223,9 +223,7 @@ def detect_configs(
         matched_profile = _fuzzy_match_series(model, profile_series)
 
     if not matched_profile:
-        console.print(
-            f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的特征配置"
-        )
+        console.print(f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的特征配置")
 
     cmd_osc = None
     profile_data = None
@@ -245,10 +243,10 @@ def detect_configs(
 def print_auto_detection_summary(
     idn_osc: dict,
     idn_cal: dict,
-    cmd_file: Optional[str],
-    profile_file: Optional[str],
-    cal_file: Optional[str],
-    probe: Optional[str],
+    cmd_file: str | None,
+    profile_file: str | None,
+    cal_file: str | None,
+    probe: str | None,
 ) -> None:
     """打印自动识别的配置摘要，供用户确认。"""
     table = Table(title="[bold green]自动识别结果[/bold green]", show_lines=True)
@@ -263,7 +261,9 @@ def print_auto_detection_summary(
     table.add_row("校准仪", cal_info)
     table.add_row("校准仪序列号", idn_cal.get("serial", "?"))
     table.add_row("指令集配置", os.path.basename(cmd_file) if cmd_file else "[red]未匹配[/red]")
-    table.add_row("特征配置", os.path.basename(profile_file) if profile_file else "[red]未匹配[/red]")
+    table.add_row(
+        "特征配置", os.path.basename(profile_file) if profile_file else "[red]未匹配[/red]"
+    )
     table.add_row("校准仪配置", os.path.basename(cal_file) if cal_file else "[red]未匹配[/red]")
     table.add_row("探头", probe or "（待选择）")
 

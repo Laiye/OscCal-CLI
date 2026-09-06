@@ -29,7 +29,8 @@
         "meas_max": "VMAX",
         "meas_min": "VMIN",
         "acquire_stop_after_single": "SEQ",
-        "acquire_stop_after_run_stop": "RUNST"
+        "acquire_stop_after_run_stop": "RUNST",
+        "acquire_state_run": "RUN"
     },
     "actions": {
         "preset": {

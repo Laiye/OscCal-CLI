@@ -1,31 +1,34 @@
-import os
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from rich.console import Console
+
 from osccal.core.table_configs import EXCEL_ITEM_CONFIGS as item_configs
 
 console = Console()
+
 
 def export_to_excel(data: dict, output_path: str) -> str:
     wb = Workbook()
 
     metadata = data.get("metadata", {})
     results = data.get("results", {})
+    limits_map = metadata.get("limits", {}) or {}
 
     _create_info_sheet(wb, metadata)
 
+    # 按校准项目分组：同一项目的所有通道数据合并到同一个 sheet
+    grouped: dict[str, list] = {}
     for item_name, rows in results.items():
         if not rows:
             continue
         base_name = item_name.split("_ch")[0]
+        grouped.setdefault(base_name, []).extend(rows)
+
+    for base_name, rows in grouped.items():
         config = item_configs.get(base_name)
         if config:
-            sheet_title = config["title"]
-            if "_ch" in item_name:
-                ch = item_name.split("_ch")[1]
-                sheet_title = f"{config['title']} CH{ch}"
-            _create_data_sheet(wb, item_name, config, rows, sheet_title)
+            _create_data_sheet(wb, base_name, config, rows, limits_map, config["title"])
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -39,12 +42,9 @@ def _create_info_sheet(wb, metadata):
     ws = wb.active
     ws.title = "校准信息"
 
-    header_font = Font(bold=True, size=14)
     label_font = Font(bold=True, size=11)
     normal_font = Font(size=11)
-    border = Border(
-        bottom=Side(style="thin")
-    )
+    border = Border(bottom=Side(style="thin"))
 
     ws["A1"] = "示波器校准报告"
     ws["A1"].font = Font(bold=True, size=18)
@@ -54,21 +54,26 @@ def _create_info_sheet(wb, metadata):
     info_items = [
         ("校准时间", metadata.get("timestamp", "")),
         ("通道", f"CH{metadata.get('channel', '')}"),
+        ("探头", metadata.get("probe", "")),
     ]
 
     osc = metadata.get("oscilloscope", {})
-    info_items.extend([
-        ("示波器厂家", osc.get("manufacturer", "")),
-        ("示波器型号", osc.get("model", "")),
-        ("示波器序列号", osc.get("serial", "")),
-        ("示波器固件版本", osc.get("firmware", "")),
-    ])
+    info_items.extend(
+        [
+            ("示波器厂家", osc.get("manufacturer", "")),
+            ("示波器型号", osc.get("model", "")),
+            ("示波器序列号", osc.get("serial", "")),
+            ("示波器固件版本", osc.get("firmware", "")),
+        ]
+    )
 
     cal = metadata.get("calibrator", {})
-    info_items.extend([
-        ("校准仪厂家", cal.get("manufacturer", "")),
-        ("校准仪型号", cal.get("model", "")),
-    ])
+    info_items.extend(
+        [
+            ("校准仪厂家", cal.get("manufacturer", "")),
+            ("校准仪型号", cal.get("model", "")),
+        ]
+    )
 
     for label, value in info_items:
         ws.cell(row=row, column=1, value=label).font = label_font
@@ -81,9 +86,16 @@ def _create_info_sheet(wb, metadata):
     ws.column_dimensions["B"].width = 40
 
 
-def _create_data_sheet(wb, item_name, config, rows, sheet_title=None):
+def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title=None):
     title = sheet_title or config["title"]
     ws = wb.create_sheet(title=title)
+
+    limits_map = limits_map or {}
+    base_name = item_name.split("_ch")[0]
+    item_limits = limits_map.get(base_name, {}) or {}
+    lower = item_limits.get("lower", -2.0)
+    upper = item_limits.get("upper", 2.0)
+    min_mhz = item_limits.get("min_mhz")
 
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -106,10 +118,7 @@ def _create_data_sheet(wb, item_name, config, rows, sheet_title=None):
     red_font = Font(color="FFFFFF", bold=True)
 
     for row_idx, row_data in enumerate(rows, 2):
-        if isinstance(row_data, dict):
-            values = list(row_data.values())
-        else:
-            values = row_data
+        values = list(row_data.values()) if isinstance(row_data, dict) else row_data
 
         for col_idx, val in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
@@ -119,7 +128,16 @@ def _create_data_sheet(wb, item_name, config, rows, sheet_title=None):
             error_col = config.get("error_col")
             if error_col is not None and col_idx == error_col + 1:
                 try:
-                    if abs(float(val)) > 2.0:
+                    if float(val) < lower or float(val) > upper:
+                        cell.fill = red_fill
+                        cell.font = red_font
+                except (ValueError, TypeError):
+                    pass
+
+            min_col = config.get("min_col")
+            if min_col is not None and col_idx == min_col + 1 and min_mhz is not None:
+                try:
+                    if float(val) < min_mhz:
                         cell.fill = red_fill
                         cell.font = red_font
                 except (ValueError, TypeError):

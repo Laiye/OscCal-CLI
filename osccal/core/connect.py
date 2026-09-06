@@ -1,9 +1,28 @@
 import socket
+from contextlib import suppress
+
 from rich.console import Console
 from rich.table import Table
+
 from osccal.core.comm import scpi_query
 
 console = Console()
+
+# 已打开的连接（VISA ResourceManager 与 socket），供 close_all_connections 统一释放
+_OPEN_RMS = []
+_OPEN_SOCKETS = []
+
+
+def close_all_connections() -> None:
+    """关闭所有已打开的 VISA 资源管理器与 Socket 连接。"""
+    for s in _OPEN_SOCKETS:
+        with suppress(Exception):
+            s.close()
+    _OPEN_SOCKETS.clear()
+    for rm in _OPEN_RMS:
+        with suppress(Exception):
+            rm.close()
+    _OPEN_RMS.clear()
 
 
 def _parse_idn(idn_str: str) -> dict:
@@ -30,6 +49,7 @@ def _print_device_info(idn_info: dict) -> None:
 def list_visa_resources() -> list[str]:
     try:
         import pyvisa
+
         rm = pyvisa.ResourceManager()
         resources = list(rm.list_resources())
         rm.close()
@@ -48,7 +68,9 @@ def list_visa_resources() -> list[str]:
 def connect_visa(resource: str) -> tuple:
     try:
         import pyvisa
+
         rm = pyvisa.ResourceManager()
+        _OPEN_RMS.append(rm)
         inst = rm.open_resource(resource)
         idn_raw = scpi_query(inst, "*IDN?", "pyvisa")
         idn_info = _parse_idn(idn_raw)
@@ -68,6 +90,7 @@ def connect_socket(host: str, port: int) -> tuple:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5)
         s.connect((host, port))
+        _OPEN_SOCKETS.append(s)
         idn_raw = scpi_query(s, "*IDN?", "socket")
         idn_info = _parse_idn(idn_raw)
         console.print(f"[green]✓[/green] Socket 连接成功: [cyan]{host}:{port}[/cyan]")

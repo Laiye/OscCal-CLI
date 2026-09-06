@@ -28,7 +28,8 @@
         "meas_max": "MAXimum",
         "meas_min": "MINimum",
         "acquire_stop_after_single": "SEQuence",
-        "acquire_stop_after_run_stop": "RUNSTop"
+        "acquire_stop_after_run_stop": "RUNSTop",
+        "acquire_state_run": "RUN"
     },
     "actions": {
         "preset": {
