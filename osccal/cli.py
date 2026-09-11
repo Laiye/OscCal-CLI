@@ -788,5 +788,17 @@ def _display_calibration_data(data: dict):
         console.print(table)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """命令行入口：先统一输出编码，再执行 CLI。
+
+    把编码设置放在这里（而非模块导入时）可避免影响作为库导入本模块的调用方，
+    同时保证任何输出（含 --help、子命令）之前编码已就绪。
+    """
+    from osccal.core.utils import enable_utf8_output
+
+    enable_utf8_output()
     cli()
+
+
+if __name__ == "__main__":
+    main()

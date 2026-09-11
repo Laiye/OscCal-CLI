@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-osccal = "osccal.cli:cli"
+osccal = "osccal.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["osccal*"]

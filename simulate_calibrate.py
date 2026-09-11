@@ -562,6 +562,10 @@ def save_and_export(all_results: dict, profile: dict, probe: str = ""):
 
 
 def main():
+    from osccal.core.utils import enable_utf8_output
+
+    enable_utf8_output()
+
     parser = argparse.ArgumentParser(description="用模拟仪器本地运行完整校准流程")
     parser.add_argument("--commands", default="tektronix_mdo3", help="指令集文件名（不含.json）")
     parser.add_argument("--profile", default="tektronix_mdo34", help="Profile 文件名（不含.json）")

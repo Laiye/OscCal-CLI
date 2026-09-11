@@ -28,15 +28,100 @@
 
 ## 安装
 
+推荐在**虚拟环境**中安装。本项目依赖 click / rich / PyVISA / pyvisa-py / openpyxl，这些库的版本要求可能与机器上其他项目冲突（例如其他项目锁定旧版 PyVISA），使用虚拟环境可完全隔离，避免版本冲突导致的 `ImportError`、依赖被降级等问题。
+
+### 1. 获取代码
+
 ```bash
 git clone <repository-url>
 cd OscCal-CLI
-pip install -e .
 ```
 
-安装完成后即可使用 `osccal` 命令。
+### 2. 创建并激活虚拟环境
+
+```bash
+# 创建虚拟环境（用 .venv 作为目录名，已加入 .gitignore）
+python -m venv .venv
+```
+
+> 机器上有多个 Python 时，请用满足版本要求的解释器创建（虚拟环境版本 = 创建时使用的解释器版本）：
+> `py -3.11 -m venv .venv`（Windows）或 `python3.11 -m venv .venv`（Linux/macOS）。
+
+按所用终端选择激活命令：
+
+| 终端 | 激活命令 |
+|------|---------|
+| Windows PowerShell | `.\.venv\Scripts\Activate.ps1` |
+| Windows CMD | `.venv\Scripts\activate.bat` |
+| Windows Git Bash | `source .venv/Scripts/activate` |
+| Linux / macOS | `source .venv/bin/activate` |
+
+> PowerShell 若提示"禁止运行脚本/无法加载文件"，先执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` 再激活（仅对当前终端窗口生效）。
+
+激活成功后提示符前会出现 `(.venv)`，此时 `python` 与 `pip` 都指向该虚拟环境。
+
+### 3. 在虚拟环境中安装
+
+```bash
+# 先升级虚拟环境内的 pip，避免旧版 pip 解析依赖失败
+python -m pip install --upgrade pip
+
+# 安装本项目（可编辑安装，源码改动立即生效）
+pip install -e .
+
+# 需要测试与代码检查工具（pytest / ruff / mypy）时一并安装
+pip install -e ".[dev]"
+```
+
+### 4. 验证安装
+
+```bash
+# 1. 确认包装在当前虚拟环境（Location 应为 ...\.venv\Lib\site-packages）
+pip show osccal
+
+# 2. 确认 osccal 命令来自当前虚拟环境（应首先列出 .venv\Scripts\osccal.exe）
+where.exe osccal        # Windows
+which osccal            # Linux / macOS
+
+# 3. 命令可用
+osccal --version        # 应输出 osccal, version 0.1.0
+```
+
+> **不要只用 `osccal --version` 判断是否装好**：激活虚拟环境只是在 PATH **最前面插入** `.venv\Scripts`，并不会移除系统 Python 的 `Scripts` 目录。若虚拟环境里尚未安装本项目，系统里已有的那份 `osccal` 仍会被找到并执行（Windows 的 `osccal.exe` 内嵌了安装它时的解释器路径，所以实际运行的是系统 Python 与系统里的依赖）。判定依据用 `pip list`（是否列出 `osccal` 与依赖）、`pip show osccal`、`where/which osccal` 三者之一。
+>
+> 同理，在**项目根目录**执行 `python -c "import osccal"` 会因当前目录在 `sys.path` 中而"看似成功"，也不能作为安装验证；换到项目外目录执行才会报 `ModuleNotFoundError`。
+
+安装完成后即可使用 `osccal` 命令。退出虚拟环境执行 `deactivate`。
+
+### 未激活时直接调用（脚本 / CI）
+
+脚本中也可以不激活，直接使用虚拟环境内的可执行文件：
+
+```bash
+.venv\Scripts\osccal.exe device list            # Windows
+./.venv/bin/osccal device list                  # Linux / macOS
+
+.venv\Scripts\python.exe simulate_calibrate.py  # Windows：用该环境跑本地模拟
+./.venv/bin/python simulate_calibrate.py        # Linux / macOS
+```
+
+### Windows：输出重定向时的编码
+
+`osccal` 命令与模拟脚本启动时会自动把标准输出/错误切换为 **UTF-8**。因此把输出重定向到文件或管道时（如 `osccal show > out.txt`、CI 日志收集），不会再因中文控制台的 GBK 编码无法表示 `✓`/`⚠`/`Δ`/表格边框而报 `UnicodeEncodeError`，输出文件即为 UTF-8 编码。
+
+如需自行指定编码（例如管道对端程序要求 GBK），设置环境变量即可覆盖默认行为：
+
+```powershell
+$env:PYTHONIOENCODING = "gbk"    # PowerShell，仅对当前窗口生效
+```
+
+```bash
+export PYTHONIOENCODING=gbk      # Linux / macOS / Git Bash
+```
 
 ### 检查当前安装状态
+
+以下命令作用于**当前已激活的环境**（虚拟环境或系统 Python）：
 
 `osccal` 默认以可编辑安装（editable）方式安装，`osccal` 命令和 `import osccal` 都直接指向安装时的项目目录。检查当前指向：
 
@@ -70,6 +155,7 @@ python -c "import osccal; print(osccal.__file__)"   # 应输出当前目录下�
 
 - 卸载只移除 Python 环境中的注册信息，**不会删除旧目录下的源码文件**；确认不再需要后可手动删除旧项目文件夹。
 - 重装时会重新生成当前项目下的 `osccal.egg-info/`（已被 `.gitignore` 忽略）。
+- 若旧安装位于**另一个环境**（系统 Python 或别的虚拟环境），`osccal` 命令可能来自那个环境。先激活旧环境执行 `pip uninstall -y osccal`，再激活当前虚拟环境执行 `pip install -e .`；用 `where osccal`（Windows）/ `which osccal`（Linux、macOS）可确认实际调用的是哪个环境的命令。
 - 若曾在其他机器/环境遇到同样问题，执行上述 `pip uninstall` + `pip install -e .` 两步即可。
 
 ## 快速开始
@@ -149,6 +235,8 @@ osccal export --file data/calibration_20260427_143000.json --output report.xlsx
 ## 本地模拟运行
 
 无需真实示波器和校准仪，即可在本地跑通完整校准流程，便于开发调试和演示。模拟脚本内置两个实现 pyvisa 接口的模拟仪器，通过共享状态对象传递信号：校准仪 `write` 更新输出信号，示波器 `query` 据此返回合理的测量值，并按一阶低通模型模拟示波器 -3dB 带宽滚降。
+
+> 请先激活虚拟环境（见[安装](#安装)第 2 步），确保使用本项目安装的依赖运行。
 
 ```bash
 # 默认跑全部 5 项校准（MDO34、CH1、9560 探头、模拟带宽 200MHz）
@@ -618,6 +706,8 @@ ZDS1000 系列使用 **完整 SCPI 关键字**（`:CHANnel`/`:MEASure`/`:TIMebas
 ## 测试
 
 项目使用 pytest 进行单元测试，覆盖指令集结构、Profile 校验和 SCPI 通信集成。
+
+> 需先激活虚拟环境并安装开发依赖：`pip install -e ".[dev]"`（见[安装](#安装)）。
 
 ```bash
 # 运行全部测试
