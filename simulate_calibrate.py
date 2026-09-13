@@ -515,11 +515,11 @@ def print_results_summary(all_results: dict):
     console.print(table)
 
 
-def save_and_export(all_results: dict, profile: dict, probe: str = ""):
+def save_and_export(all_results: dict, profile: dict, args):
     """保存校准数据 JSON 并导出 Excel 报告。"""
     metadata = {
         "channel": "",
-        "probe": probe,
+        "probe": args.probe,
         "oscilloscope": {
             "manufacturer": "TEK",
             "model": profile.get("series", ""),
@@ -532,9 +532,9 @@ def save_and_export(all_results: dict, profile: dict, probe: str = ""):
             "serial": "SIM001",
             "firmware": "1.0",
         },
-        "commands_file": "tektronix_mdo3",
-        "profile_file": profile.get("series", ""),
-        "calibrator_file": "fluke_9500b",
+        "commands_file": f"{args.commands}.json",
+        "profile_file": f"{args.profile}.json",
+        "calibrator_file": f"{args.calibrator}.json",
         "simulated": True,
         "limits": profile.get("calibration_limits", {}),
     }
@@ -594,7 +594,7 @@ def main():
         print_results_summary(all_results)
         print_scpi_log(inst_osc, inst_cal, args.log_scpi)
         if args.export:
-            save_and_export(all_results, profile, args.probe)
+            save_and_export(all_results, profile, args)
     except Exception as e:
         console.print(f"[red]✗ 模拟运行失败: {e}[/red]")
         import traceback

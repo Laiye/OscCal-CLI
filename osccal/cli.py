@@ -119,33 +119,35 @@ def _load_calibrator_config(calibrators_dir: str, path: str | None = None):
 
 
 def _load_commands_config(commands_dir: str, path: str | None = None):
-    """加载示波器指令集：指定路径或交互选择。"""
+    """加载示波器指令集：指定路径或交互选择。返回 (配置, 文件路径)。"""
     if path:
-        return load_commands(path)
+        return load_commands(path), path
     files = list_config_files(commands_dir)
     if not files:
         console.print("[red]✗[/red] 未找到示波器指令集文件")
-        return {}
+        return {}, ""
     console.print("\n[bold]选择示波器指令集:[/bold]")
     for i, f in enumerate(files):
         console.print(f"  [{i}] {f}")
     choice = click.prompt("请选择", type=int, default=0)
-    return load_commands(os.path.join(commands_dir, files[choice]))
+    fpath = os.path.join(commands_dir, files[choice])
+    return load_commands(fpath), fpath
 
 
 def _load_profile_config(profiles_dir: str, path: str | None = None):
-    """加载示波器特征配置：指定路径或交互选择。"""
+    """加载示波器特征配置：指定路径或交互选择。返回 (配置, 文件路径)。"""
     if path:
-        return load_profile(path)
+        return load_profile(path), path
     files = list_config_files(profiles_dir)
     if not files:
         console.print("[red]✗[/red] 未找到示波器特征文件")
-        return {}
+        return {}, ""
     console.print("\n[bold]选择示波器特征配置:[/bold]")
     for i, f in enumerate(files):
         console.print(f"  [{i}] {f}")
     choice = click.prompt("请选择", type=int, default=0)
-    return load_profile(os.path.join(profiles_dir, files[choice]))
+    fpath = os.path.join(profiles_dir, files[choice])
+    return load_profile(fpath), fpath
 
 
 # ── 连接辅助 ─────────────────────────────────────────────────────────────
@@ -185,13 +187,26 @@ def _connect_calibrator(resource_cal: str | None, resources: list[str], interact
     return None, {}
 
 
+def _parse_socket_addr(addr: str) -> tuple[str, int] | None:
+    """解析 host:port，非法时打印错误并返回 None。"""
+    host, sep, port_str = addr.rpartition(":")
+    if not sep or not host or not port_str.isdigit():
+        console.print(f"[red]✗[/red] Socket 地址格式无效: {addr}（应为 host:port）")
+        return None
+    port = int(port_str)
+    if not 1 <= port <= 65535:
+        console.print(f"[red]✗[/red] Socket 端口超出范围: {port}")
+        return None
+    return host, port
+
+
 def _connect_oscilloscope(cmd_osc, resource_osc, socket_osc, resources, interactive: bool = True):
     """连接示波器：按指令集类型（socket/visa）与命令行参数解析连接方式。"""
     comm_type = cmd_osc.get("type", "pyvisa")
     if comm_type == "socket":
         if socket_osc:
-            host, port = socket_osc.split(":")
-            return connect_socket(host, int(port))
+            parsed = _parse_socket_addr(socket_osc)
+            return connect_socket(*parsed) if parsed else (None, {})
         if interactive:
             console.print("\n[bold]Socket 连接示波器:[/bold]")
             host = click.prompt("请输入示波器 IP 地址", type=str)
@@ -199,8 +214,8 @@ def _connect_oscilloscope(cmd_osc, resource_osc, socket_osc, resources, interact
             return connect_socket(host, port)
         return None, {}
     if socket_osc:
-        host, port = socket_osc.split(":")
-        return connect_socket(host, int(port))
+        parsed = _parse_socket_addr(socket_osc)
+        return connect_socket(*parsed) if parsed else (None, {})
     if resource_osc:
         return connect_visa(resource_osc)
     if resources:
@@ -391,8 +406,8 @@ def calibrate(
                 console.print("[red]✗[/red] 自动匹配配置失败")
                 return
 
-            # 校准仪配置
-            cmd_calibrator, cal_filepath = _load_calibrator_config(calibrators_dir)
+            # 校准仪配置（--calibrator 优先，否则自动加载首个）
+            cmd_calibrator, cal_filepath = _load_calibrator_config(calibrators_dir, calibrator)
             if not cmd_calibrator:
                 console.print("[red]✗[/red] 加载校准仪配置失败")
                 return
@@ -434,7 +449,7 @@ def calibrate(
 
         else:
             # ── 手动/交互模式 ──
-            cmd_calibrator, _ = _load_calibrator_config(calibrators_dir, calibrator)
+            cmd_calibrator, cal_filepath = _load_calibrator_config(calibrators_dir, calibrator)
             if not cmd_calibrator:
                 console.print("[red]✗[/red] 加载校准仪配置失败")
                 return
@@ -442,12 +457,12 @@ def calibrate(
             if not probe:
                 probe = _select_probe_interactive(cmd_calibrator)
 
-            cmd_osc = _load_commands_config(commands_dir, osc)
+            cmd_osc, cmd_filepath = _load_commands_config(commands_dir, osc)
             if not cmd_osc:
                 console.print("[red]✗[/red] 加载示波器指令集失败")
                 return
 
-            profile_data = _load_profile_config(profiles_dir, profile)
+            profile_data, profile_filepath = _load_profile_config(profiles_dir, profile)
             if not profile_data:
                 console.print("[red]✗[/red] 加载示波器特征配置失败")
                 return
@@ -546,9 +561,9 @@ def calibrate(
                 "probe": probe or "",
                 "oscilloscope": idn_osc if isinstance(idn_osc, dict) else {},
                 "calibrator": idn_cal if isinstance(idn_cal, dict) else {},
-                "commands_file": cmd_osc.get("name", ""),
-                "profile_file": profile_data.get("series", ""),
-                "calibrator_file": cmd_calibrator.get("name", ""),
+                "commands_file": os.path.basename(cmd_filepath) if cmd_filepath else "",
+                "profile_file": os.path.basename(profile_filepath) if profile_filepath else "",
+                "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
                 "simulated": False,
                 "limits": profile_data.get("calibration_limits", {}),
                 "scpi_errors": scpi_trace.failure_count(),
@@ -687,8 +702,10 @@ def device_info(resource, socket):
 
     try:
         if socket:
-            host, port = socket.split(":")
-            inst, idn_info = connect_socket(host, int(port))
+            parsed = _parse_socket_addr(socket)
+            if parsed is None:
+                return
+            inst, idn_info = connect_socket(*parsed)
         elif resource:
             inst, idn_info = connect_visa(resource)
         else:

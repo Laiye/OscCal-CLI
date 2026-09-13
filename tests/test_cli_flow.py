@@ -128,6 +128,10 @@ def test_calibrate_manual_flags(fake_connections, no_sleep, no_save):
     assert "transient" in no_save["results"]
     assert no_save["metadata"]["probe"] == "9560"
     assert no_save["metadata"]["channel"] == "1"
+    # P1 回归：元数据应存配置文件名（basename），而非 name/series 字段
+    assert no_save["metadata"]["commands_file"] == "tektronix_mdo3.json"
+    assert no_save["metadata"]["profile_file"] == "tektronix_mdo34.json"
+    assert no_save["metadata"]["calibrator_file"] == "fluke_9500b.json"
 
 
 def test_calibrate_auto_flow(fake_connections, no_sleep, no_save, monkeypatch):
@@ -155,10 +159,50 @@ def test_calibrate_auto_flow(fake_connections, no_sleep, no_save, monkeypatch):
 
     runner = CliRunner()
     # 输入: 确认执行(y) 通道(0) 项目(1=amp) 是否继续(n)
-    result = runner.invoke(cli, ["calibrate", "--auto"], input="y\n0\n1\nn\n")
+    result = runner.invoke(
+        cli,
+        ["calibrate", "--auto", "--calibrator", "calibrators/fluke_9500b.json"],
+        input="y\n0\n1\nn\n",
+    )
     assert result.exit_code == 0, result.output
     assert "自动识别探头" in result.output
     assert "amp" in no_save["results"]
+    # P1 回归：auto 模式应透传 --calibrator 并记录其文件名
+    assert no_save["metadata"]["calibrator_file"] == "fluke_9500b.json"
+
+
+class TestParseSocketAddr:
+    """P0 回归：socket 地址解析应对非法输入给出友好错误而非抛异常。"""
+
+    @pytest.mark.parametrize(
+        "addr,expected",
+        [
+            ("192.168.1.100:5025", ("192.168.1.100", 5025)),
+            ("[::1]:5025", ("[::1]", 5025)),
+        ],
+    )
+    def test_valid(self, addr, expected):
+        from osccal.cli import _parse_socket_addr
+
+        assert _parse_socket_addr(addr) == expected
+
+    @pytest.mark.parametrize(
+        "addr", ["192.168.1.100", "host:", ":5025", "host:abc", "host:0", "host:70000", ""]
+    )
+    def test_invalid_returns_none(self, addr):
+        from osccal.cli import _parse_socket_addr
+
+        assert _parse_socket_addr(addr) is None
+
+    def test_connect_oscilloscope_invalid_socket(self, monkeypatch):
+        import osccal.cli as cli_mod
+
+        def fail_connect(*args, **kwargs):
+            raise AssertionError("非法地址不应尝试连接")
+
+        monkeypatch.setattr(cli_mod, "connect_socket", fail_connect)
+        result = cli_mod._connect_oscilloscope({"type": "socket"}, None, "bad-addr", [])
+        assert result == (None, {})
 
 
 def test_calibrate_failure_counted(fake_connections, no_sleep, no_save, monkeypatch):

@@ -123,14 +123,9 @@ def _filter_by_manufacturer(
         fpath = os.path.join(directory, fname)
         data = _load_json_silently(fpath)
 
-        # 优先用 manufacturer 字段匹配
-        file_mfr = data.get("manufacturer", "")
-        if (
-            file_mfr
-            and file_mfr.strip().upper() in idn_mfr_upper
-            or file_mfr
-            and idn_mfr_upper in file_mfr.strip().upper()
-        ):
+        # 优先用 manufacturer 字段匹配（双方都非空才判定，避免空厂商匹配全部文件）
+        file_mfr = data.get("manufacturer", "").strip().upper()
+        if file_mfr and idn_mfr_upper and (file_mfr in idn_mfr_upper or idn_mfr_upper in file_mfr):
             candidates[fname] = data
 
     # manufacturer 字段没匹配到，回退到文件名前缀

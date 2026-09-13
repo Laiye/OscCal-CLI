@@ -9,8 +9,11 @@
 - NaN 响应（9.91E+37）可被解析为浮点数（不抛异常）
 """
 
+import time
+
 import pytest
 
+from osccal.core import scpi_trace
 from osccal.core.comm import (
     read_measurement,
     scpi_query,
@@ -108,6 +111,33 @@ class TestReadMeasurement:
         val = read_measurement(fake_osc, None, mdo3_commands, "1", "MEAN")
         assert val == pytest.approx(-1.5)
 
+    def test_setup_error_before_response_does_not_crash(self, mdo3_commands, fake_osc, monkeypatch):
+        """P0 回归：测量设置阶段抛 ValueError 时，异常处理不应因 res 未绑定而崩溃。"""
+        import osccal.core.comm as comm
+
+        def boom(*args, **kwargs):
+            raise ValueError("模拟设置失败")
+
+        monkeypatch.setattr(comm, "scpi_setup_measurement", boom)
+        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
+        assert val == 0.0
+
+    def test_parse_failure_records_failure(self, mdo3_commands, fake_osc):
+        """P1 回归：解析失败必须计入 scpi_errors，而非静默返回 0.0。"""
+        scpi_trace.reset()
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": "not-a-number"}
+        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
+        assert val == 0.0
+        assert scpi_trace.failure_count() >= 1
+
+    def test_invalid_measurement_records_failure(self, mdo3_commands, fake_osc):
+        """P1 回归：Invalid（>1e30）同样应计入失败。"""
+        scpi_trace.reset()
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"}
+        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
+        assert val == 0.0
+        assert scpi_trace.failure_count() >= 1
+
     @pytest.mark.parametrize("channel", ["1", "2", "3", "4"])
     def test_read_all_channels(self, mdo3_commands, fake_osc, channel):
         val = read_measurement(fake_osc, None, mdo3_commands, channel, "AMPlitude")
@@ -182,3 +212,71 @@ class TestImpedanceSetup:
         cal = self._make_calibrator(mdo3_commands, fake_osc)
         cal.setup_impedance("imp_meg")
         assert "CH1:TERmination MEG" in fake_osc.written
+
+
+# ===========================================================================
+# 通信重试（socket 超时不再被吞掉）
+# ===========================================================================
+
+
+class FakeSocket:
+    """模拟 socket：send 记录指令，recv 按脚本返回数据或抛异常。"""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.sent: list[bytes] = []
+
+    def send(self, data: bytes):
+        self.sent.append(data)
+
+    def recv(self, n: int) -> bytes:
+        item = self.responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+class TestSocketRetry:
+    def test_query_retries_after_timeout(self, monkeypatch):
+        """P1 回归：socket 读取超时应触发重试，而非当作空响应直接返回。"""
+        monkeypatch.setattr(time, "sleep", lambda _x: None)
+        scpi_trace.reset()
+        sock = FakeSocket([TimeoutError("模拟超时"), b"1.0\n"])
+
+        res = scpi_query(sock, "X?", "socket")
+
+        assert res == "1.0\n"
+        assert len(sock.sent) == 2, "超时后应重发指令"
+        assert scpi_trace.failure_count() == 0
+
+    def test_query_timeout_exhausted_counts_failure(self, monkeypatch):
+        monkeypatch.setattr(time, "sleep", lambda _x: None)
+        scpi_trace.reset()
+        sock = FakeSocket([TimeoutError("超时1"), TimeoutError("超时2")])
+
+        res = scpi_query(sock, "X?", "socket")
+
+        assert res == ""
+        assert scpi_trace.failure_count() == 1
+
+    def test_pyvisa_timeout_message_retried(self, monkeypatch):
+        """pyvisa 的 VI_ERROR_TMO 不是 TimeoutError，也应被识别并重试。"""
+        monkeypatch.setattr(time, "sleep", lambda _x: None)
+        scpi_trace.reset()
+
+        class FlakyInst:
+            def __init__(self):
+                self.calls = 0
+
+            def query(self, cmd):
+                self.calls += 1
+                if self.calls == 1:
+                    raise Exception("VI_ERROR_TMO: Timeout expired before operation completed.")
+                return "2.0\n"
+
+        inst = FlakyInst()
+        res = scpi_query(inst, "X?", "pyvisa")
+
+        assert res == "2.0\n"
+        assert inst.calls == 2
+        assert scpi_trace.failure_count() == 0

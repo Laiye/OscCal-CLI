@@ -32,7 +32,11 @@ def _load_json(filepath: str, validator: Validator | None = None, label: str = "
         return {}
 
     if validator is not None:
-        errors = validator(data)
+        try:
+            errors = validator(data)
+        except Exception as e:
+            console.print(f"[red]✗[/red] {label}配置校验异常 ({os.path.basename(filepath)}): {e}")
+            return {}
         if errors:
             console.print(f"[red]✗[/red] {label}配置校验失败 ({os.path.basename(filepath)}):")
             for err in errors:
