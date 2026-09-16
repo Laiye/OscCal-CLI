@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+from functools import partial
 
 import click
 from rich.console import Console
@@ -14,6 +16,29 @@ from osccal.core.connect import (
 )
 
 console = Console()
+
+
+class CalibrationCommand(click.Command):
+    """区分执行失败、参数错误与用户中断的退出状态。"""
+
+    def invoke(self, ctx):
+        from osccal.core.comm import ScpiError
+        from osccal.measure.base import OutputShutdownError
+
+        try:
+            return super().invoke(ctx)
+        except (KeyboardInterrupt, click.Abort) as exc:
+            console.print("[yellow]校准已取消或中断[/yellow]")
+            raise click.exceptions.Exit(130) from exc
+        except (OSError, ScpiError, OutputShutdownError) as exc:
+            raise click.ClickException(str(exc)) from exc
+
+
+def _select_index(count: int) -> int:
+    """限制列表序号范围，非法输入由 Click 重新询问。"""
+    if count <= 0:
+        raise click.UsageError("没有可选项")
+    return click.prompt("请选择", type=click.IntRange(0, count - 1), default=0)
 
 
 # ── 交互选择辅助 ─────────────────────────────────────────────────────────
@@ -52,31 +77,28 @@ def _select_probe_interactive(cmd_calibrator: dict) -> str | None:
         supported = list(imp_rules.get(pk, {}).keys())
         desc = f"{pk} (支持模式: {', '.join(supported)})"
         console.print(f"  [{i}] {desc}")
-    choice = click.prompt("请选择", type=int, default=0)
+    choice = _select_index(len(probe_keys))
     return probe_keys[choice]
 
 
-def _select_channel() -> str:
+def _select_channel(max_channels: int = 4) -> str:
     """交互式选择校准通道。"""
     console.print("\n[bold]选择校准通道:[/bold]")
-    console.print("  [0] CH1 (默认)")
-    console.print("  [1] CH2")
-    console.print("  [2] CH3")
-    console.print("  [3] CH4")
-    console.print("  [4] CH1 + CH2")
-    console.print("  [5] CH1 + CH2 + CH3")
-    console.print("  [6] CH1 + CH2 + CH3 + CH4")
+    options = [str(i) for i in range(1, max_channels + 1)]
+    options.extend(",".join(str(ch) for ch in range(1, i + 1)) for i in range(2, max_channels + 1))
+    presets = {str(i): value for i, value in enumerate(options)}
+    for key, value in presets.items():
+        console.print(f"  [{key}] " + " + ".join(f"CH{ch}" for ch in value.split(",")))
     console.print("  也可直接输入通道号，如: 1,2,3")
     ch_input = click.prompt("请选择或输入", default="0")
-    presets = {"0": "1", "1": "2", "2": "3", "3": "4", "4": "1,2", "5": "1,2,3", "6": "1,2,3,4"}
     return presets.get(ch_input, ch_input)
 
 
-def _pick_channel(channel_arg: str | None) -> str:
+def _pick_channel(channel_arg: str | None, max_channels: int = 4) -> str:
     """返回通道参数；未通过命令行指定时交互选择。"""
-    if channel_arg:
+    if channel_arg is not None:
         return channel_arg
-    return _select_channel()
+    return _select_channel(max_channels)
 
 
 def _select_items() -> str:
@@ -129,7 +151,7 @@ def _load_commands_config(commands_dir: str, path: str | None = None):
     console.print("\n[bold]选择示波器指令集:[/bold]")
     for i, f in enumerate(files):
         console.print(f"  [{i}] {f}")
-    choice = click.prompt("请选择", type=int, default=0)
+    choice = _select_index(len(files))
     fpath = os.path.join(commands_dir, files[choice])
     return load_commands(fpath), fpath
 
@@ -145,7 +167,7 @@ def _load_profile_config(profiles_dir: str, path: str | None = None):
     console.print("\n[bold]选择示波器特征配置:[/bold]")
     for i, f in enumerate(files):
         console.print(f"  [{i}] {f}")
-    choice = click.prompt("请选择", type=int, default=0)
+    choice = _select_index(len(files))
     fpath = os.path.join(profiles_dir, files[choice])
     return load_profile(fpath), fpath
 
@@ -167,7 +189,7 @@ def _pick_resource(resources: list[str], title: str) -> str:
     console.print(f"\n[bold]{title}:[/bold]")
     for i, r in enumerate(resources):
         console.print(f"  [{i}] {r}")
-    choice = click.prompt("请选择", type=int, default=0)
+    choice = _select_index(len(resources))
     return resources[choice]
 
 
@@ -210,12 +232,15 @@ def _connect_oscilloscope(cmd_osc, resource_osc, socket_osc, resources, interact
         if interactive:
             console.print("\n[bold]Socket 连接示波器:[/bold]")
             host = click.prompt("请输入示波器 IP 地址", type=str)
-            port = click.prompt("请输入示波器端口", type=int, default=5025)
+            port = click.prompt("请输入示波器端口", type=click.IntRange(1, 65535), default=5025)
             return connect_socket(host, port)
         return None, {}
     if socket_osc:
         parsed = _parse_socket_addr(socket_osc)
-        return connect_socket(*parsed) if parsed else (None, {})
+        inst, info = connect_socket(*parsed) if parsed else (None, {})
+        if inst is not None:
+            cmd_osc["type"] = "socket"
+        return inst, info
     if resource_osc:
         return connect_visa(resource_osc)
     if resources:
@@ -269,7 +294,7 @@ def cli():
     pass
 
 
-@cli.command()
+@cli.command(cls=CalibrationCommand)
 @click.option("--osc", type=click.Path(exists=True), help="示波器指令集配置文件路径")
 @click.option("--profile", type=click.Path(exists=True), help="示波器特征配置文件路径")
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
@@ -305,7 +330,8 @@ def calibrate(
 ):
     """执行示波器校准流程"""
     from osccal.core import scpi_trace
-    from osccal.core.storage import save_calibration_data
+    from osccal.core.config_validation import validate_device_identity, validate_selection
+    from osccal.core.storage import CalibrationRecording, configuration_snapshot
 
     scpi_trace.reset()
     scpi_trace.set_log_enabled(log_scpi)
@@ -318,7 +344,10 @@ def calibrate(
     profiles_dir = os.path.join(project_dir, "profiles")
     calibrators_dir = os.path.join(project_dir, "calibrators")
 
+    session_failed = False
     try:
+        if socket_osc is not None and _parse_socket_addr(socket_osc) is None:
+            raise click.BadParameter("应为有效的 host:port 地址", param_hint="--socket-osc")
         if auto:
             # ── 自动模式：扫描 VISA、识别设备、匹配配置 ──
             from osccal.core.auto_detect import detect_configs, print_auto_detection_summary
@@ -328,20 +357,17 @@ def calibrate(
             try:
                 import pyvisa
             except ImportError:
-                console.print("[red]✗[/red] pyvisa 未安装，请运行: pip install pyvisa")
-                return
+                raise click.ClickException("✗ pyvisa 未安装，请运行: pip install pyvisa") from None
 
             try:
                 rm = pyvisa.ResourceManager()
                 all_resources = list(rm.list_resources())
                 rm.close()
             except Exception as e:
-                console.print(f"[red]✗[/red] 扫描 VISA 资源失败: {e}")
-                return
+                raise click.ClickException(f"✗ 扫描 VISA 资源失败: {e}") from e
 
             if not all_resources:
-                console.print("[red]✗[/red] 未发现任何 VISA 资源")
-                return
+                raise click.ClickException("✗ 未发现任何 VISA 资源")
 
             # 逐个查询 *IDN?（200ms 超时，超时=不可用，忽略继续）
             devices = []
@@ -362,33 +388,35 @@ def calibrate(
             rm.close()
 
             if not devices:
-                console.print("[red]✗[/red] 所有资源均无 *IDN? 响应")
-                return
+                raise click.ClickException("✗ 所有资源均无 *IDN? 响应")
 
-            # 分类：校准仪 vs 示波器（取首个匹配到的，其余忽略）
+            # 多台同类设备必须明确选择，避免由资源枚举顺序决定被校设备。
             from osccal.core.auto_detect import _identify_brand
 
-            cal_device = None
-            osc_device = None
-
-            for r, idn in devices:
-                mfr = idn.get("manufacturer", "").upper()
-                if cal_device is None and "FLUKE" in mfr:
-                    cal_device = (r, idn)
-                elif osc_device is None and _identify_brand(idn.get("manufacturer", "")):
-                    osc_device = (r, idn)
-                else:
-                    console.print(
-                        f"  [dim]⊘[/dim] [cyan]{r}[/cyan] → {idn.get('manufacturer', '?')} {idn.get('model', '?')} [dim]（忽略）[/dim]"
-                    )
+            cal_candidates = [
+                (r, idn)
+                for r, idn in devices
+                if "FLUKE" in idn.get("manufacturer", "").upper()
+                and (not resource_cal or r == resource_cal)
+            ]
+            osc_candidates = [
+                (r, idn)
+                for r, idn in devices
+                if _identify_brand(idn.get("manufacturer", ""))
+                and (not resource_osc or r == resource_osc)
+            ]
+            if len(cal_candidates) > 1 or len(osc_candidates) > 1:
+                raise click.UsageError(
+                    "检测到多台同类设备，请用 --resource-cal / --resource-osc 指定资源"
+                )
+            cal_device = cal_candidates[0] if cal_candidates else None
+            osc_device = osc_candidates[0] if osc_candidates else None
 
             if not cal_device:
-                console.print("[red]✗[/red] 未检测到 FLUKE 校准仪")
-                return
+                raise click.ClickException("✗ 未检测到 FLUKE 校准仪")
 
             if not osc_device:
-                console.print("[red]✗[/red] 未检测到可识别的示波器")
-                return
+                raise click.ClickException("✗ 未检测到可识别的示波器")
 
             console.print(
                 f"\n[green]✓[/green] 校准仪: [cyan]{cal_device[0]}[/cyan] → {cal_device[1].get('manufacturer', '?')} {cal_device[1].get('model', '?')}"
@@ -403,28 +431,25 @@ def calibrate(
             )
 
             if not cmd_osc or not profile_data:
-                console.print("[red]✗[/red] 自动匹配配置失败")
-                return
+                raise click.UsageError("✗ 自动匹配配置失败")
 
             # 校准仪配置（--calibrator 优先，否则自动加载首个）
             cmd_calibrator, cal_filepath = _load_calibrator_config(calibrators_dir, calibrator)
             if not cmd_calibrator:
-                console.print("[red]✗[/red] 加载校准仪配置失败")
-                return
+                raise click.UsageError("✗ 加载校准仪配置失败")
 
             # 连接校准仪（先连才能查询探头）
             console.print("\n[bold]连接校准仪...[/bold]")
             inst_calibrator, idn_cal = _connect_calibrator(cal_device[0], [])
             if inst_calibrator is None:
-                console.print("[red]✗[/red] 校准仪连接失败")
-                return
+                raise click.ClickException("✗ 校准仪连接失败")
 
             # 探头自动识别（如未通过命令行指定）
-            if not probe:
+            if probe is None:
                 probes = cmd_calibrator.get("probes", {})
                 if probes:
                     probe = _auto_detect_probe(inst_calibrator, probes)
-                if not probe:
+                if probe is None:
                     probe = _select_probe_interactive(cmd_calibrator)
 
             # 打印识别结果，等待用户确认
@@ -437,60 +462,54 @@ def calibrate(
                 probe,
             )
             if not click.confirm("\n确认执行校准?", default=True):
-                console.print("[yellow]已取消[/yellow]")
-                return
+                raise click.Abort()
 
             # 连接示波器（直接使用检测到的资源；socket 型示波器交互输入 IP）
             console.print("\n[bold]连接示波器...[/bold]")
             inst_osc, idn_osc = _connect_oscilloscope(cmd_osc, osc_device[0], socket_osc, [])
             if inst_osc is None:
-                console.print("[red]✗[/red] 示波器连接失败")
-                return
+                raise click.ClickException("✗ 示波器连接失败")
 
         else:
             # ── 手动/交互模式 ──
             cmd_calibrator, cal_filepath = _load_calibrator_config(calibrators_dir, calibrator)
             if not cmd_calibrator:
-                console.print("[red]✗[/red] 加载校准仪配置失败")
-                return
+                raise click.UsageError("✗ 加载校准仪配置失败")
 
-            if not probe:
+            if probe is None:
                 probe = _select_probe_interactive(cmd_calibrator)
 
             cmd_osc, cmd_filepath = _load_commands_config(commands_dir, osc)
             if not cmd_osc:
-                console.print("[red]✗[/red] 加载示波器指令集失败")
-                return
+                raise click.UsageError("✗ 加载示波器指令集失败")
 
             profile_data, profile_filepath = _load_profile_config(profiles_dir, profile)
             if not profile_data:
-                console.print("[red]✗[/red] 加载示波器特征配置失败")
-                return
+                raise click.UsageError("✗ 加载示波器特征配置失败")
 
-            channel = _pick_channel(channel)
+            channel = _pick_channel(channel, profile_data.get("channels", 4))
 
             console.print("\n[bold]连接设备...[/bold]")
             resources = _list_resources_safely()
             inst_calibrator, idn_cal = _connect_calibrator(resource_cal, resources)
             if inst_calibrator is None:
-                console.print("[red]✗[/red] 校准仪连接失败")
-                return
+                raise click.ClickException("✗ 校准仪连接失败")
 
             inst_osc, idn_osc = _connect_oscilloscope(cmd_osc, resource_osc, socket_osc, resources)
             if inst_osc is None:
-                console.print("[red]✗[/red] 示波器连接失败")
-                return
+                raise click.ClickException("✗ 示波器连接失败")
 
-        from osccal.measure.registry import CALIBRATORS_MAP
+        from osccal.measure.all import run_all, run_items
 
+        round_start_errors = 0
         while True:
             # 通道选择
             if channel is None:
-                channel = _select_channel()
+                channel = _select_channel(profile_data.get("channels", 4))
             channel_list = [c.strip() for c in channel.split(",")]
 
             # 项目选择
-            if not items:
+            if items is None:
                 items = _select_items()
             item_list = [i.strip() for i in items.split(",")]
 
@@ -509,54 +528,31 @@ def calibrate(
                 if bd_step is None:
                     bd_step = 5.0
 
-            profile_data["bandwidth"] = int(bandwidth * 1e6)
-            profile_data["bd_step"] = int(bd_step * 1e6)
+            profile_data["bandwidth"] = bandwidth * 1e6
+            profile_data["bd_step"] = bd_step * 1e6
 
-            all_results = {}
-
-            for ch in channel_list:
-                if len(channel_list) > 1:
-                    console.rule(f"[bold green]通道 CH{ch}[/bold green]")
-                    console.print(
-                        f"\n[yellow]请将校准仪探头连接到示波器 CH{ch}，确认接线完毕后按回车继续...[/yellow]"
-                    )
-                    click.prompt("  按回车继续", default="", show_default=False)
-
-                if "all" in item_list:
-                    from osccal.measure.all import run_all
-
-                    ch_results = run_all(
-                        inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile_data, ch, probe
-                    )
-                    for key, val in ch_results.items():
-                        result_key = f"{key}_ch{ch}" if len(channel_list) > 1 else key
-                        all_results[result_key] = val
-                else:
-                    for item in item_list:
-                        CalClass = CALIBRATORS_MAP.get(item)
-                        if not CalClass:
-                            console.print(f"[yellow]⚠[/yellow] 未知校准项目: {item}")
-                            continue
-                        try:
-                            console.rule(f"[bold blue]{item}[/bold blue]")
-                            cal = CalClass(
-                                inst_osc,
-                                inst_calibrator,
-                                cmd_osc,
-                                cmd_calibrator,
-                                profile_data,
-                                ch,
-                                probe,
-                            )
-                            cal.run()
-                            result_key = f"{item}_ch{ch}" if len(channel_list) > 1 else item
-                            all_results[result_key] = cal.get_results()
-                        except Exception as e:
-                            console.print(f"[red]✗[/red] {item} 校准失败: {e}")
-                            result_key = f"{item}_ch{ch}" if len(channel_list) > 1 else item
-                            all_results[result_key] = []
+            errors = validate_selection(
+                cmd_osc,
+                profile_data,
+                cmd_calibrator,
+                channel_list,
+                item_list,
+                probe,
+                bandwidth * 1e6,
+                bd_step * 1e6,
+            )
+            errors.extend(validate_device_identity(cmd_osc, idn_osc, "示波器指令集"))
+            errors.extend(validate_device_identity(profile_data, idn_osc, "示波器 Profile"))
+            errors.extend(validate_device_identity(cmd_calibrator, idn_cal, "校准仪"))
+            if inst_osc is inst_calibrator or (
+                resource_cal and resource_osc and resource_cal.upper() == resource_osc.upper()
+            ):
+                errors.append("示波器和校准仪不能使用同一设备资源")
+            if errors:
+                raise click.UsageError("执行前检查失败：\n" + "\n".join(errors))
 
             metadata = {
+                "timestamp": datetime.now().isoformat(),
                 "channel": ",".join(channel_list),
                 "probe": probe or "",
                 "oscilloscope": idn_osc if isinstance(idn_osc, dict) else {},
@@ -566,18 +562,84 @@ def calibrate(
                 "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
                 "simulated": False,
                 "limits": profile_data.get("calibration_limits", {}),
-                "scpi_errors": scpi_trace.failure_count(),
+                "status": "in_progress",
+                "requested_items": item_list,
+                "item_status": {},
+                "failures": {},
+                "configurations": {
+                    "commands": configuration_snapshot(cmd_osc),
+                    "profile": configuration_snapshot(profile_data),
+                    "calibrator": configuration_snapshot(cmd_calibrator),
+                },
             }
+            recording = CalibrationRecording(metadata, round_start_errors)
 
-            save_calibration_data(all_results, metadata)
+            try:
+                recording.checkpoint()
+                for ch in channel_list:
+                    record_result = partial(
+                        recording.record_result, channel=ch, multichannel=len(channel_list) > 1
+                    )
+                    if len(channel_list) > 1:
+                        console.rule(f"[bold green]通道 CH{ch}[/bold green]")
+                        console.print(
+                            f"\n[yellow]请将校准仪探头连接到示波器 CH{ch}，确认接线完毕后按回车继续...[/yellow]"
+                        )
+                        click.prompt("  按回车继续", default="", show_default=False)
 
-            console.print("\n[bold green]✓ 校准完成！[/bold green]")
+                    if "all" in item_list:
+                        run_all(
+                            inst_osc,
+                            inst_calibrator,
+                            cmd_osc,
+                            cmd_calibrator,
+                            profile_data,
+                            ch,
+                            probe,
+                            on_result=record_result,
+                        )
+                    else:
+                        run_items(
+                            inst_osc,
+                            inst_calibrator,
+                            cmd_osc,
+                            cmd_calibrator,
+                            profile_data,
+                            ch,
+                            probe,
+                            item_list,
+                            on_result=record_result,
+                        )
+                metadata["status"] = (
+                    "completed_with_errors" if metadata["failures"] else "completed"
+                )
+                recording.checkpoint()
+            except BaseException as exc:
+                metadata["status"] = (
+                    "interrupted" if isinstance(exc, (KeyboardInterrupt, click.Abort)) else "failed"
+                )
+                metadata["error"] = {
+                    "type": type(exc).__name__,
+                    "message": str(exc) or "校准被中断",
+                }
+                if not recording.save_failed:
+                    recording.checkpoint()
+                raise
 
+            if metadata["failures"]:
+                session_failed = True
+                console.print("\n[yellow]校准完成，部分项目失败；已保存部分结果与失败原因[/yellow]")
+            else:
+                console.print("\n[bold green]✓ 校准完成！[/bold green]")
+
+            round_start_errors = scpi_trace.failure_count()
             if not click.confirm("\n是否继续校准？", default=False):
                 break
             # 重置参数，下一轮重新选择
             channel = None
             items = None
+        if session_failed:
+            raise click.ClickException("本次会话有项目执行失败，详情见已保存记录")
     finally:
         close_all_connections()
         if scpi_trace.failure_count() > 0:
@@ -732,6 +794,8 @@ def device_info(resource, socket):
 
 
 def _display_calibration_data(data: dict):
+    from osccal.core.storage import STATUS_LABELS
+
     metadata = data.get("metadata", {})
     results = data.get("results", {})
 
@@ -741,6 +805,10 @@ def _display_calibration_data(data: dict):
     info_table.add_column("内容", style="white")
 
     info_table.add_row("校准时间", metadata.get("timestamp", ""))
+    info_table.add_row("校准状态", STATUS_LABELS.get(metadata.get("status"), "未记录"))
+    info_table.add_row("SCPI 失败次数", str(metadata.get("scpi_errors", "未记录")))
+    for name, failure in metadata.get("failures", {}).items():
+        info_table.add_row(f"失败项目 {name}", failure.get("message", ""))
     info_table.add_row("通道", f"CH{metadata.get('channel', '')}")
     info_table.add_row("探头", metadata.get("probe", ""))
 
@@ -786,13 +854,20 @@ def _display_calibration_data(data: dict):
             if error_col is not None and error_col < len(str_values):
                 try:
                     error_val = float(str_values[error_col])
+                    str_values[error_col] = f"{error_val:.2f}"
                     if error_val < lower or error_val > upper:
                         str_values[error_col] = f"[red bold]{str_values[error_col]}[/red bold]"
                 except (ValueError, IndexError):
                     pass
 
             min_col = config.get("min_col")
-            if min_col is not None and min_col < len(str_values) and min_mhz is not None:
+            is_bound = isinstance(row, dict) and row.get("status", "").startswith("下界")
+            if (
+                min_col is not None
+                and min_col < len(str_values)
+                and min_mhz is not None
+                and not is_bound
+            ):
                 try:
                     if float(str_values[min_col]) < min_mhz:
                         str_values[min_col] = f"[red bold]{str_values[min_col]}[/red bold]"

@@ -2,11 +2,12 @@ import time
 
 from rich.progress import Progress
 
-from osccal.core.utils import format_with_fixed_precision
-from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision, relative_error
+from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 
 class DeltaTimeCalibrator(BaseCalibrator):
+    @ensure_output_off
     def run(self):
         self.print_title("校准Δt(时间)")
         self.init_devices()
@@ -49,9 +50,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
                 std_value = val * (horizontal_div - 2)
                 measured = measured_raw * (horizontal_div - 2)
 
-                std_fmt = float(format_with_fixed_precision(std_value, 4))
-                meas_fmt = float(format_with_fixed_precision(measured, 4))
-                error = round(100 * (meas_fmt - std_fmt) / std_fmt, 2) if std_fmt != 0 else 0.0
+                error = relative_error(measured, std_value)
 
                 row_data = [
                     i + 1,
@@ -59,9 +58,9 @@ class DeltaTimeCalibrator(BaseCalibrator):
                     format_with_fixed_precision(val, 4),
                     format_with_fixed_precision(std_value, 4),
                     format_with_fixed_precision(measured, 4),
-                    error,
+                    round(error, 2),
                 ]
-                self.add_result_row(table, row_data, limit_range, check_col=5)
+                self.add_result_row(table, row_data, limit_range, check_col=5, check_value=error)
 
                 self.results.append(
                     {
@@ -77,4 +76,3 @@ class DeltaTimeCalibrator(BaseCalibrator):
                 progress.update(task, advance=1)
 
         console.print(table)
-        self._write_calibrator("set_output", "OFF")

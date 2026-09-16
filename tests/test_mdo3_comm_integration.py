@@ -6,7 +6,7 @@
 - read_measurement（merge 模式）下发测量源/类型后查询 VALue?，并按 return_value_index=1
   正确解析 ":MEASUREMENT:IMMED:VALUE <val>" 响应
 - 各通道（1-4）、各测量类型（AMPlitude/PERIod/MAXimum/MINimum/RISe 等）均工作正常
-- NaN 响应（9.91E+37）可被解析为浮点数（不抛异常）
+- 无效响应（包括 9.91E+37）抛出 ScpiError，禁止参与校准计算
 """
 
 import time
@@ -15,6 +15,7 @@ import pytest
 
 from osccal.core import scpi_trace
 from osccal.core.comm import (
+    ScpiError,
     read_measurement,
     scpi_query,
     scpi_setup_measurement,
@@ -101,10 +102,10 @@ class TestReadMeasurement:
         assert val == pytest.approx(5.678e-3)
 
     def test_merge_read_nan_response(self, mdo3_commands, fake_osc):
-        """超大数值（>1e30，如 ZDS 的 Invalid 标记）应返回 0.0 而不会进入误差计算。"""
+        """超大数值（>1e30，如 ZDS 的 Invalid 标记）必须抛异常，禁止进入误差计算。"""
         fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"}
-        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
-        assert val == 0.0
+        with pytest.raises(ScpiError):
+            read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
 
     def test_merge_read_negative_value(self, mdo3_commands, fake_osc):
         fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE -1.5E+0"}
@@ -119,23 +120,23 @@ class TestReadMeasurement:
             raise ValueError("模拟设置失败")
 
         monkeypatch.setattr(comm, "scpi_setup_measurement", boom)
-        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
-        assert val == 0.0
+        with pytest.raises(ScpiError):
+            read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
 
     def test_parse_failure_records_failure(self, mdo3_commands, fake_osc):
         """P1 回归：解析失败必须计入 scpi_errors，而非静默返回 0.0。"""
         scpi_trace.reset()
         fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": "not-a-number"}
-        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
-        assert val == 0.0
+        with pytest.raises(ScpiError):
+            read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert scpi_trace.failure_count() >= 1
 
     def test_invalid_measurement_records_failure(self, mdo3_commands, fake_osc):
         """P1 回归：Invalid（>1e30）同样应计入失败。"""
         scpi_trace.reset()
         fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"}
-        val = read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
-        assert val == 0.0
+        with pytest.raises(ScpiError):
+            read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert scpi_trace.failure_count() >= 1
 
     @pytest.mark.parametrize("channel", ["1", "2", "3", "4"])
@@ -220,13 +221,13 @@ class TestImpedanceSetup:
 
 
 class FakeSocket:
-    """模拟 socket：send 记录指令，recv 按脚本返回数据或抛异常。"""
+    """模拟 socket：sendall 记录指令，recv 按脚本返回数据或抛异常。"""
 
     def __init__(self, responses):
         self.responses = list(responses)
         self.sent: list[bytes] = []
 
-    def send(self, data: bytes):
+    def sendall(self, data: bytes):
         self.sent.append(data)
 
     def recv(self, n: int) -> bytes:
@@ -254,9 +255,8 @@ class TestSocketRetry:
         scpi_trace.reset()
         sock = FakeSocket([TimeoutError("超时1"), TimeoutError("超时2")])
 
-        res = scpi_query(sock, "X?", "socket")
-
-        assert res == ""
+        with pytest.raises(ScpiError):
+            scpi_query(sock, "X?", "socket")
         assert scpi_trace.failure_count() == 1
 
     def test_pyvisa_timeout_message_retried(self, monkeypatch):

@@ -1,4 +1,5 @@
 import time
+from functools import wraps
 
 from rich.console import Console
 from rich.panel import Panel
@@ -8,6 +9,27 @@ from osccal.core.comm import read_measurement, scpi_query, scpi_setup_measuremen
 from osccal.core.command import assemble_cmd
 
 console = Console()
+
+
+class OutputShutdownError(RuntimeError):
+    """无法确认关闭输出，必须终止会话。"""
+
+
+def ensure_output_off(run):
+    """正常结束、异常或用户中断时，均在释放连接前尝试关闭输出。"""
+
+    @wraps(run)
+    def guarded(self, *args, **kwargs):
+        try:
+            return run(self, *args, **kwargs)
+        finally:
+            try:
+                self._write_calibrator("set_output", "OFF")
+            except Exception as exc:
+                console.print("[red]✗ 校准仪关闭输出失败，请检查设备输出状态；会话已终止[/red]")
+                raise OutputShutdownError("校准仪关闭输出失败") from exc
+
+    return guarded
 
 
 class BaseCalibrator:
@@ -176,12 +198,12 @@ class BaseCalibrator:
             table.add_column(col["name"], justify=justify, style=style)
         return table
 
-    def add_result_row(self, table, row_data, limits=None, check_col=None):
+    def add_result_row(self, table, row_data, limits=None, check_col=None, check_value=None):
         styled_row = list(row_data)
         if limits and check_col is not None:
-            val = row_data[check_col]
+            val = row_data[check_col] if check_value is None else check_value
             if isinstance(val, (int, float)) and (val < limits[0] or val > limits[1]):
-                styled_row[check_col] = f"[red]{val}[/red]"
+                styled_row[check_col] = f"[red]{row_data[check_col]}[/red]"
         table.add_row(*[str(v) for v in styled_row])
 
     def run(self):

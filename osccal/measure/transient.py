@@ -1,10 +1,11 @@
 import time
 
 from osccal.core.utils import format_with_fixed_precision
-from osccal.measure.base import BaseCalibrator, console
+from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 
 class TransientCalibrator(BaseCalibrator):
+    @ensure_output_off
     def run(self):
         self.print_title("上升时间及过冲")
         self.init_devices()
@@ -99,4 +100,3 @@ class TransientCalibrator(BaseCalibrator):
         )
 
         console.print(table)
-        self._write_calibrator("set_output", "OFF")

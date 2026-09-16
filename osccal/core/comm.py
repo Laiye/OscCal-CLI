@@ -1,3 +1,4 @@
+import math
 import time
 
 from rich.console import Console
@@ -6,6 +7,10 @@ from osccal.core import scpi_trace
 from osccal.core.command import assemble_cmd
 
 console = Console()
+
+
+class ScpiError(RuntimeError):
+    """通信或测量失败，禁止将失败响应作为校准数值使用。"""
 
 
 def _socket_read_response(sock, max_bytes: int = 65536) -> str:
@@ -32,16 +37,16 @@ def _is_timeout(exc: BaseException) -> bool:
 
 def _retry_query_or_write(inst, cmd: str, comm_type: str, is_query: bool) -> str:
     action = "查询" if is_query else "写入"
+    if not cmd or comm_type not in {"pyvisa", "socket"}:
+        scpi_trace.record_failure()
+        raise ScpiError(f"SCPI 指令为空或通信类型无效: {comm_type}")
     for attempt in range(2):
         try:
             if comm_type == "pyvisa":
                 result = inst.query(cmd) if is_query else (inst.write(cmd) or "")
-            elif comm_type == "socket":
-                inst.send(cmd.encode() + b"\n")
-                result = _socket_read_response(inst) if is_query else ""
             else:
-                console.print(f"[red]✗[/red] 不支持的通信类型: {comm_type}")
-                return ""
+                inst.sendall(cmd.encode() + b"\n")
+                result = _socket_read_response(inst) if is_query else ""
             scpi_trace.log_entry("Q" if is_query else "W", cmd, str(result))
             return result
         except Exception as e:
@@ -52,9 +57,10 @@ def _retry_query_or_write(inst, cmd: str, comm_type: str, is_query: bool) -> str
                 console.print(f"[red]✗[/red] SCPI {action}超时 ({cmd})")
             else:
                 console.print(f"[red]✗[/red] SCPI {action}失败 ({cmd}): {e}")
-        scpi_trace.record_failure()
-        scpi_trace.log_entry("Q" if is_query else "W", cmd, "ERROR")
-    return ""
+            scpi_trace.record_failure()
+            scpi_trace.log_entry("Q" if is_query else "W", cmd, "ERROR")
+            raise ScpiError(f"SCPI {action}失败: {cmd}") from e
+    raise AssertionError("通信重试未返回结果")
 
 
 def scpi_query(inst, cmd: str, comm_type: str = "pyvisa") -> str:
@@ -177,19 +183,16 @@ def read_measurement(
 
         measured = float(value)
         # ZDS 系列返回 3.40282e+38 表示 Invalid
-        if measured > 1e30:
-            scpi_trace.record_failure()
-            console.print(
-                f"[yellow]⚠[/yellow] 测量值异常 ({measured:.4g})，"
-                f"可能是示波器不支持此测量项或信号条件不满足"
-            )
-            return 0.0
+        if not math.isfinite(measured) or abs(measured) > 1e30:
+            raise ValueError(f"测量值无效: {value}")
         return measured
+    except ScpiError:
+        raise
     except (ValueError, IndexError) as e:
         scpi_trace.record_failure()
         console.print(f"[red]✗[/red] 测量值解析失败: {e} (原始响应: '{res}')")
-        return 0.0
+        raise ScpiError(f"测量值解析失败，原始响应: {res!r}") from e
     except Exception as e:
         scpi_trace.record_failure()
         console.print(f"[red]✗[/red] 读取测量值失败: {e}")
-        return 0.0
+        raise ScpiError("读取测量值失败") from e

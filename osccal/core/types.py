@@ -69,8 +69,8 @@ class ProfileConfig(TypedDict, total=False):
     init_time: float
     calibration_limits: dict[str, CalibrationLimits]
     points: PointsConfig
-    bandwidth: int
-    bd_step: int
+    bandwidth: float
+    bd_step: float
     bd_scan: str
     skip_vertical_adjust: bool
 

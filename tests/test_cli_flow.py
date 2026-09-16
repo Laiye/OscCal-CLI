@@ -4,6 +4,7 @@
 → 校准执行 → 数据保存 → 连接释放，以及 --log-scpi 的 SCPI 日志输出。
 """
 
+import copy
 import sys
 import time
 import types
@@ -55,10 +56,12 @@ def fake_connections(monkeypatch):
     import osccal.cli as cli_mod
 
     def fake_connect_visa(resource):
-        idn = "TEKTRONIX,MDO34,SIM001,v1.0"
+        is_cal = "19" in resource
+        mfr, model = ("FLUKE", "9500B") if is_cal else ("TEKTRONIX", "MDO34")
+        idn = f"{mfr},{model},SIM001,v1.0"
         return FakeInst(idn), {
-            "manufacturer": "TEKTRONIX",
-            "model": "MDO34",
+            "manufacturer": mfr,
+            "model": model,
             "serial": "SIM001",
             "firmware": "v1.0",
         }
@@ -75,9 +78,9 @@ def no_save(monkeypatch):
     """拦截数据保存，避免测试写入 data/ 目录。"""
     saved: dict = {}
 
-    def fake_save(results, metadata):
-        saved["results"] = results
-        saved["metadata"] = metadata
+    def fake_save(results, metadata, *, filepath=None):
+        saved["results"] = copy.deepcopy(results)
+        saved["metadata"] = copy.deepcopy(metadata)
         return ""
 
     import osccal.core.storage as storage_mod
@@ -89,8 +92,8 @@ def no_save(monkeypatch):
 def test_calibrate_manual_flow(fake_connections, no_sleep, no_save):
     """手动模式：配置选择 → 连接 → 幅度校准 → 保存 → 退出。"""
     runner = CliRunner()
-    # 输入: 探头(0) 指令集(0) 特征(0) 通道(0) 项目(1=amp) 校准仪资源(0) 示波器资源(1) 是否继续(n)
-    result = runner.invoke(cli, ["calibrate", "--log-scpi"], input="0\n0\n0\n0\n1\n0\n1\nn\n")
+    # 输入: 探头、MDO3 指令集、MDO34 特征、通道、校准仪、示波器、幅度项目、退出。
+    result = runner.invoke(cli, ["calibrate", "--log-scpi"], input="0\n3\n4\n0\n0\n1\n1\nn\n")
     assert result.exit_code == 0, result.output
     assert "校准完成" in result.output
     assert "amp" in no_save["results"], "应保存 amp 校准结果"
@@ -219,7 +222,12 @@ def test_calibrate_failure_counted(fake_connections, no_sleep, no_save, monkeypa
             raise ConnectionError("模拟通信故障")
 
         inst.query = bad_query
-        return inst, {"manufacturer": "TEKTRONIX", "model": "MDO34", "serial": "S", "firmware": "v"}
+        return inst, {
+            "manufacturer": "FLUKE" if "19" in resource else "TEKTRONIX",
+            "model": "9500B" if "19" in resource else "MDO34",
+            "serial": "S",
+            "firmware": "v",
+        }
 
     monkeypatch.setattr(cli_mod, "connect_visa", broken_connect_visa)
 
@@ -247,6 +255,336 @@ def test_calibrate_failure_counted(fake_connections, no_sleep, no_save, monkeypa
         ],
         input="n\n",
     )
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert scpi_trace.failure_count() > 0, "通信失败应被统计"
     assert no_save["metadata"]["scpi_errors"] > 0, "元数据应记录 scpi_errors"
+
+
+@pytest.mark.parametrize("items", ["amp", "all"])
+def test_interrupt_turns_output_off_before_close(
+    fake_connections, no_sleep, no_save, monkeypatch, items
+):
+    """单项目和全项目中断后都应先关闭输出，再释放连接。"""
+    from osccal.measure.amp import AmpCalibrator
+
+    events = []
+
+    class RecordingInst(FakeInst):
+        def write(self, cmd):
+            events.append(cmd)
+            return super().write(cmd)
+
+    monkeypatch.setattr(
+        fake_connections,
+        "connect_visa",
+        lambda resource: (
+            RecordingInst(),
+            {
+                "manufacturer": "FLUKE" if "19" in resource else "TEKTRONIX",
+                "model": "9500B" if "19" in resource else "MDO34",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        fake_connections, "close_all_connections", lambda: events.append("关闭连接")
+    )
+
+    def interrupt(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(AmpCalibrator, "_read_meas", interrupt)
+    result = CliRunner().invoke(
+        cli,
+        [
+            "calibrate",
+            "--osc",
+            "commands/tektronix_mdo3.json",
+            "--profile",
+            "profiles/tektronix_mdo34.json",
+            "--calibrator",
+            "calibrators/fluke_9500b.json",
+            "--probe",
+            "9560",
+            "--channel",
+            "1",
+            "--items",
+            items,
+            "--bandwidth",
+            "100",
+            "--bd-step",
+            "20",
+            "--resource-cal",
+            "GPIB0::19::INSTR",
+            "--resource-osc",
+            "GPIB0::10::INSTR",
+        ],
+    )
+    assert result.exit_code == 130
+    assert any("ON" in event and "OUTP" in event.upper() for event in events)
+    assert "OFF" in events[-2] and "OUTP" in events[-2].upper()
+    assert events[-1] == "关闭连接"
+    assert no_save["metadata"]["status"] == "interrupted"
+    assert no_save["metadata"]["item_status"]["amp"] == "interrupted"
+
+
+def _recording_args(items, channel="1"):
+    return [
+        "calibrate",
+        "--osc",
+        "commands/tektronix_mdo3.json",
+        "--profile",
+        "profiles/tektronix_mdo34.json",
+        "--calibrator",
+        "calibrators/fluke_9500b.json",
+        "--probe",
+        "9560",
+        "--channel",
+        channel,
+        "--items",
+        items,
+        "--bandwidth",
+        "100",
+        "--bd-step",
+        "20",
+        "--resource-cal",
+        "GPIB0::19::INSTR",
+        "--resource-osc",
+        "GPIB0::10::INSTR",
+    ]
+
+
+@pytest.mark.parametrize("items", ["amp,dc_gain", "all"])
+@pytest.mark.parametrize("termination", ["interrupt", "abort", "shutdown"])
+def test_real_checkpoint_survives_later_interrupt(
+    fake_connections, no_sleep, monkeypatch, tmp_path, items, termination
+):
+    """必须实际读写 JSON，不能只验证传给保存函数的参数。"""
+    import click
+
+    from osccal.core import scpi_trace, storage
+    from osccal.measure.amp import AmpCalibrator
+    from osccal.measure.base import OutputShutdownError
+    from osccal.measure.dc_gain import DcGainCalibrator
+
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    error_class = {
+        "interrupt": KeyboardInterrupt,
+        "abort": click.Abort,
+        "shutdown": OutputShutdownError,
+    }[termination]
+    expected_status = "failed" if termination == "shutdown" else "interrupted"
+
+    def complete(self):
+        self.results = [{"index": 1, "measured": 0.6}]
+
+    def interrupt(self):
+        stage = storage.load_calibration_data(storage.get_latest_calibration_file())
+        assert stage["results"]["amp"][0]["measured"] == 0.6
+        assert stage["metadata"]["status"] == "in_progress"
+        self.results = [{"index": 1, "error": 0.1}]
+        scpi_trace.record_failure()
+        raise error_class("模拟终止")
+
+    monkeypatch.setattr(AmpCalibrator, "run", complete)
+    monkeypatch.setattr(DcGainCalibrator, "run", interrupt)
+    result = CliRunner().invoke(cli, _recording_args(items))
+    assert result.exit_code == (1 if termination == "shutdown" else 130)
+    assert len(storage.list_calibration_files()) == 1
+    saved = storage.load_calibration_data(storage.get_latest_calibration_file())
+    assert saved["results"]["amp"][0]["measured"] == 0.6
+    assert saved["results"]["dc_gain"] == [{"index": 1, "error": 0.1}]
+    metadata = saved["metadata"]
+    assert metadata["status"] == expected_status
+    assert metadata["scpi_errors"] == 1
+    assert metadata["item_status"] == {"amp": "completed", "dc_gain": expected_status}
+    assert metadata["failures"]["dc_gain"]["type"] == error_class.__name__
+    assert metadata["failures"]["dc_gain"]["message"] == "模拟终止"
+    snapshot = metadata["configurations"]["profile"]
+    assert snapshot == storage.configuration_snapshot(snapshot["data"])
+    assert snapshot["data"]["bandwidth"] == 100e6
+
+
+def test_multi_channel_checkpoint_survives_interrupt(
+    fake_connections, no_sleep, monkeypatch, tmp_path
+):
+    from osccal.core import storage
+    from osccal.measure.amp import AmpCalibrator
+
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+
+    def run(self):
+        if self.channel == "2":
+            raise KeyboardInterrupt
+        self.results = [{"channel": self.channel, "measured": 1}]
+
+    monkeypatch.setattr(AmpCalibrator, "run", run)
+    result = CliRunner().invoke(cli, _recording_args("amp", "1,2"), input="\n\n")
+    assert result.exit_code != 0
+    saved = storage.load_calibration_data(storage.get_latest_calibration_file())
+    assert saved["results"]["amp_ch1"] == [{"channel": "1", "measured": 1}]
+    assert saved["metadata"]["item_status"]["amp_ch2"] == "interrupted"
+
+
+def test_disk_failure_stops_before_next_project(fake_connections, no_sleep, monkeypatch, tmp_path):
+    from osccal.core import storage
+    from osccal.measure.amp import AmpCalibrator
+    from osccal.measure.dc_gain import DcGainCalibrator
+
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    original_replace = storage.os.replace
+    replacements = 0
+
+    def fail_second_replace(source, target):
+        nonlocal replacements
+        replacements += 1
+        if replacements > 1:
+            raise OSError("模拟磁盘写入失败")
+        original_replace(source, target)
+
+    monkeypatch.setattr(storage.os, "replace", fail_second_replace)
+    monkeypatch.setattr(AmpCalibrator, "run", lambda self: None)
+    next_started = []
+    monkeypatch.setattr(DcGainCalibrator, "run", lambda self: next_started.append(True))
+    result = CliRunner().invoke(cli, _recording_args("amp,dc_gain"))
+    assert result.exit_code == 1
+    assert "模拟磁盘写入失败" in result.output
+    assert not next_started
+    assert replacements == 2
+    saved = storage.load_calibration_data(storage.get_latest_calibration_file())
+    assert saved["metadata"]["status"] == "in_progress"
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+def test_repeated_round_has_own_file_and_error_count(
+    fake_connections, no_sleep, monkeypatch, tmp_path
+):
+    from osccal.core import scpi_trace, storage
+    from osccal.measure.amp import AmpCalibrator
+
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    calls = 0
+
+    def run(self):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            scpi_trace.record_failure()
+            raise ValueError("首轮失败")
+        self.results = [{"measured": 1}]
+
+    monkeypatch.setattr(AmpCalibrator, "run", run)
+    result = CliRunner().invoke(cli, _recording_args("amp"), input="y\n0\n1\nn\n")
+    assert result.exit_code == 1, result.output
+    files = storage.list_calibration_files()
+    assert len(files) == 2
+    rounds = [storage.load_calibration_data(str(tmp_path / path))["metadata"] for path in files]
+    assert rounds[0]["status"] == "completed"
+    assert rounds[0]["scpi_errors"] == 0
+    assert rounds[1]["status"] == "completed_with_errors"
+    assert rounds[1]["scpi_errors"] == 1
+    assert rounds[1]["failures"]["amp"]["message"] == "首轮失败"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--channel", "0"],
+        ["--channel", "5"],
+        ["--channel", "abc"],
+        ["--channel", "1,1"],
+        ["--channel", "01,1"],
+        ["--channel", ""],
+        ["--items", "unknown"],
+        ["--items", "amp,amp"],
+        ["--items", "all,amp"],
+        ["--items", ""],
+        ["--probe", "unknown"],
+        ["--probe", ""],
+        ["--bandwidth", "nan"],
+        ["--bd-step", "inf"],
+        ["--probe", "9550"],
+        ["--items", "bandwidth", "--probe", "9530", "--bandwidth", "700"],
+        ["--items", "bandwidth", "--bd-step", "0"],
+        ["--items", "bandwidth", "--bd-step", "nan"],
+        ["--profile", "profiles/tektronix_mdo32.json"],
+        ["--resource-osc", "GPIB0::19::INSTR"],
+        ["--socket-osc", "invalid"],
+    ],
+)
+def test_invalid_plan_sends_no_setup_commands(
+    fake_connections, no_sleep, no_save, monkeypatch, options
+):
+    instruments = []
+    original_connect = fake_connections.connect_visa
+
+    def connect(resource):
+        inst, idn = original_connect(resource)
+        instruments.append(inst)
+        return inst, idn
+
+    monkeypatch.setattr(fake_connections, "connect_visa", connect)
+    result = CliRunner().invoke(cli, _recording_args("amp") + options)
+    assert result.exit_code == 2, result.output
+    assert all(not inst.written for inst in instruments)
+    assert not no_save
+
+
+def test_mdo32_channel_limit_applies_before_setup(fake_connections, no_sleep, no_save, monkeypatch):
+    original_connect = fake_connections.connect_visa
+    instruments = []
+
+    def connect(resource):
+        inst, idn = original_connect(resource)
+        if "19" not in resource:
+            idn["model"] = "MDO32"
+        instruments.append(inst)
+        return inst, idn
+
+    monkeypatch.setattr(fake_connections, "connect_visa", connect)
+    result = CliRunner().invoke(
+        cli, _recording_args("amp", "3") + ["--profile", "profiles/tektronix_mdo32.json"]
+    )
+    assert result.exit_code == 2
+    assert "1 至 2" in result.output
+    assert all(not inst.written for inst in instruments)
+
+
+def test_selection_menus_bound_indices_and_channels():
+    import click
+
+    from osccal.cli import _select_channel, _select_index
+
+    @click.command()
+    def select():
+        click.echo(_select_index(2))
+        click.echo(_select_channel(2))
+
+    result = CliRunner().invoke(select, input="-1\n99\n1\n2\n")
+    assert result.exit_code == 0
+    assert "CH3" not in result.output and "CH4" not in result.output
+    assert result.output.rstrip().endswith("1,2")
+
+
+def test_connection_failure_exit_code(fake_connections, no_sleep, no_save, monkeypatch):
+    monkeypatch.setattr(fake_connections, "connect_visa", lambda _: (None, {}))
+    result = CliRunner().invoke(cli, _recording_args("amp"))
+    assert result.exit_code == 1
+    assert not no_save
+
+
+def test_auto_multiple_devices_requires_selection(fake_connections, no_sleep, no_save, monkeypatch):
+    class RM:
+        def list_resources(self):
+            return ["GPIB0::19::INSTR", "GPIB0::10::INSTR", "GPIB0::11::INSTR"]
+
+        def open_resource(self, resource):
+            return FakeInst(idn="FLUKE,9500B,S,1" if "19" in resource else "TEKTRONIX,MDO34,S,1")
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "pyvisa", types.SimpleNamespace(ResourceManager=RM))
+    result = CliRunner().invoke(cli, ["calibrate", "--auto"])
+    assert result.exit_code == 2
+    assert "多台" in result.output
+    assert not no_save

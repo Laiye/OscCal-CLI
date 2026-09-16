@@ -8,6 +8,9 @@ import os
 from rich.console import Console
 from rich.table import Table
 
+from osccal.core.config import load_commands, load_profile
+from osccal.core.config_validation import manufacturer_matches
+
 console = Console()
 
 # ── 品牌 → 文件名前缀映射（回退用） ─────────────────────────────────────
@@ -42,13 +45,18 @@ def _fuzzy_match_series(
     返回最佳匹配的 key（文件名），无匹配则返回 None。
     """
     model_upper = model.strip().upper()
+    if not model_upper:
+        return None
 
     best_key: str | None = None
     best_score: int = 0
+    tied = False
 
     for key, series_raw in candidates.items():
         series_list = series_raw if isinstance(series_raw, list) else [series_raw]
         for series in series_list:
+            if not isinstance(series, str) or not series.strip():
+                continue
             series_upper = series.strip().upper()
             score = 0
 
@@ -76,15 +84,19 @@ def _fuzzy_match_series(
             if score > best_score:
                 best_score = score
                 best_key = key
+                tied = False
+            elif score == best_score and key != best_key:
+                tied = True
 
-    return best_key if best_score >= 50 else None
+    return best_key if best_score >= 50 and not tied else None
 
 
 def _load_json_silently(filepath: str) -> dict:
     """加载 JSON，失败返回空 dict。"""
     try:
         with open(filepath, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
@@ -95,10 +107,14 @@ def _exact_model_match(
 ) -> str | None:
     """在候选项的 models 列表中精确匹配型号，返回文件名。"""
     model_upper = model.strip().upper()
-    for fname, models in candidates.items():
-        if any(m.strip().upper() == model_upper for m in models):
-            return fname
-    return None
+    if not model_upper:
+        return None
+    matches = [
+        fname
+        for fname, models in candidates.items()
+        if any(isinstance(m, str) and m.strip().upper() == model_upper for m in models)
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _filter_by_manufacturer(
@@ -113,6 +129,8 @@ def _filter_by_manufacturer(
     candidates: dict[str, dict] = {}
     brand = _identify_brand(idn_manufacturer)
     idn_mfr_upper = idn_manufacturer.strip().upper()
+    if not idn_mfr_upper:
+        return candidates
 
     if not os.path.isdir(directory):
         return candidates
@@ -124,8 +142,9 @@ def _filter_by_manufacturer(
         data = _load_json_silently(fpath)
 
         # 优先用 manufacturer 字段匹配（双方都非空才判定，避免空厂商匹配全部文件）
-        file_mfr = data.get("manufacturer", "").strip().upper()
-        if file_mfr and idn_mfr_upper and (file_mfr in idn_mfr_upper or idn_mfr_upper in file_mfr):
+        raw_mfr = data.get("manufacturer", "")
+        file_mfr = raw_mfr.strip().upper() if isinstance(raw_mfr, str) else ""
+        if manufacturer_matches(file_mfr, idn_mfr_upper):
             candidates[fname] = data
 
     # manufacturer 字段没匹配到，回退到文件名前缀
@@ -136,18 +155,8 @@ def _filter_by_manufacturer(
             if fname.startswith(brand):
                 fpath = os.path.join(directory, fname)
                 data = _load_json_silently(fpath)
-                if data.get("series"):
+                if data.get("series") and not data.get("manufacturer"):
                     candidates[fname] = data
-
-    # 再回退：全部文件
-    if not candidates:
-        for fname in sorted(os.listdir(directory)):
-            if not fname.endswith(".json"):
-                continue
-            fpath = os.path.join(directory, fname)
-            data = _load_json_silently(fpath)
-            if data.get("series"):
-                candidates[fname] = data
 
     return candidates
 
@@ -169,6 +178,14 @@ def detect_configs(
     """
     model = oscilloscope_idn.get("model", "")
     manufacturer = oscilloscope_idn.get("manufacturer", "")
+    if (
+        not isinstance(model, str)
+        or not model.strip()
+        or not isinstance(manufacturer, str)
+        or not manufacturer.strip()
+    ):
+        console.print("[red]✗ 自动匹配需要非空厂商和型号[/red]")
+        return None, None, None, None
 
     # ── 指令集匹配 ──
     cmd_candidates = _filter_by_manufacturer(commands_dir, manufacturer)
@@ -181,6 +198,15 @@ def detect_configs(
             cmd_models[fname] = models
 
     matched_cmd = _exact_model_match(model, cmd_models)
+    if (
+        sum(
+            any(isinstance(m, str) and m.strip().upper() == model.strip().upper() for m in models)
+            for models in cmd_models.values()
+        )
+        > 1
+    ):
+        console.print("[red]✗ 多个指令集精确匹配同一型号，请在手动模式显式指定配置[/red]")
+        return None, None, None, None
 
     # 优先级 2：series 模糊匹配（回退）
     if not matched_cmd:
@@ -189,7 +215,7 @@ def detect_configs(
             series = data.get("series", [])
             if isinstance(series, str):
                 series = [series]
-            if series:
+            if isinstance(series, list) and series:
                 cmd_series[fname] = series
         matched_cmd = _fuzzy_match_series(model, cmd_series)
 
@@ -207,13 +233,22 @@ def detect_configs(
             profile_models[fname] = models
 
     matched_profile = _exact_model_match(model, profile_models)
+    if (
+        sum(
+            any(isinstance(m, str) and m.strip().upper() == model.strip().upper() for m in models)
+            for models in profile_models.values()
+        )
+        > 1
+    ):
+        console.print("[red]✗ 多个 Profile 精确匹配同一型号，请在手动模式显式指定配置[/red]")
+        return None, None, None, None
 
     # 优先级 2：series 模糊匹配（回退）
     if not matched_profile:
         profile_series: dict[str, str] = {}
         for fname, data in profile_candidates.items():
             series = data.get("series", "")
-            if series:
+            if isinstance(series, str) and series:
                 profile_series[fname] = series
         matched_profile = _fuzzy_match_series(model, profile_series)
 
@@ -227,10 +262,10 @@ def detect_configs(
 
     if matched_cmd:
         cmd_filepath = os.path.join(commands_dir, matched_cmd)
-        cmd_osc = _load_json_silently(cmd_filepath)
+        cmd_osc = load_commands(cmd_filepath)
     if matched_profile:
         profile_filepath = os.path.join(profiles_dir, matched_profile)
-        profile_data = _load_json_silently(profile_filepath)
+        profile_data = load_profile(profile_filepath)
 
     return cmd_osc, profile_data, cmd_filepath, profile_filepath
 

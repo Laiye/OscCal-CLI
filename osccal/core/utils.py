@@ -30,3 +30,13 @@ def format_with_fixed_precision(number, precision):
     order = math.floor(math.log10(abs(number)))
     decimals = max(0, precision - 1 - order)
     return f"{number:.{decimals}f}"
+
+
+def relative_error(measured: float, standard: float) -> float:
+    """按原始精度计算相对误差，禁止无效值进入判定与存储。"""
+    if not math.isfinite(measured) or not math.isfinite(standard) or standard == 0:
+        raise ValueError("测量值和标准值必须有限，标准值不能为零")
+    error = 100 * (measured - standard) / standard
+    if not math.isfinite(error):
+        raise ValueError("相对误差计算结果非有限数值")
+    return error

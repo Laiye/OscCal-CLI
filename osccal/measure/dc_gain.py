@@ -1,9 +1,10 @@
+import math
 import time
 
 from rich.progress import Progress
 
 from osccal.core.utils import format_with_fixed_precision
-from osccal.measure.base import BaseCalibrator, console
+from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 
 class DcGainCalibrator(BaseCalibrator):
@@ -36,14 +37,16 @@ class DcGainCalibrator(BaseCalibrator):
 
         self._write_osc("set_number_of_acquisitions", 2)
 
-        std_p_fmt = float(format_with_fixed_precision(std_value_p, 3))
-        std_n_fmt = float(format_with_fixed_precision(std_value_n, 3))
-        meas_p_fmt = float(format_with_fixed_precision(measure_p, 3))
-        meas_n_fmt = float(format_with_fixed_precision(measure_n, 3))
-
-        denom = std_p_fmt - std_n_fmt
-        g = (meas_p_fmt - meas_n_fmt) / denom if denom != 0 else 1.0
-        e = round(100 * (1 - g) / g, 2) if g != 0 else 0.0
+        denom = std_value_p - std_value_n
+        if not math.isfinite(denom) or denom == 0:
+            raise ValueError("直流增益标准值差无效")
+        g = (measure_p - measure_n) / denom
+        if not math.isfinite(g) or g == 0:
+            raise ValueError("直流增益无效：正负测量值相同或非有限数值")
+        error = 100 * (1 - g) / g
+        if not math.isfinite(error):
+            raise ValueError("直流增益误差非有限数值")
+        e = error
 
         return {
             "val": val,
@@ -62,10 +65,11 @@ class DcGainCalibrator(BaseCalibrator):
                 format_with_fixed_precision(std_value_n, 3),
                 format_with_fixed_precision(measure_p, 3),
                 format_with_fixed_precision(measure_n, 3),
-                e,
+                round(e, 2),
             ],
         }
 
+    @ensure_output_off
     def run(self):
         self.print_title("校准直流增益准确度")
         self.init_devices()
@@ -104,7 +108,9 @@ class DcGainCalibrator(BaseCalibrator):
 
             for i, val in enumerate(points):
                 result = self._measure_dc_pair(val, "1 MΩ", i + 1)
-                self.add_result_row(table, result["row_data"], limit_range, check_col=8)
+                self.add_result_row(
+                    table, result["row_data"], limit_range, check_col=8, check_value=result["error"]
+                )
                 self.results.append(
                     {
                         "index": i + 1,
@@ -140,7 +146,13 @@ class DcGainCalibrator(BaseCalibrator):
                         continue
 
                     result = self._measure_dc_pair(val, "50 Ω", offset + i + 1)
-                    self.add_result_row(table, result["row_data"], limit_range, check_col=8)
+                    self.add_result_row(
+                        table,
+                        result["row_data"],
+                        limit_range,
+                        check_col=8,
+                        check_value=result["error"],
+                    )
                     self.results.append(
                         {
                             "index": offset + i + 1,
@@ -157,4 +169,3 @@ class DcGainCalibrator(BaseCalibrator):
                     progress.update(task, advance=1)
 
         console.print(table)
-        self._write_calibrator("set_output", "OFF")

@@ -2,11 +2,12 @@ import time
 
 from rich.progress import Progress
 
-from osccal.core.utils import format_with_fixed_precision
-from osccal.measure.base import BaseCalibrator, console
+from osccal.core.utils import format_with_fixed_precision, relative_error
+from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 
 class AmpCalibrator(BaseCalibrator):
+    @ensure_output_off
     def run(self):
         self.print_title("校准ΔV(幅度)")
         self.init_devices()
@@ -52,9 +53,7 @@ class AmpCalibrator(BaseCalibrator):
 
                 measured = self._read_meas("meas_amp")
 
-                std_fmt = float(format_with_fixed_precision(std_value, 3))
-                meas_fmt = float(format_with_fixed_precision(measured, 3))
-                error = round(100 * (meas_fmt - std_fmt) / std_value, 2) if std_value != 0 else 0.0
+                error = relative_error(measured, std_value)
 
                 self._write_osc("set_number_of_acquisitions", 2)
 
@@ -64,9 +63,9 @@ class AmpCalibrator(BaseCalibrator):
                     round(val, 3),
                     format_with_fixed_precision(std_value, 3),
                     format_with_fixed_precision(measured, 3),
-                    error,
+                    round(error, 2),
                 ]
-                self.add_result_row(table, row_data, limit_range, check_col=5)
+                self.add_result_row(table, row_data, limit_range, check_col=5, check_value=error)
 
                 self.results.append(
                     {
@@ -82,4 +81,3 @@ class AmpCalibrator(BaseCalibrator):
                 progress.update(task, advance=1)
 
         console.print(table)
-        self._write_calibrator("set_output", "OFF")

@@ -3,6 +3,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from rich.console import Console
 
+from osccal.core.storage import STATUS_LABELS
 from osccal.core.table_configs import EXCEL_ITEM_CONFIGS as item_configs
 
 console = Console()
@@ -53,9 +54,13 @@ def _create_info_sheet(wb, metadata):
     row = 3
     info_items = [
         ("校准时间", metadata.get("timestamp", "")),
+        ("校准状态", STATUS_LABELS.get(metadata.get("status"), "未记录")),
+        ("SCPI 失败次数", metadata.get("scpi_errors", "未记录")),
         ("通道", f"CH{metadata.get('channel', '')}"),
         ("探头", metadata.get("probe", "")),
     ]
+    for name, failure in metadata.get("failures", {}).items():
+        info_items.append((f"失败项目 {name}", failure.get("message", "")))
 
     osc = metadata.get("oscilloscope", {})
     info_items.extend(
@@ -127,6 +132,7 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
 
             error_col = config.get("error_col")
             if error_col is not None and col_idx == error_col + 1:
+                cell.number_format = "0.00"
                 try:
                     if float(val) < lower or float(val) > upper:
                         cell.fill = red_fill
@@ -135,7 +141,13 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
                     pass
 
             min_col = config.get("min_col")
-            if min_col is not None and col_idx == min_col + 1 and min_mhz is not None:
+            is_bound = isinstance(row_data, dict) and row_data.get("status", "").startswith("下界")
+            if (
+                min_col is not None
+                and col_idx == min_col + 1
+                and min_mhz is not None
+                and not is_bound
+            ):
                 try:
                     if float(val) < min_mhz:
                         cell.fill = red_fill

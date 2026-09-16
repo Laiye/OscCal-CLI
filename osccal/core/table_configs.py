@@ -26,7 +26,7 @@ ITEM_CONFIGS = {
     },
     "bandwidth": {
         "title": "频带宽度 校准结果",
-        "columns": ["序号", "通道", "挡位(V/div)", "实测值(MHz)"],
+        "columns": ["序号", "通道", "挡位(V/div)", "实测值(MHz)", "结果状态"],
         "error_col": None,
         "min_col": 3,
     },
@@ -65,7 +65,7 @@ EXCEL_ITEM_CONFIGS = {
     },
     "bandwidth": {
         "title": "频带宽度",
-        "headers": ["序号", "通道", "挡位(V/div)", "实测值(MHz)"],
+        "headers": ["序号", "通道", "挡位(V/div)", "实测值(MHz)", "结果状态"],
         "error_col": None,
         "min_col": 3,
     },
