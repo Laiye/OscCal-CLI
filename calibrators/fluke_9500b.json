@@ -3,6 +3,7 @@
     "description": "Fluke 9500B Oscilloscope Calibrator with active probe heads",
     "type": "pyvisa",
     "series": ["9500B"],
+    "models": ["9500", "9500B"],
     "keyword": {
         "imp_fif": "50",
         "imp_meg": "10000"

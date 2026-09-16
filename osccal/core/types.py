@@ -92,6 +92,7 @@ class CalibratorConfig(TypedDict, total=False):
     description: str
     type: str
     series: list[str]
+    models: list[str]
     keyword: KeywordConfig
     probes: dict[str, ProbeConfig]
     impedance_rules: ImpedanceRules

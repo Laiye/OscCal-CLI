@@ -17,7 +17,7 @@
 - **美观终端输出**：Rich 表格、进度条、超差红色高亮
 - **Excel 报告导出**：数据表格 + 超差红色高亮
 - **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
-- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（411 tests）
+- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（435 tests）
 - **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
 
 ## 环境要求
@@ -215,7 +215,9 @@ Ctrl+C 或项目异常时，会保存已有结果（包括当前项目已经完�
 
 数据 `metadata.scpi_errors` 保存本轮错误次数；`metadata.failures` 保存失败项目与原因；`metadata.configurations` 保存实际使用的指令集、Profile 和校准仪配置副本及 SHA-256（包含本轮带宽参数和实际通信方式）。继续校准时创建新文件，错误计数按轮独立记录。旧格式文件仍可读取和导出。
 
-执行前会核对通道范围、重复或未知项目、探头信号模式与阻抗、带宽参数、必需动作及设备身份。连接阶段允许进行身份和探头查询，只有检查通过后才复位设备并执行测量。Profile 的 `channels` 决定通道菜单和范围，旧配置未填写时兼容为 4 通道；两通道设备应明确填写 `channels: 2`。存在 `models` 列表时，设备型号必须包含在列表中。
+执行前会核对通道范围、重复或未知项目、探头信号模式与阻抗、带宽参数、必需动作及设备身份。连接阶段允许进行身份和探头查询，只有检查通过后才复位设备并执行测量。Profile 的 `channels` 决定通道菜单和范围，旧配置未填写时兼容为 4 通道；两通道设备应明确填写 `channels: 2`。
+
+设备身份核对规则：存在 `models` 列表时，设备型号必须包含在列表中（精确比较，忽略大小写与非字母数字字符）；校准仪配置未提供 `models` 时回退比较 `series`/`name`，按**型号家族**匹配——完全相同，或较短者为较长者的前缀且长度不少于 4 个字符。因此同一台 FLUKE 9500B 无论 `*IDN?` 上报 `9500B` 还是 `9500` 都能通过；报错信息会列出配置支持的全部型号，便于定位。
 
 `calibrate` 退出码：`0` 表示所选项目执行完成；`1` 表示连接、存储或项目执行失败；`2` 表示参数、配置或设备组合不合法；`130` 表示用户取消或中断。连续多轮中任一轮有执行失败，最终退出码仍为 `1`。退出码 `0` 不表示所有测量值均在允差内，是否超差以结果中的误差和限值为准。
 
@@ -444,7 +446,7 @@ OscCal-CLI/
 │   └── zlg_zds4000.json
 ├── calibrators/                     # 校准仪配置
 │   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
-├── tests/                           # 单元测试（pytest，411 tests）
+├── tests/                           # 单元测试（pytest，435 tests）
 │   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
 │   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
@@ -563,6 +565,8 @@ OscCal-CLI/
     "name": "9500B",
     "description": "Fluke 9500B Oscilloscope Calibrator ...",
     "type": "pyvisa",
+    "series": ["9500B"],
+    "models": ["9500", "9500B"],
     "keyword": {
         "imp_fif": "50",
         "imp_meg": "10000"
@@ -585,6 +589,7 @@ OscCal-CLI/
 
 | 字段 | 说明 |
 |------|------|
+| `models` | 该配置接受的 `*IDN?` 型号字符串列表（精确比较）。用于同一型号存在多种上报形式的场景，如 FLUKE 9500B 既有上报 `9500B`、也有上报 `9500` 的固件，此时填写 `["9500","9500B"]`；省略时按 `series` 做型号家族回退匹配 |
 | `probes` | 探头信息，`edge_rise_times` 为可用的上升时间列表（秒），`max_frequency` 为最大正弦波频率 |
 | `impedance_rules` | 阻抗规则，按探头型号和信号模式定义支持的阻抗列表。`["1M","50"]` 表示两种都支持，`["50"]` 表示仅支持 50Ω |
 
@@ -749,6 +754,7 @@ pytest -v
 | `tests/test_all_configs.py` | 全量配置结构校验：commands/ 指令集 action/keyword 契约、profiles/ 校准点与限值、calibrators/ 探头阻抗规则 |
 | `tests/test_sim_integration.py` | 模拟仪器端到端集成测试：无硬件跑通全部校准项目，含带宽向下扫描边界用例 |
 | `tests/test_cli_flow.py` | CLI 校准流程测试：手动/自动模式、`--log-scpi`、SCPI 失败统计（mock 设备） |
+| `tests/test_device_identity.py` | 设备身份核对：厂商别名/跨厂商拒绝、`models` 白名单精确匹配、校准仪 `series` 型号家族回退（`9500`/`9500B` 兼容） |
 
 > 配置结构校验规则与运行时加载校验共用同一实现（`osccal/core/config_validation.py`）：
 > 加载配置时即校验结构，出错会直接指出具体 JSON 文件与字段，而非运行时才报错。

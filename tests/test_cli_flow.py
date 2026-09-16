@@ -549,6 +549,26 @@ def test_mdo32_channel_limit_applies_before_setup(fake_connections, no_sleep, no
     assert all(not inst.written for inst in instruments)
 
 
+def test_calibrator_model_variant_9500_passes_preflight(
+    fake_connections, no_sleep, no_save, monkeypatch
+):
+    """回归：FLUKE 9500B 上报型号为 "9500" 时不应被执行前校验中止。"""
+    original_connect = fake_connections.connect_visa
+
+    def connect(resource):
+        inst, idn = original_connect(resource)
+        if "19" in resource:  # 校准仪资源
+            idn["model"] = "9500"
+            inst.idn = "FLUKE,9500,471475627,4.12"
+        return inst, idn
+
+    monkeypatch.setattr(fake_connections, "connect_visa", connect)
+    result = CliRunner().invoke(cli, _recording_args("amp"), input="n\n")
+    assert result.exit_code == 0, result.output
+    assert "执行前检查失败" not in result.output
+    assert "amp" in no_save["results"]
+
+
 def test_selection_menus_bound_indices_and_channels():
     import click
 

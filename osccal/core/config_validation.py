@@ -104,15 +104,36 @@ ITEM_SIGNALS = {
 }
 
 
+_MANUFACTURER_ALIASES = {"TEK": "TEKTRONIX", "ZHIYUAN": "ZLG"}
+
+
+def _normalize_token(value: object) -> str:
+    """型号/厂商归一化：转大写并去除非字母数字字符。"""
+    if not isinstance(value, str):
+        return ""
+    return "".join(c for c in value.upper() if c.isalnum())
+
+
 def manufacturer_matches(expected: str, actual: str) -> bool:
     """兼容已支持设备的厂商简写，拒绝跨厂商配对。"""
-
-    def normalize(value):
-        value = "".join(c for c in value.upper() if c.isalnum())
-        return {"TEK": "TEKTRONIX", "ZHIYUAN": "ZLG"}.get(value, value)
-
-    a, b = normalize(expected), normalize(actual)
+    a = _MANUFACTURER_ALIASES.get(_normalize_token(expected), _normalize_token(expected))
+    b = _MANUFACTURER_ALIASES.get(_normalize_token(actual), _normalize_token(actual))
     return bool(a and b and (a in b or b in a))
+
+
+def model_matches(expected: str, actual: str, min_prefix: int = 4) -> bool:
+    """型号家族匹配：完全一致，或较短者为较长者的前缀且长度不低于 min_prefix。
+
+    仅用于 series 回退比较，兼容同一型号在 *IDN? 中上报的变体（例如 Fluke 9500B
+    既有上报 "9500B"、也有上报 "9500" 的固件）；配置存在 models 时仍按精确白名单比较。
+    """
+    a, b = _normalize_token(actual), _normalize_token(expected)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= min_prefix and long.startswith(short)
 
 
 def validate_device_identity(config: dict, idn: dict, label: str) -> list[str]:
@@ -128,15 +149,20 @@ def validate_device_identity(config: dict, idn: dict, label: str) -> list[str]:
     errors = []
     expected_mfr = config.get("manufacturer", config.get("factor", ""))
     if expected_mfr and not manufacturer_matches(expected_mfr, mfr):
-        errors.append(f"{label} 厂商与配置不匹配: {mfr}")
+        errors.append(f"{label} 厂商与配置不匹配: {mfr}（配置: {expected_mfr}）")
     models = config.get("models")
-    if models and model.strip().upper() not in [v.strip().upper() for v in models]:
-        errors.append(f"{label} 型号 {model} 不在配置 models 中")
-    if label == "校准仪" and not models:
+    if models:
+        supported = [v for v in models if isinstance(v, str) and v.strip()]
+        if not any(_normalize_token(v) == _normalize_token(model) for v in supported):
+            errors.append(
+                f"{label} 型号 {model} 不在配置 models 中（支持: {', '.join(supported)}）"
+            )
+    elif label == "校准仪":
         series = config.get("series", [config.get("name", "")])
         series = [series] if isinstance(series, str) else series
-        if model.strip().upper() not in [v.strip().upper() for v in series]:
-            errors.append(f"校准仪型号 {model} 与配置不匹配")
+        supported = [v for v in series if isinstance(v, str) and v.strip()]
+        if not any(model_matches(v, model) for v in supported):
+            errors.append(f"校准仪型号 {model} 与配置不匹配（配置支持: {', '.join(supported)}）")
     return errors
 
 
