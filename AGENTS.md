@@ -4,30 +4,42 @@
 
 ## 环境与命令
 
-- 使用仓库内 `.venv`（Python 3.12，已装好依赖与 dev 工具）。系统 `python` **没有** ruff/mypy/pytest，必须走 `.venv`。
-- 未激活时直接用 `.venv/bin/<tool>`，或先 `source .venv/bin/activate`。
-- 本地校验顺序（与 CI 一致，`.github/workflows/ci.yml`）：
+- 校验与运行一律走仓库内 `.venv`：项目依赖与 dev 工具（pytest/ruff/mypy）都装在这里，
+  且与 CI 执行同一组检查；系统 `python` 可能装的是另一套版本的工具，用它跑校验会出现
+  "本地通过、CI 失败"的假象。
+- 版本不要在本文件写死：以 `pyproject.toml`（`requires-python`、`dependencies`、
+  `[project.optional-dependencies].dev`）为准，需要时现场查
+  （`.venv\Scripts\python --version`、`.venv\Scripts\python -m pip list`）。
+- 工具路径：Windows（本机）`.venv\Scripts\<tool>`，激活 `.venv\Scripts\Activate.ps1`；
+  POSIX 把 `Scripts` 换成 `bin`（`.venv/bin/<tool>`、`source .venv/bin/activate`）。
+- 本地校验顺序（校验项与顺序同 CI；CI 在 Ubuntu 上把 `.[dev]` 装进 runner 的 Python，
+  不使用仓库 `.venv`）：
 
 ```bash
-.venv/bin/ruff check .
-.venv/bin/ruff format --check osccal tests simulate_calibrate.py
-.venv/bin/mypy
-.venv/bin/pytest
+.venv\Scripts\ruff check .
+.venv\Scripts\ruff format --check osccal tests simulate_calibrate.py
+.venv\Scripts\mypy
+.venv\Scripts\pytest
 ```
 
 - `mypy` 只检查 `pyproject.toml` 中列出的 4 个文件（`core/types.py`、`core/config.py`、`core/config_validation.py`、`core/scpi_trace.py`），不是全仓库；`ruff format` 不覆盖 `commands/ profiles/ calibrators/`。
-- 单测：`.venv/bin/pytest tests/test_mdo3_commands.py::TestX::test_y`。
-- 无硬件端到端：`.venv/bin/python simulate_calibrate.py`（默认快速模式，自动应答 prompt）。
+- 单测：`.venv\Scripts\pytest tests/test_mdo3_commands.py::TestX::test_y`。
+- 无硬件端到端：`.venv\Scripts\python simulate_calibrate.py`（默认快速模式，自动应答 prompt）。
+- 基线：`.venv\Scripts\pytest` 应全绿（用例数随功能增长，不在此写死）。
 
 ## 架构
 
 - 入口 `osccal/cli.py:main`（`pyproject.toml` 的 `[project.scripts]`）。`osccal/core/` 为通信/配置/存储/导出，`osccal/measure/` 为各校准项目，`registry.py` 定义执行顺序 amp→dc_gain→delta_time→bandwidth→transient。
 - 配置驱动，新增示波器**只加 JSON 不改代码**：`commands/`（SCPI 命令模板）、`profiles/`（硬件特征/校准点）、`calibrators/`（校准仪与探头）。`--auto` 按 `manufacturer`/`models` 精确匹配，回退 `series`、文件名前缀。
 - 配置结构校验只有一份实现 `osccal/core/config_validation.py`，运行时加载和 `tests/test_all_configs.py` 共用；改 JSON 契约时同步这里，不要另写校验。
+- 同一模块提供**执行前校验**：`cli.py` 在连接设备后、任何设置指令之前调用 `validate_selection()`（通道/项目/探头信号与阻抗/带宽参数/必需 action）与 `validate_device_identity()`（厂商与型号）；不通过则本轮中止、不发任何设置指令，退出码 `2`。
+- 设备身份匹配：存在 `models` 时按精确白名单（忽略大小写与非字母数字字符）；校准仪无 `models` 时回退 `series`/`name` 的**型号家族**匹配（完全相同，或较短者为较长者前缀且长度 ≥ 4，如 `9500` 与 `9500B`）。`calibrators/*.json` 可用 `models` 声明同一型号的多种 `*IDN?` 上报形式。
 - 测试用 `tests/conftest.py` 的 `FakeInstrument` 模拟 pyvisa，无需真实设备；`conftest.py` 会把仓库根注入 `sys.path`。
 
 ## 注意事项
 
 - `data/*.json`、`data/*.xlsx` 被 gitignore（仅保留 `.gitkeep`），不要把生成物提交。
 - 启动时强制 stdout/stderr 为 UTF-8（Windows 中文控制台/重定向的 `UnicodeEncodeError` 修复），改相关代码别破坏该行为。
+- 校准记录 `metadata` 的状态字段（`status`/`item_status`/`failures`/`configurations`/`scpi_errors`）与中断续存行为见 `README.md`，由 `tests/test_storage.py`、`tests/test_cli_flow.py` 守护。
+- 受限沙箱环境下运行 `pytest` 时，使用 `tmp_path` 的用例可能因临时目录权限报 fixture setup 的 `PermissionError`；那是环境限制而非代码问题（正常终端不受影响）。
 - 已支持设备与各字段含义见 `README.md`（内容详尽，改动前先读）。
