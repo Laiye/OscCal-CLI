@@ -17,7 +17,7 @@
 - **美观终端输出**：Rich 表格、进度条、超差红色高亮
 - **Excel 报告导出**：数据表格 + 超差红色高亮
 - **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
-- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（435 tests）
+- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（441 tests）
 - **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
 
 ## 环境要求
@@ -428,14 +428,18 @@ OscCal-CLI/
 │   ├── tektronix_mdo3.json          #   泰克 3 Series MDO（MDO34/MDO32）
 │   ├── tektronix_tbs.json           #   泰克 TBS2000B
 │   ├── tektronix_tds.json           #   泰克 TDS5000
+│   ├── tektronix_mso2000b.json      #   泰克 MSO2000B/DPO2000B/MSO2000/DPO2000
 │   ├── rigol_mso.json               #   普源 MSO5000
 │   ├── siglent_sds.json             #   鼎阳 SDS6000 PRO/SDS6000A
 │   ├── unit_utd.json                #   优利德 UTD2000CEX/UTD7000C
-│   └── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
+│   ├── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
+│   └── zlg_zds1000.json             #   周立功 ZDS1000
 ├── profiles/                        # 示波器特征配置
 │   ├── tektronix_mdo3000.json       #   泰克 MDO3000 全系列
 │   ├── tektronix_mdo34.json         #   泰克 MDO34（4 通道）
 │   ├── tektronix_mdo32.json         #   泰克 MDO32（2 通道）
+│   ├── tektronix_mso2000b_4ch.json  #   泰克 MSO2000B 系列（4 通道）
+│   ├── tektronix_mso2000b_2ch.json  #   泰克 MSO2000B 系列（2 通道）
 │   ├── tektronix_tbs2000b.json
 │   ├── tektronix_tds5000.json
 │   ├── rigol_mso5000.json
@@ -443,10 +447,11 @@ OscCal-CLI/
 │   ├── unit_utd2000cex.json
 │   ├── unit_utd7000c.json
 │   ├── zlg_zds2000.json
-│   └── zlg_zds4000.json
+│   ├── zlg_zds4000.json
+│   └── zlg_zds1000.json
 ├── calibrators/                     # 校准仪配置
 │   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
-├── tests/                           # 单元测试（pytest，435 tests）
+├── tests/                           # 单元测试（pytest，441 tests）
 │   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
 │   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
@@ -709,6 +714,8 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 泰克 | MDO32（2 通道） | `tektronix_mdo3.json` | `tektronix_mdo32.json` | VISA |
 | 泰克 | TBS2000B | `tektronix_tbs.json` | `tektronix_tbs2000b.json` | VISA |
 | 泰克 | TDS5000 | `tektronix_tds.json` | `tektronix_tds5000.json` | VISA |
+| 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（4 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_4ch.json` | VISA |
+| 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（2 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_2ch.json` | VISA |
 | 普源 | MSO5000 | `rigol_mso.json` | `rigol_mso5000.json` | VISA |
 | 鼎阳 | SDS6000 PRO, SDS6000A | `siglent_sds.json` | `siglent_sds.json` | VISA |
 | 优利德 | UTD2000CEX | `unit_utd.json` | `unit_utd2000cex.json` | VISA |
@@ -716,6 +723,17 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 周立功 | ZDS2000/2000B | `zlg_zds.json` | `zlg_zds2000.json` | Socket |
 | 周立功 | ZDS4000/3000 | `zlg_zds.json` | `zlg_zds4000.json` | Socket |
 | 周立功 | ZDS1000 | `zlg_zds1000.json` | `zlg_zds1000.json` | Socket |
+
+## 泰克 MSO2000B/DPO2000 系列特别说明
+
+该系列（MSO2000B/DPO2000B/MSO2000/DPO2000，2 通道与 4 通道共 18 个型号，覆盖 70/100/200 MHz）**输入阻抗仅 1 MΩ**，配置与使用方法如下：
+
+- **探头选择**：9560 探头的 MARK/SIN/EDGE 模式只能输出 50Ω，与本系列不匹配，执行前校验会拒绝 `delta_time`、`bandwidth`、`transient`。上述项目请改用 **9530 探头**（各模式均支持 1MΩ）；`amp` 与 `dc_gain` 用 9530 或 9560 均可。
+- **探头增益**：出厂 P2220 探头默认 10×，Profile 中 `probe_default: 10` 会在测量前把探头增益置为 1×（对应校准仪直连），避免读数差 10 倍。
+- **无 50Ω 选项**：手册中 `CH<x>:TERmination` 与 `CH<x>:IMPedance` 均为"为兼容性保留"的**无参数命令**，无法通过 SCPI 选择 50Ω，故指令集不含 `set_impedance`。
+- **垂直挡位范围 2 mV/div ～ 5 V/div**（手册偏移量说明："For V/Div settings from 2 mV/div to 200 mV/div, the offset range is ±1 V；from 202 mV/div to 5 V/div, the offset range is ±25 V"），按 1-2-5 排列，**不支持 1 mV/div 与 10 V/div**；**水平时基按 1-2-4-10 排列**（400 ns/div 之后直接是 1 µs/div，**没有 800 ns/div**）。因此本系列的 `delta_amp`/`dc_gain` 点表为 11 点（2 mV ～ 5 V/div）、`delta_time` 点表以 1 µs 取代 800 ns（20 点），避免示波器钳位挡位后标准值与被测波形不符而报出虚假大误差。
+- **时基下限 2 ns/div**：频带宽度扫描在约 250 MHz 以上会触及该下限，示波器自行钳位时基；幅度—频率测量本身仍然有效。
+- 其他已核实要点：`ACQuire:MODe` 仅支持 `SAMple|AVErage`（无峰值检测）；触发电平为全局 `TRIGger:A:LEVel <NR3>`（不带通道号）；测量值查询返回 `:MEASUREMENT:IMMED:VALUE <值>`（配置 `return_value_index: 1`）。
 
 ## 周立功 ZDS1000 系列特别说明
 

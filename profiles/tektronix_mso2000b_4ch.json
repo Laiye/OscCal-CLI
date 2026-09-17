@@ -1,0 +1,102 @@
+{
+    "name": "osc",
+    "description": "Tektronix MSO2000B/DPO2000B/MSO2000/DPO2000 series 4-channel profile (MSO2004B, MSO2014/B, MSO2024/B, DPO2004B, DPO2014/B, DPO2024/B). Input impedance is 1 MOhm only (no 50 Ohm), 8 x 10 divisions. Vertical scale range 2 mV/div to 5 V/div in 1-2-5 steps (no 1 mV/div or 10 V/div); horizontal scale 2 ns/div to 100 s/div in 1-2-4-10 steps (no 800 ns/div). Supplied P2220 probes default to 10x, so probe gain is forced to 1x for direct calibrator connection.",
+    "manufacturer": "Tektronix",
+    "models": [
+        "MSO2004B",
+        "MSO2014",
+        "MSO2014B",
+        "MSO2024",
+        "MSO2024B",
+        "DPO2004B",
+        "DPO2014",
+        "DPO2014B",
+        "DPO2024",
+        "DPO2024B"
+    ],
+    "factor": "tektronix",
+    "series": "MSO2000B",
+    "channels": 4,
+    "imp_has_50": false,
+    "vertical_div": 8,
+    "horizontal_div": 10,
+    "probe_default": 10,
+    "init_time": 5,
+    "calibration_limits": {
+        "amp": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "dc_gain": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "delta_time": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "bandwidth": {
+            "min_mhz": 70
+        },
+        "transient": {}
+    },
+    "points": {
+        "bandwidth": [
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500
+        ],
+        "delta_amp": [
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000
+        ],
+        "dc_gain": [
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000
+        ],
+        "delta_time": [
+            10E-9,
+            20E-9,
+            40E-9,
+            100E-9,
+            200E-9,
+            400E-9,
+            1E-6,
+            2E-6,
+            4E-6,
+            10E-6,
+            20E-6,
+            40E-6,
+            100E-6,
+            200E-6,
+            400E-6,
+            1E-3,
+            2E-3,
+            4E-3,
+            10E-3,
+            20E-3
+        ]
+    }
+}
