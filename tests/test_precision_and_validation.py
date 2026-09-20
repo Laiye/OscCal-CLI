@@ -49,7 +49,8 @@ def test_original_error_drives_calculation_and_report(
     config = EXCEL_ITEM_CONFIGS[name]
     _create_data_sheet(wb, name, config, cal.get_results())
     cell = wb[config["title"]].cell(2, config["error_col"] + 1)
-    assert cell.value == error
+    # 单元格数值按显示精度整理（与终端表格一致），超差判定与标红仍用未舍入的原始误差
+    assert cell.value == round(error, 2)
     assert cell.number_format == "0.00"
     assert cell.fill.fgColor.rgb == "00FF0000"
 

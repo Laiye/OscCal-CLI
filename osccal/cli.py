@@ -822,6 +822,7 @@ def _display_calibration_data(data: dict):
     console.print(info_table)
 
     from osccal.core.table_configs import ITEM_CONFIGS
+    from osccal.core.utils import format_display_value
 
     limits_map = metadata.get("limits", {}) or {}
 
@@ -845,10 +846,16 @@ def _display_calibration_data(data: dict):
         for col in config["columns"]:
             table.add_column(col, justify="right")
 
+        # 与 Excel 导出共用同一精度规格，避免回看时打印读数原始位数
+        precision_specs = config.get("precision") or []
+
         for row in rows:
             values = list(row.values()) if isinstance(row, dict) else row
 
-            str_values = [str(v) for v in values]
+            str_values = [
+                format_display_value(v, precision_specs[i] if i < len(precision_specs) else None)
+                for i, v in enumerate(values)
+            ]
 
             error_col = config.get("error_col")
             if error_col is not None and error_col < len(str_values):

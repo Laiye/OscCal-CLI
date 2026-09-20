@@ -2,6 +2,11 @@ import math
 import os
 import sys
 from contextlib import suppress
+from typing import Any
+
+# 显示精度规格：("sig", n) 保留 n 位有效数字（与校准时的终端表格同一规则），
+# ("dec", n) 保留 n 位小数，None 表示原样输出。规格表见 core/table_configs.py。
+PrecisionSpec = tuple[str, int] | None
 
 
 def enable_utf8_output() -> None:
@@ -24,12 +29,57 @@ def enable_utf8_output() -> None:
             reconfigure(encoding="utf-8", errors="replace")
 
 
-def format_with_fixed_precision(number, precision):
+def fixed_precision_decimals(number, precision: int) -> int:
+    """保留 precision 位有效数字所需的小数位数。"""
     if number == 0:
-        return "0." + "0" * (precision - 1)
+        return max(0, precision - 1)
     order = math.floor(math.log10(abs(number)))
-    decimals = max(0, precision - 1 - order)
+    return max(0, precision - 1 - order)
+
+
+def format_with_fixed_precision(number, precision):
+    decimals = fixed_precision_decimals(number, precision)
     return f"{number:.{decimals}f}"
+
+
+def _as_number(value: Any) -> float | None:
+    """把数值型值转成 float；非数值（含 bool、字符串）与非有限值返回 None。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def format_display_value(value: Any, spec: PrecisionSpec) -> str:
+    """按精度规格生成终端显示文本（`osccal show` 的表格用）。"""
+    if spec is None:
+        return str(value)
+    number = _as_number(value)
+    if number is None:
+        return str(value)
+    kind, precision = spec
+    if kind == "sig":
+        return format_with_fixed_precision(number, precision)
+    return f"{number:.{precision}f}"
+
+
+def prepare_excel_value(value: Any, spec: PrecisionSpec) -> tuple[Any, str | None]:
+    """按精度规格整理 Excel 单元格，返回 (数值, 数字格式)。
+
+    数值按显示精度四舍五入，与终端表格的有效位数一致；未舍入的原始读数保存在
+    JSON 记录中。数字格式保证单元格显示同样位数（含末尾零），且仍是数值单元格。
+    """
+    if spec is None:
+        return value, None
+    number = _as_number(value)
+    if number is None:
+        return value, None
+    kind, precision = spec
+    decimals = fixed_precision_decimals(number, precision) if kind == "sig" else precision
+    number_format = "0" if decimals <= 0 else "0." + "0" * decimals
+    return round(number, decimals), number_format
 
 
 def relative_error(measured: float, standard: float) -> float:

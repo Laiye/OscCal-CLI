@@ -5,6 +5,7 @@ from rich.console import Console
 
 from osccal.core.storage import STATUS_LABELS
 from osccal.core.table_configs import EXCEL_ITEM_CONFIGS as item_configs
+from osccal.core.utils import prepare_excel_value
 
 console = Console()
 
@@ -122,15 +123,24 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
     red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
     red_font = Font(color="FFFFFF", bold=True)
 
+    precision_specs = config.get("precision") or []
+    error_col = config.get("error_col")
+    min_col = config.get("min_col")
+
     for row_idx, row_data in enumerate(rows, 2):
         values = list(row_data.values()) if isinstance(row_data, dict) else row_data
 
         for col_idx, val in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            # 单元格按显示精度整理：数值与终端表格位数一致，仍是数值单元格
+            spec = precision_specs[col_idx - 1] if col_idx <= len(precision_specs) else None
+            cell_value, number_format = prepare_excel_value(val, spec)
+            cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
+            if number_format:
+                cell.number_format = number_format
             cell.alignment = center_align
             cell.border = thin_border
 
-            error_col = config.get("error_col")
+            # 超差判定始终用未舍入的原始值，避免舍入掩盖越界（如 2.004% 显示为 2.00%）
             if error_col is not None and col_idx == error_col + 1:
                 cell.number_format = "0.00"
                 try:
@@ -140,7 +150,6 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
                 except (ValueError, TypeError):
                     pass
 
-            min_col = config.get("min_col")
             is_bound = isinstance(row_data, dict) and row_data.get("status", "").startswith("下界")
             if (
                 min_col is not None
