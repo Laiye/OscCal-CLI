@@ -1,0 +1,119 @@
+{
+    "name": "osc",
+    "description": "Tektronix TBS1000, TDS1000/B/C-EDU, TDS2000/B/C and TPS2000/B series 2-channel profile, 25/40/50/60/70/100/150/200 MHz variants. Input impedance is 1 MOhm only, 8 x 10 divisions. Vertical scale 2 mV/div to 5 V/div in 1-2-5 steps; horizontal scale in 1-2.5-5 steps (10 ns/div and slower are used here so that every model of the family stays inside its time base range). The supplied passive probes default to 10x, so probe gain is forced to 1x for direct calibrator connection. Bandwidth min_mhz is the lowest rating of the series (25 MHz, TBS1022); raise it to the rating of the model under calibration for a strict pass/fail judgement.",
+    "manufacturer": "Tektronix",
+    "models": [
+        "TBS1022",
+        "TBS1042",
+        "TBS1062",
+        "TBS1102",
+        "TBS1152",
+        "TDS1001",
+        "TDS1002",
+        "TDS1012",
+        "TDS1001B",
+        "TDS1002B",
+        "TDS1012B",
+        "TDS1001C-EDU",
+        "TDS1002C-EDU",
+        "TDS1012C-EDU",
+        "TDS2001C",
+        "TDS2002",
+        "TDS2012",
+        "TDS2022",
+        "TDS2002B",
+        "TDS2012B",
+        "TDS2022B",
+        "TDS2002C",
+        "TDS2012C",
+        "TDS2022C",
+        "TPS2012",
+        "TPS2012B"
+    ],
+    "factor": "tektronix",
+    "series": "TDS2000",
+    "channels": 2,
+    "imp_has_50": false,
+    "vertical_div": 8,
+    "horizontal_div": 10,
+    "probe_default": 10,
+    "init_time": 5,
+    "bd_step": 5.0e6,
+    "calibration_limits": {
+        "amp": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "dc_gain": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "delta_time": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "bandwidth": {
+            "min_mhz": 25
+        },
+        "transient": {}
+    },
+    "points": {
+        "bandwidth": [
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500
+        ],
+        "delta_amp": [
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000
+        ],
+        "dc_gain": [
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000
+        ],
+        "delta_time": [
+            10e-9,
+            25e-9,
+            50e-9,
+            100e-9,
+            250e-9,
+            500e-9,
+            1e-6,
+            2.5e-6,
+            5e-6,
+            10e-6,
+            25e-6,
+            50e-6,
+            100e-6,
+            250e-6,
+            500e-6,
+            1e-3,
+            2.5e-3,
+            5e-3,
+            10e-3,
+            25e-3
+        ]
+    }
+}

@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from osccal.core.config import load_commands, load_profile
-from osccal.core.config_validation import manufacturer_matches
+from osccal.core.config_validation import manufacturer_matches, normalize_token
 
 console = Console()
 
@@ -43,8 +43,9 @@ def _fuzzy_match_series(
 
     每个候选项可以有单个 series 字符串或 series 列表。
     返回最佳匹配的 key（文件名），无匹配则返回 None。
+    比较前按 normalize_token 归一化，兼容 *IDN? 中的写法差异（如 "TBS 1102"）。
     """
-    model_upper = model.strip().upper()
+    model_upper = normalize_token(model)
     if not model_upper:
         return None
 
@@ -57,7 +58,9 @@ def _fuzzy_match_series(
         for series in series_list:
             if not isinstance(series, str) or not series.strip():
                 continue
-            series_upper = series.strip().upper()
+            series_upper = normalize_token(series)
+            if not series_upper:
+                continue
             score = 0
 
             if model_upper == series_upper:
@@ -101,19 +104,31 @@ def _load_json_silently(filepath: str) -> dict:
         return {}
 
 
+def _matching_model_files(
+    model: str,
+    candidates: dict[str, list[str]],
+) -> list[str]:
+    """在候选项的 models 列表中精确匹配型号，返回文件名列表（可能为空或多个）。
+
+    比较沿用执行前校验的归一化规则（忽略大小写与非字母数字字符），
+    因此 *IDN? 上报 "TBS 1102" 时也能命中配置里的 "TBS1102"。
+    """
+    token = normalize_token(model)
+    if not token:
+        return []
+    return [
+        fname
+        for fname, models in candidates.items()
+        if any(normalize_token(m) == token for m in models)
+    ]
+
+
 def _exact_model_match(
     model: str,
     candidates: dict[str, list[str]],
 ) -> str | None:
-    """在候选项的 models 列表中精确匹配型号，返回文件名。"""
-    model_upper = model.strip().upper()
-    if not model_upper:
-        return None
-    matches = [
-        fname
-        for fname, models in candidates.items()
-        if any(isinstance(m, str) and m.strip().upper() == model_upper for m in models)
-    ]
+    """在候选项的 models 列表中精确匹配型号，命中多个时返回 None（歧义）。"""
+    matches = _matching_model_files(model, candidates)
     return matches[0] if len(matches) == 1 else None
 
 
@@ -198,13 +213,7 @@ def detect_configs(
             cmd_models[fname] = models
 
     matched_cmd = _exact_model_match(model, cmd_models)
-    if (
-        sum(
-            any(isinstance(m, str) and m.strip().upper() == model.strip().upper() for m in models)
-            for models in cmd_models.values()
-        )
-        > 1
-    ):
+    if len(_matching_model_files(model, cmd_models)) > 1:
         console.print("[red]✗ 多个指令集精确匹配同一型号，请在手动模式显式指定配置[/red]")
         return None, None, None, None
 
@@ -233,13 +242,7 @@ def detect_configs(
             profile_models[fname] = models
 
     matched_profile = _exact_model_match(model, profile_models)
-    if (
-        sum(
-            any(isinstance(m, str) and m.strip().upper() == model.strip().upper() for m in models)
-            for models in profile_models.values()
-        )
-        > 1
-    ):
+    if len(_matching_model_files(model, profile_models)) > 1:
         console.print("[red]✗ 多个 Profile 精确匹配同一型号，请在手动模式显式指定配置[/red]")
         return None, None, None, None
 

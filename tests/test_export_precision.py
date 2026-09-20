@@ -19,6 +19,7 @@ from osccal.cli import cli
 from osccal.core.export import export_to_excel
 from osccal.core.table_configs import EXCEL_ITEM_CONFIGS, ITEM_CONFIGS, ITEM_PRECISION
 from osccal.core.utils import (
+    NOT_APPLICABLE,
     fixed_precision_decimals,
     format_display_value,
     format_with_fixed_precision,
@@ -74,6 +75,13 @@ def test_non_numeric_and_spec_free_values_pass_through():
     # 文本列即使配了精度也不做数值处理
     assert prepare_excel_value("CH1", ("sig", 3)) == ("CH1", None)
     assert format_display_value("CH1", ("sig", 3)) == "CH1"
+
+
+def test_missing_measurement_renders_as_not_applicable():
+    """None 表示机型没有该项测量能力（如无正过冲测量）→ 显示"不适用"而非 "None"。"""
+    assert format_display_value(None, ("sig", 2)) == NOT_APPLICABLE
+    assert format_display_value(None, None) == NOT_APPLICABLE
+    assert prepare_excel_value(None, ("sig", 2)) == (NOT_APPLICABLE, None)
 
 
 # ── Excel 导出 ──────────────────────────────────────────────────────────

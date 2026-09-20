@@ -1,6 +1,6 @@
 import time
 
-from osccal.core.utils import format_with_fixed_precision
+from osccal.core.utils import format_display_value
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 
@@ -14,6 +14,9 @@ class TransientCalibrator(BaseCalibrator):
 
         # 触发参数：Tek 系命令需通道号，ZDS 系不需要
         has_50 = self.profile.get("imp_has_50", False)
+        # 正过冲不是所有机型都有（如泰克 TBS1000/TDS1000/TDS2000 系列无 POVERshoot 测量）：
+        # 指令集未声明 meas_pos_overshoot 时只测上升时间，过冲列记为“不适用”，不整项失败。
+        has_overshoot = "meas_pos_overshoot" in self.cmd_osc.get("keyword", {})
         trg_lev_action = self.cmd_osc["actions"].get("set_trigger_level", {})
         trg_lev = -0.5  # 触发电平：-0.5V（所有模式通用）
         if trg_lev_action.get("args_num", 0) >= 2:
@@ -56,7 +59,13 @@ class TransientCalibrator(BaseCalibrator):
         time.sleep(3)
         # 提前设好测量项，SINGLE 捕获后直接查询（避免死数据/0.0）
         self.setup_measurement("meas_risetime")
-        self.setup_measurement("meas_pos_overshoot")
+        if has_overshoot:
+            self.setup_measurement("meas_pos_overshoot")
+        else:
+            console.print(
+                "[yellow]⚠ 指令集未声明正过冲测量（meas_pos_overshoot），"
+                "本次只记录上升时间，过冲列记为“不适用”[/yellow]"
+            )
         self._write_osc(
             "set_acquire_stop_after", self.cmd_osc["keyword"]["acquire_stop_after_single"]
         )
@@ -69,7 +78,7 @@ class TransientCalibrator(BaseCalibrator):
         time.sleep(2)
 
         risetime = self._read_meas("meas_risetime")
-        pos_overshoot = self._read_meas("meas_pos_overshoot")
+        pos_overshoot = self._read_meas("meas_pos_overshoot") if has_overshoot else None
 
         risetime_ns = risetime * 1e9
         edge_speed_ps = edge_speed * 1e12
@@ -84,9 +93,9 @@ class TransientCalibrator(BaseCalibrator):
 
         row_data = [
             f"CH{self.channel}",
-            format_with_fixed_precision(risetime_ns, 2),
-            format_with_fixed_precision(pos_overshoot, 2),
-            f"{edge_speed_ps:.0f}",
+            format_display_value(risetime_ns, ("sig", 2)),
+            format_display_value(pos_overshoot, ("sig", 2)),
+            format_display_value(edge_speed_ps, ("dec", 0)),
         ]
         table.add_row(*[str(v) for v in row_data])
 

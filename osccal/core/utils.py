@@ -8,6 +8,9 @@ from typing import Any
 # ("dec", n) 保留 n 位小数，None 表示原样输出。规格表见 core/table_configs.py。
 PrecisionSpec = tuple[str, int] | None
 
+# 缺少该项测量能力时的占位文本（例：机型无正过冲测量 → 过冲列记"不适用"）
+NOT_APPLICABLE = "不适用"
+
 
 def enable_utf8_output() -> None:
     """将标准输出/错误切换为 UTF-8，避免输出编码导致的崩溃。
@@ -53,7 +56,12 @@ def _as_number(value: Any) -> float | None:
 
 
 def format_display_value(value: Any, spec: PrecisionSpec) -> str:
-    """按精度规格生成终端显示文本（`osccal show` 的表格用）。"""
+    """按精度规格生成终端显示文本（`osccal show` 的表格用）。
+
+    数值为 None 表示该机型没有这项测量能力（如无正过冲测量），显示为"不适用"。
+    """
+    if value is None:
+        return NOT_APPLICABLE
     if spec is None:
         return str(value)
     number = _as_number(value)
@@ -70,7 +78,10 @@ def prepare_excel_value(value: Any, spec: PrecisionSpec) -> tuple[Any, str | Non
 
     数值按显示精度四舍五入，与终端表格的有效位数一致；未舍入的原始读数保存在
     JSON 记录中。数字格式保证单元格显示同样位数（含末尾零），且仍是数值单元格。
+    数值为 None（该机型无此项测量能力）时写入"不适用"文本。
     """
+    if value is None:
+        return NOT_APPLICABLE, None
     if spec is None:
         return value, None
     number = _as_number(value)

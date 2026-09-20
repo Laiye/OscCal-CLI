@@ -9,6 +9,9 @@ import math
 from typing import TypeGuard
 
 REQUIRED_COMMAND_KEYS = {"name", "description", "type", "series", "feature", "keyword", "actions"}
+# 必需 keyword；其余 keyword（如 meas_pos_overshoot、meas_freq）按机型能力可选。
+# 省略 meas_pos_overshoot 表示机型没有正过冲测量：瞬态项目只记录上升时间，
+# 过冲列记为"不适用"（例：泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列的基本测量类型组）。
 REQUIRED_KEYWORDS = {
     "imp_fif",
     "imp_meg",
@@ -17,7 +20,6 @@ REQUIRED_KEYWORDS = {
     "meas_period",
     "meas_mean",
     "meas_risetime",
-    "meas_pos_overshoot",
     "meas_max",
     "meas_min",
     "acquire_stop_after_single",
@@ -107,8 +109,12 @@ ITEM_SIGNALS = {
 _MANUFACTURER_ALIASES = {"TEK": "TEKTRONIX", "ZHIYUAN": "ZLG"}
 
 
-def _normalize_token(value: object) -> str:
-    """型号/厂商归一化：转大写并去除非字母数字字符。"""
+def normalize_token(value: object) -> str:
+    """型号/厂商归一化：转大写并去除非字母数字字符。
+
+    同一型号在不同固件里的 *IDN? 写法可能不同（例如泰克 TBS1102 会上报
+    "TBS 1102"），因此执行前校验与 --auto 自动识别共用这一条归一化规则。
+    """
     if not isinstance(value, str):
         return ""
     return "".join(c for c in value.upper() if c.isalnum())
@@ -116,8 +122,8 @@ def _normalize_token(value: object) -> str:
 
 def manufacturer_matches(expected: str, actual: str) -> bool:
     """兼容已支持设备的厂商简写，拒绝跨厂商配对。"""
-    a = _MANUFACTURER_ALIASES.get(_normalize_token(expected), _normalize_token(expected))
-    b = _MANUFACTURER_ALIASES.get(_normalize_token(actual), _normalize_token(actual))
+    a = _MANUFACTURER_ALIASES.get(normalize_token(expected), normalize_token(expected))
+    b = _MANUFACTURER_ALIASES.get(normalize_token(actual), normalize_token(actual))
     return bool(a and b and (a in b or b in a))
 
 
@@ -127,7 +133,7 @@ def model_matches(expected: str, actual: str, min_prefix: int = 4) -> bool:
     仅用于 series 回退比较，兼容同一型号在 *IDN? 中上报的变体（例如 Fluke 9500B
     既有上报 "9500B"、也有上报 "9500" 的固件）；配置存在 models 时仍按精确白名单比较。
     """
-    a, b = _normalize_token(actual), _normalize_token(expected)
+    a, b = normalize_token(actual), normalize_token(expected)
     if not a or not b:
         return False
     if a == b:
@@ -153,7 +159,7 @@ def validate_device_identity(config: dict, idn: dict, label: str) -> list[str]:
     models = config.get("models")
     if models:
         supported = [v for v in models if isinstance(v, str) and v.strip()]
-        if not any(_normalize_token(v) == _normalize_token(model) for v in supported):
+        if not any(normalize_token(v) == normalize_token(model) for v in supported):
             errors.append(
                 f"{label} 型号 {model} 不在配置 models 中（支持: {', '.join(supported)}）"
             )

@@ -1,0 +1,320 @@
+{
+    "name": "Tektronix_TBS1000B",
+    "description": "Tektronix TBS1000B and TBS1000B-EDU series oscilloscope command set, derived from the TBS1000/B/EDU, TDS2000/B/C, TDS1000/B/C-EDU, TDS200, TPS2000/B Series Programmer Manual (077-044403 Rev B). Inputs are 1 MOhm only. These models use the extended immediate-measurement type set, including AMPlitude and POVERshoot, so all five calibration items are available.",
+    "manufacturer": "Tektronix",
+    "models": [
+        "TBS1052B",
+        "TBS1072B",
+        "TBS1102B",
+        "TBS1152B",
+        "TBS1202B",
+        "TBS1052B-EDU",
+        "TBS1072B-EDU",
+        "TBS1102B-EDU",
+        "TBS1152B-EDU",
+        "TBS1202B-EDU"
+    ],
+    "type": "pyvisa",
+    "series": [
+        "TBS1000B",
+        "TBS1000B-EDU"
+    ],
+    "feature": {
+        "meas": "merge",
+        "return_value_index": 1,
+        "get_value": "Direct"
+    },
+    "keyword": {
+        "imp_fif": "FIFty",
+        "imp_meg": "MEG",
+        "acquisition_mode_sample": "SAMple",
+        "acquisition_mode_average": "AVErage",
+        "acquisition_mode_peak": "PEAKdetect",
+        "meas_amp": "AMplitude",
+        "meas_period": "PERIod",
+        "meas_risetime": "RISe",
+        "meas_freq": "FREQuency",
+        "meas_mean": "MEAN",
+        "meas_pos_overshoot": "POVERshoot",
+        "meas_max": "MAXImum",
+        "meas_min": "MINImum",
+        "acquire_stop_after_single": "SEQuence",
+        "acquire_stop_after_run_stop": "RUNSTop",
+        "acquire_state_run": "RUN"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "FACtory"
+            ],
+            "args": []
+        },
+        "initialize": {
+            "name": "initialize",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*CLS;*RST"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "SELect:CH",
+                " "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":SCAle "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_vertical_position": {
+            "name": "set_vertical_position",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":POSition "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_probe_gain": {
+            "name": "set_probe_gain",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":PRObe "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ],
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "TRIGger:MAIn:EDGE:SOUrce CH"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "TRIGger:MAIn:LEVel "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "HORizontal:MAIn:SCAle "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQuire:MODe "
+            ],
+            "args": [
+                [
+                    "SAMple",
+                    "AVErage",
+                    "PEAKdetect"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQuire:NUMAVg "
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_source": {
+            "name": "set_meas_source",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "MEASUrement:IMMed:SOUrce1 CH"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ]
+            ]
+        },
+        "set_meas_type": {
+            "name": "set_meas_type",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "MEASUrement:IMMed:TYPe "
+            ],
+            "args": [
+                [
+                    "AMplitude",
+                    "AREA",
+                    "BURSTWIDth",
+                    "CAREA",
+                    "CMEAN",
+                    "CRMs",
+                    "CURSORMean",
+                    "CURSORRms",
+                    "DELAYFF",
+                    "DELAYFR",
+                    "DELAYRF",
+                    "DELAYRR",
+                    "FALL",
+                    "FEDGECount",
+                    "FREQuency",
+                    "High",
+                    "LOW",
+                    "MAXImum",
+                    "MEAN",
+                    "MINImum",
+                    "NDUty",
+                    "NONe",
+                    "NOVERshoot",
+                    "NPULSECount",
+                    "NWIdth",
+                    "PDUTy",
+                    "PERIod",
+                    "PHAse",
+                    "PK2pk",
+                    "POVERshoot",
+                    "PPULSECount",
+                    "PWIdth",
+                    "REDGECount",
+                    "RISe",
+                    "RMS"
+                ]
+            ]
+        },
+        "get_value": {
+            "name": "get_value",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "MEASUrement:IMMed:VALue?"
+            ],
+            "args": []
+        },
+        "set_acquire_state": {
+            "name": "set_acquire_state",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQuire:STATE "
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "STOP"
+                ]
+            ]
+        },
+        "set_acquire_stop_after": {
+            "name": "set_acquire_stop_after",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "ACQuire:STOPAfter "
+            ],
+            "args": [
+                [
+                    "RUNSTop",
+                    "SEQuence"
+                ]
+            ]
+        }
+    }
+}

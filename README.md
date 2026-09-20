@@ -270,7 +270,14 @@ python simulate_calibrate.py --channel 1,2 --probe 9530
 
 # 打印完整 SCPI 指令日志并导出 JSON + Excel
 python simulate_calibrate.py --log-scpi --export
+
+# 换用其它已支持机型模拟（例：TBS1000B/EDU 全项目，或 TDS1000/2000 系列四项）
+python simulate_calibrate.py --commands tektronix_tbs1000b --profile tektronix_tbs1000b --probe 9530
+python simulate_calibrate.py --commands tektronix_tds1000_tds2000 \
+    --profile tektronix_tds1000_tds2000_4ch --items amp,dc_gain,delta_time,bandwidth --probe 9530
 ```
+
+> 非 TBS1000B/EDU 机型没有正过冲测量，模拟 `transient` 仍会执行，只记录上升时间，过冲记为"不适用"。
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
@@ -439,6 +446,8 @@ OscCal-CLI/
 │   ├── tektronix_tbs.json           #   泰克 TBS2000B
 │   ├── tektronix_tds.json           #   泰克 TDS5000
 │   ├── tektronix_mso2000b.json      #   泰克 MSO2000B/DPO2000B/MSO2000/DPO2000
+│   ├── tektronix_tbs1000b.json      #   泰克 TBS1000B/TBS1000B-EDU
+│   ├── tektronix_tds1000_tds2000.json #  泰克 TBS1000/TDS1000/B/C-EDU/TDS2000/B/C/TPS2000/B
 │   ├── rigol_mso.json               #   普源 MSO5000
 │   ├── siglent_sds.json             #   鼎阳 SDS6000 PRO/SDS6000A
 │   ├── unit_utd.json                #   优利德 UTD2000CEX/UTD7000C
@@ -450,6 +459,9 @@ OscCal-CLI/
 │   ├── tektronix_mdo32.json         #   泰克 MDO32（2 通道）
 │   ├── tektronix_mso2000b_4ch.json  #   泰克 MSO2000B 系列（4 通道）
 │   ├── tektronix_mso2000b_2ch.json  #   泰克 MSO2000B 系列（2 通道）
+│   ├── tektronix_tbs1000b.json      #   泰克 TBS1000B/EDU（2 通道）
+│   ├── tektronix_tds1000_tds2000_2ch.json # 泰克 TBS1000/TDS1000/TDS2000/TPS2000（2 通道）
+│   ├── tektronix_tds1000_tds2000_4ch.json # 泰克 TDS2000/TPS2000（4 通道）
 │   ├── tektronix_tbs2000b.json
 │   ├── tektronix_tds5000.json
 │   ├── rigol_mso5000.json
@@ -466,6 +478,7 @@ OscCal-CLI/
 │   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
 │   ├── test_mdo3_comm_integration.py # SCPI 通信集成测试
+│   ├── test_tek_tbs_tds_configs.py  # TBS1000B/TDS1000/TDS2000/TPS2000 系列配置与指令回归
 │   └── test_all_configs.py          # 全量配置结构测试（commands/profiles/calibrators）
 ├── data/                            # 校准数据存储目录
 ├── simulate_calibrate.py            # 本地模拟校准脚本
@@ -604,7 +617,8 @@ OscCal-CLI/
 
 | 字段 | 说明 |
 |------|------|
-| `models` | 该配置接受的 `*IDN?` 型号字符串列表（精确比较）。用于同一型号存在多种上报形式的场景，如 FLUKE 9500B 既有上报 `9500B`、也有上报 `9500` 的固件，此时填写 `["9500","9500B"]`；省略时按 `series` 做型号家族回退匹配 |
+| `models` | 该配置接受的 `*IDN?` 型号字符串列表（精确比较，比较时忽略大小写与空格等非字母数字字符，因此 `"TBS1102"` 可匹配上报为 `TBS 1102` 的机型）。用于同一型号存在多种上报形式的场景，如 FLUKE 9500B 既有上报 `9500B`、也有上报 `9500` 的固件，此时填写 `["9500","9500B"]`；省略时按 `series` 做型号家族回退匹配 |
+| `keyword.meas_pos_overshoot` | 正过冲测量助记符。**可省略**：省略表示该机型没有此测量能力，瞬态项目只测上升时间、过冲列记"不适用"（例：泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列） |
 | `probes` | 探头信息，`edge_rise_times` 为可用的上升时间列表（秒），`max_frequency` 为最大正弦波频率 |
 | `impedance_rules` | 阻抗规则，按探头型号和信号模式定义支持的阻抗列表。`["1M","50"]` 表示两种都支持，`["50"]` 表示仅支持 50Ω |
 
@@ -623,6 +637,10 @@ OscCal-CLI/
   → 连接校准仪 → ROUT:FITT? CH1 查询探头 → 自动匹配探头型号
   → 打印识别结果 → 用户确认 → 执行
 ```
+
+> 型号比较统一按「忽略大小写 + 去除非字母数字字符」归一化（`config_validation.normalize_token`），
+> 因此 `TBS 1102`、`TBS-1102`、`tbs1102` 都匹配配置中的 `TBS1102`，与执行前校验使用同一条规则。
+> 归一化后若两个配置声明了同一型号，会判为歧义并要求手动指定配置，不会随机选一个。
 
 自动模式与手动模式共用配置校验。空厂商或型号、重复精确匹配和系列匹配同分时均不会自动选取；可切换到手动模式显式选择配置。检测到多台同类设备时，用 `--resource-cal` 和 `--resource-osc` 指定资源。配置会检查必需动作、测量模式所需动作、参数数量和字段类型，以及校准点和限值的有限数值约束。
 
@@ -715,6 +733,10 @@ G = (Ur+ - Ur-) / (U+ - U-)
 
 校准瞬态响应。校准仪输出快沿信号（EDGE），示波器单次采集，测量上升时间和正过冲。上升时间根据探头型号自动设置。
 
+**缺少正过冲测量的机型**（指令集未声明 `meas_pos_overshoot`，如泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列的基本测量类型组）：瞬态项目照常执行，只测上升时间，**过冲列记为"不适用"**（JSON 中为 `null`），不会因为缺少这一个测量项而放弃整项。执行时会给出提示。
+
+`meas_pos_overshoot` 不在必需 keyword 列表中（见 `config_validation.REQUIRED_KEYWORDS`），省略它即表示机型没有正过冲测量能力，这是当前唯一带"降级为不适用"语义的可选 keyword。
+
 ## 已支持的示波器
 
 | 品牌 | 系列 | 指令集文件 | 特征文件 | 连接方式 |
@@ -726,6 +748,9 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 泰克 | TDS5000 | `tektronix_tds.json` | `tektronix_tds5000.json` | VISA |
 | 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（4 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_4ch.json` | VISA |
 | 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（2 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_2ch.json` | VISA |
+| 泰克 | TBS1000B, TBS1000B-EDU（2 通道，50～200 MHz） | `tektronix_tbs1000b.json` | `tektronix_tbs1000b.json` | VISA |
+| 泰克 | TBS1000, TDS1000/B/C-EDU, TDS2000/B/C, TPS2000/B（2 通道，25～200 MHz） | `tektronix_tds1000_tds2000.json` | `tektronix_tds1000_tds2000_2ch.json` | VISA |
+| 泰克 | TDS2004/B/C, TDS2014/B/C, TDS2024/B/C, TPS2014/B, TPS2024/B（4 通道） | `tektronix_tds1000_tds2000.json` | `tektronix_tds1000_tds2000_4ch.json` | VISA |
 | 普源 | MSO5000 | `rigol_mso.json` | `rigol_mso5000.json` | VISA |
 | 鼎阳 | SDS6000 PRO, SDS6000A | `siglent_sds.json` | `siglent_sds.json` | VISA |
 | 优利德 | UTD2000CEX | `unit_utd.json` | `unit_utd2000cex.json` | VISA |
@@ -744,6 +769,26 @@ G = (Ur+ - Ur-) / (U+ - U-)
 - **垂直挡位范围 2 mV/div ～ 5 V/div**（手册偏移量说明："For V/Div settings from 2 mV/div to 200 mV/div, the offset range is ±1 V；from 202 mV/div to 5 V/div, the offset range is ±25 V"），按 1-2-5 排列，**不支持 1 mV/div 与 10 V/div**；**水平时基按 1-2-4-10 排列**（400 ns/div 之后直接是 1 µs/div，**没有 800 ns/div**）。因此本系列的 `delta_amp`/`dc_gain` 点表为 11 点（2 mV ～ 5 V/div）、`delta_time` 点表以 1 µs 取代 800 ns（20 点），避免示波器钳位挡位后标准值与被测波形不符而报出虚假大误差。
 - **时基下限 2 ns/div**：频带宽度扫描在约 250 MHz 以上会触及该下限，示波器自行钳位时基；幅度—频率测量本身仍然有效。
 - 其他已核实要点：`ACQuire:MODe` 仅支持 `SAMple|AVErage`（无峰值检测）；触发电平为全局 `TRIGger:A:LEVel <NR3>`（不带通道号）；测量值查询返回 `:MEASUREMENT:IMMED:VALUE <值>`（配置 `return_value_index: 1`）。
+
+## 泰克 TBS1000B/EDU、TBS1000、TDS1000/2000、TPS2000 系列特别说明
+
+该系列依据编程手册 **077-044403 Rev B**（TBS1000/B/EDU, TDS2000/B/C, TDS1000/B/C-EDU, TDS200, TPS2000/B）实现，覆盖 2 通道与 4 通道共 **49 个型号**（TBS1000B/EDU 10 个、TBS1000 5 个、TDS1000/B/C-EDU 9 个、TDS2000/B/C 19 个、TPS2000/B 6 个），带宽 25～200 MHz。共同特点与使用限制如下：
+
+- **输入阻抗仅 1 MΩ**：手册中不存在 `CH<x>:TERmination`/`CH<x>:IMPedance` 指令，故指令集不含 `set_impedance`。9560 探头的 MARK/SIN/EDGE 只能输出 50Ω，执行前校验会拒绝对应项目；请改用 **9530 探头**（各模式均支持 1MΩ）。`amp`/`dc_gain` 用 9530 或 9560 均可。
+- **指令集分两份，按测量能力划分**：
+  - `tektronix_tbs1000b.json`（TBS1000B/TBS1000B-EDU）：手册的**扩展测量类型**组，含 `AMplitude`（幅度）与 `POVERshoot`（正过冲），五项校准全部可用。
+  - `tektronix_tds1000_tds2000.json`（其余机型）：手册的**基本测量类型**组（16 种），**没有 `AMplitude`/`POVERshoot`**，因此幅度校准改用 `PK2pk`；指令集**不声明 `meas_pos_overshoot`**，瞬态项目仍然执行，只测上升时间，**过冲列记为"不适用"**（不会向示波器下发机型不支持的测量类型）。五项校准都可用。
+- **未纳入的型号（TDS210/TDS220/TDS224）**：TDS200 系列必须选装 TDS2MM 测量模块才有自动测量、选装 TDS2CM(A) 才有通信接口（手册前言亦如此说明），无法保证指令可用，故不写入 `models` 白名单；手册适用列表中的其余型号均已覆盖。
+- **探头增益**：出厂无源探头默认 10×，Profile 中 `probe_default: 10` 会在测量前把衰减置为 1×（`CH<x>:PRObe 1`），对应校准仪直连，避免读数差 10 倍。
+- **分格数 8 × 10**：手册 CURSor 说明"屏幕中心为 0 格、屏幕底部为 -4 格"，即 8 垂直分格；标准值取 `挡位 × (垂直分格 - 2)`，即屏幕中部的 6 格峰峰值。
+- **垂直挡位 2 mV/div ～ 5 V/div（1-2-5）**：手册 `CH<x>:SCAle` 说明"使用 1× 探头时电压范围为 5 V/div ～ 2 mV/div"，位置范围表也列出 2 mV/div 一档，故 `delta_amp`/`dc_gain` 点表为 11 点，不含 1 mV/div 与 10 V/div。
+- **水平时基为 1-2.5-5 序列**（手册 `HORizontal:MAIn:SCAle`：*"The acceptable values are in a 1-2.5-5 sequence. Other values are forced to the closest acceptable value."*），与 MDO/MSO2000B 的 1-2-4-10 不同，因此 `delta_time` 点表按 1-2.5-5 排列（10 ns ～ 25 ms，20 点）。**起点取 10 ns/div**：TDS2001C/2002C/2004C 等机型最快 5 ns/div、TDS2012C 及 TBS1000B 最快 2.5 ns/div，10 ns/div 对所有机型都无需钳位。
+- **查询响应带表头**：`FACtory`（本工具的 `preset`）会打开 HEADer，`MEASUrement:IMMed:VALue?` 返回形如 `:MEASUREMENT:IMMED:VALUE 28.75E6`，故 `return_value_index: 1`。测量源写 `MEASUrement:IMMed:SOUrce1 CH<x>`，与附录 B 出厂设置一致。
+- **`ACQuire:NUMAVg` 只接受 4/16/64/128**：测量前一概写 16，测量后代码会写 2（本系列不在合法值内），示波器可能钳位到 4 并在事件队列中记录一条错误；下一次测量前仍会重新写入 16，且本工具不查询错误队列，不影响测量结果与判定。
+- **带宽判定阈值**：Profile 的 `bandwidth.min_mhz` 取该组机型中的**最低**标称带宽（TBS1000B/EDU 50、2 通道组 25、4 通道组 70）。如需按具体机型的标称带宽严格判定，请把对应 Profile 的 `min_mhz` 改为实际值（例如 TDS2024C 改为 200）。
+- **带宽扫描步进**：`bd_step` 设为 5 MHz，使 25/40/50/60/70/100/150/200 MHz 等标称带宽都落在扫描栅格上；二分扫描的测量次数只随栅格数对数增长，扫描时间与 10 MHz 步进基本一致。
+- **型号上报形式**：真机 `*IDN?` 会上报带空格的型号，例如 `TEKTRONIX,TBS 1102,C030565,CF:91.1CT FV:v26.02`（TBS1102，固件 v26.02）；匹配时忽略大小写与空格，`--auto` 可直接识别。
+- **上机确认**：本系列配置全部依据上述编程手册推导，尚未在真机上验证。首次使用建议先跑单项（如 `--items amp --probe 9530`），确认测量查询响应形如 `:MEASUREMENT:IMMED:VALUE <值>`（带表头）后再执行全部项目；若某机型返回裸数值，把对应指令集 `feature.return_value_index` 改为 0 即可。
 
 ## 周立功 ZDS1000 系列特别说明
 
@@ -785,6 +830,7 @@ pytest -v
 | `tests/test_device_identity.py` | 设备身份核对：厂商别名/跨厂商拒绝、`models` 白名单精确匹配、校准仪 `series` 型号家族回退（`9500`/`9500B` 兼容） |
 | `tests/test_export_grouping.py` | 报告分组：同一项目的多通道数据合并到同一 sheet / 同一表格 |
 | `tests/test_export_precision.py` | 报告显示精度：`ITEM_PRECISION` 与列数一致性、Excel 单元格数值/数字格式与终端位数一致、舍入不掩盖超差 |
+| `tests/test_tek_tbs_tds_configs.py` | 泰克 TBS1000B/EDU、TBS1000、TDS1000/2000、TPS2000 系列：型号唯一匹配、指令契约（PK2pk/TRIGger:MAIn/无 50Ω 指令）、1-2.5-5 时基点表、瞬态项目执行前拒绝、mock 仪器端到端指令 |
 
 > 配置结构校验规则与运行时加载校验共用同一实现（`osccal/core/config_validation.py`）：
 > 加载配置时即校验结构，出错会直接指出具体 JSON 文件与字段，而非运行时才报错。

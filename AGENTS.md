@@ -31,10 +31,10 @@
 
 - 入口 `osccal/cli.py:main`（`pyproject.toml` 的 `[project.scripts]`）。`osccal/core/` 为通信/配置/存储/导出，`osccal/measure/` 为各校准项目，`registry.py` 定义执行顺序 amp→dc_gain→delta_time→bandwidth→transient。
 - 配置驱动，新增示波器**只加 JSON 不改代码**：`commands/`（SCPI 命令模板）、`profiles/`（硬件特征/校准点）、`calibrators/`（校准仪与探头）。`--auto` 按 `manufacturer`/`models` 精确匹配，回退 `series`、文件名前缀。
-- 配置结构校验只有一份实现 `osccal/core/config_validation.py`，运行时加载和 `tests/test_all_configs.py` 共用；改 JSON 契约时同步这里，不要另写校验。
+- 配置结构校验只有一份实现 `osccal/core/config_validation.py`，运行时加载和 `tests/test_all_configs.py` 共用；改 JSON 契约时同步这里，不要另写校验。`REQUIRED_KEYWORDS` 之外的测量 keyword 可省略，表示机型没有该能力：省略 `meas_pos_overshoot` 时瞬态项目只测上升时间、过冲列记"不适用"（JSON 存 `null`，终端/Excel 由 `utils.NOT_APPLICABLE` 渲染），`transient.py` 用 `"meas_pos_overshoot" in cmd_osc["keyword"]` 判断；不要用"缺少 action"让整项失败。
 - 结果表格的列与**显示精度**只有一份声明 `osccal/core/table_configs.py`（`ITEM_CONFIGS`/`EXCEL_ITEM_CONFIGS` 的 `precision` 指向 `ITEM_PRECISION`）：终端 `show` 与 Excel 导出共用 `osccal/core/utils.py` 的 `format_display_value`/`prepare_excel_value`，增删列时同步精度规格（`tests/test_export_precision.py` 守护列数一致性）。Excel 单元格按显示精度舍入，超差判定仍用未舍入原值，未舍入读数只保留在 JSON 记录里。
 - 同一模块提供**执行前校验**：`cli.py` 在连接设备后、任何设置指令之前调用 `validate_selection()`（通道/项目/探头信号与阻抗/带宽参数/必需 action）与 `validate_device_identity()`（厂商与型号）；不通过则本轮中止、不发任何设置指令，退出码 `2`。
-- 设备身份匹配：存在 `models` 时按精确白名单（忽略大小写与非字母数字字符）；校准仪无 `models` 时回退 `series`/`name` 的**型号家族**匹配（完全相同，或较短者为较长者前缀且长度 ≥ 4，如 `9500` 与 `9500B`）。`calibrators/*.json` 可用 `models` 声明同一型号的多种 `*IDN?` 上报形式。
+- 设备身份匹配：存在 `models` 时按精确白名单（忽略大小写与非字母数字字符，真机存在 `TBS 1102` 这类带空格上报）；校准仪无 `models` 时回退 `series`/`name` 的**型号家族**匹配（完全相同，或较短者为较长者前缀且长度 ≥ 4，如 `9500` 与 `9500B`）。`calibrators/*.json` 可用 `models` 声明同一型号的多种 `*IDN?` 上报形式。归一化规则只有一份实现 `config_validation.normalize_token`，`auto_detect.py` 的 `--auto` 识别与执行前校验共用它，改规则时两处同时生效。
 - 测试用 `tests/conftest.py` 的 `FakeInstrument` 模拟 pyvisa，无需真实设备；`conftest.py` 会把仓库根注入 `sys.path`。
 
 ## 注意事项

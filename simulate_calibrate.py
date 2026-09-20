@@ -134,6 +134,8 @@ class SimulatedCalibrator:
 _MEAS_TYPE_MAP = {
     "AMPLITUDE": "amp",
     "AMP": "amp",
+    # TBS1000/TDS1000/TDS2000/TPS2000 系列没有 AMPlitude 测量，幅度用 PK2pk
+    "PK2PK": "amp",
     "MEAN": "mean",
     "CMEAN": "mean",
     "PERIOD": "period",
@@ -503,10 +505,13 @@ def print_results_summary(all_results: dict):
                 table.add_row(key, str(len(rows)), f"带宽 {min(bws):.1f}~{max(bws):.1f} MHz")
             elif "risetime_ns" in rows[0]:
                 r = rows[0]
+                overshoot = r.get("pos_overshoot")
+                # 机型无正过冲测量时 pos_overshoot 为 None → 显示"不适用"
+                overshoot_text = "不适用" if overshoot is None else f"{overshoot:.2f}%"
                 table.add_row(
                     key,
                     str(len(rows)),
-                    f"上升时间 {r.get('risetime_ns', 0):.2f} ns, 过冲 {r.get('pos_overshoot', 0):.2f}%",
+                    f"上升时间 {r.get('risetime_ns', 0):.2f} ns, 过冲 {overshoot_text}",
                 )
             else:
                 table.add_row(key, str(len(rows)), "")

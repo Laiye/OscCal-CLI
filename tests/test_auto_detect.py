@@ -47,6 +47,59 @@ def test_empty_model_and_tied_series_are_rejected():
     assert _fuzzy_match_series("MDO34", candidates) is None
 
 
+@pytest.mark.parametrize(
+    "reported",
+    ["TBS1102", "TBS 1102", "tbs 1102", "TBS-1102", "TBS_1102 "],
+)
+def test_exact_model_match_ignores_case_space_and_punctuation(tmp_path, reported):
+    """*IDN? 型号写法差异（泰克 TBS1102 实际上报 "TBS 1102"）不应导致识别失败。"""
+    commands = tmp_path / "commands"
+    profiles = tmp_path / "profiles"
+    commands.mkdir()
+    profiles.mkdir()
+    cmd = {
+        "name": "T",
+        "description": "d",
+        "type": "pyvisa",
+        "series": ["TBS1000"],
+        "manufacturer": "Tektronix",
+        "models": ["TBS1102"],
+        "feature": {"meas": "merge"},
+    }
+    profile = {"series": "TBS1000", "manufacturer": "Tektronix", "models": ["TBS1102"]}
+    _write(commands / "tektronix_a.json", cmd)
+    _write(profiles / "tektronix_a.json", profile)
+
+    idn = {"manufacturer": "TEKTRONIX", "model": reported}
+    _, _, cmd_file, profile_file = detect_configs(str(commands), str(profiles), idn)
+    assert cmd_file is not None and cmd_file.endswith("tektronix_a.json")
+    assert profile_file is not None and profile_file.endswith("tektronix_a.json")
+
+
+def test_normalized_duplicate_models_are_reported_as_ambiguous(tmp_path):
+    """两个配置用不同写法声明同一型号时，应判定为歧义而不是随机取一个。"""
+    commands = tmp_path / "commands"
+    profiles = tmp_path / "profiles"
+    commands.mkdir()
+    profiles.mkdir()
+    base_cmd = {
+        "name": "T",
+        "description": "d",
+        "type": "pyvisa",
+        "series": ["TBS1000"],
+        "manufacturer": "Tektronix",
+        "feature": {"meas": "merge"},
+    }
+    _write(commands / "tektronix_a.json", {**base_cmd, "models": ["TBS1102"]})
+    _write(commands / "tektronix_b.json", {**base_cmd, "models": ["TBS 1102"]})
+    _write(profiles / "tektronix_a.json", {"series": "TBS1000", "manufacturer": "Tektronix"})
+    _write(profiles / "tektronix_b.json", {"series": "TBS1000", "manufacturer": "Tektronix"})
+
+    idn = {"manufacturer": "TEKTRONIX", "model": "TBS1102"}
+    cmd, profile, _, _ = detect_configs(str(commands), str(profiles), idn)
+    assert cmd is None and profile is None
+
+
 @pytest.mark.parametrize("invalid", ["actions", "profile", "duplicate", "empty_identity"])
 def test_auto_detection_uses_runtime_validation(tmp_path, mdo3_commands, mdo34_profile, invalid):
     import copy
