@@ -356,6 +356,12 @@ def validate_commands(data: dict) -> list[str]:
             errors.append("非法 get_value 模式")
         if feature.get("set_meas", "Channel") not in ("Channel", "ItemChannel"):
             errors.append("非法 set_meas 模式")
+        # 幅度测量换算系数：有效值类测量（CRMs，对称方波时等于幅度）需乘 2 才是
+        # 标准值的峰峰值口径；峰峰值类测量（PK2pk/AMPlitude）不声明即为 1。
+        if "meas_amp_scale" in feature and (
+            not _is_number(feature["meas_amp_scale"]) or feature["meas_amp_scale"] <= 0
+        ):
+            errors.append("feature.meas_amp_scale 必须为有限正数")
 
     keyword = data.get("keyword")
     if not isinstance(keyword, dict):
@@ -427,6 +433,12 @@ def validate_profile(data: dict) -> list[str]:
     for field in ("bandwidth", "bd_step"):
         if field in data and (not _is_number(data[field]) or data[field] <= 0):
             errors.append(f"{field} 必须为有限正数")
+    # 平均次数：波形越"厚"，峰峰值类测量被噪声抬得越高，低挡位尤其明显；
+    # 示波器的合法取值各系列不同（如 TBS1000/TDS2000 为 4/16/64/128），故由 Profile 声明。
+    if "averages" in data and (
+        not _is_count(data["averages"]) or not 2 <= data["averages"] <= 4096
+    ):
+        errors.append("averages 必须为 2~4096 的整数")
     if not isinstance(data.get("imp_has_50"), bool):
         errors.append("imp_has_50 必须为布尔值")
     if not _is_number(data.get("vertical_div")) or data["vertical_div"] <= 0:

@@ -134,8 +134,11 @@ class SimulatedCalibrator:
 _MEAS_TYPE_MAP = {
     "AMPLITUDE": "amp",
     "AMP": "amp",
-    # TBS1000/TDS1000/TDS2000/TPS2000 系列没有 AMPlitude 测量，幅度用 PK2pk
+    # 峰峰值类：直接等于峰峰值（标准值口径）
     "PK2PK": "amp",
+    # TBS1000/TDS1000/TDS2000/TPS2000 系列没有 AMPlitude/PK2pk 方案：
+    # 用 CRMs 测幅度，对称方波的有效值 = 幅度 = 峰峰值/2，故单列一种类型
+    "CRMS": "amp_rms",
     "MEAN": "mean",
     "CMEAN": "mean",
     "PERIOD": "period",
@@ -308,8 +311,12 @@ class SimulatedOscilloscope:
         scale = self.vertical_scale.get(ch, 0.1)
 
         if meas_kind == "amp":
-            # 幅度 = 校准仪输出幅度 × 频率衰减 × 0.1% 增益误差
+            # 幅度（峰峰值口径）= 校准仪输出幅度 × 频率衰减 × 0.1% 增益误差
             return st.volt * self._attenuation(st.freq) * 1.001
+        if meas_kind == "amp_rms":
+            # CRMs：对称方波的有效值 = 幅度 = 峰峰值的一半（示波器测量口径；
+            # 校准器一侧的换算由指令集 feature.meas_amp_scale 负责还原）
+            return st.volt * self._attenuation(st.freq) * 1.001 / 2.0
         if meas_kind == "mean":
             # DC 均值 = 校准仪 DC 电平 × 0.2% 误差
             return st.volt * 1.002

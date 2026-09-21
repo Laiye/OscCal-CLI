@@ -24,6 +24,9 @@ class AmpCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
 
         vertical_div = self.profile.get("vertical_div", 8)
+        averages = self._get_measurement_averages()
+        # 有效值类测量（如 CRMs）需换算到标准值的峰峰值口径，见 base._get_meas_amp_scale
+        amp_scale = self._get_meas_amp_scale()
         points = self.profile.get("points", {}).get("delta_amp", [])
         limit_range = self._get_limits("amp")
 
@@ -41,17 +44,19 @@ class AmpCalibrator(BaseCalibrator):
             task = progress.add_task("幅度校准", total=len(points))
             for i, val in enumerate(points):
                 self._write_osc("set_vertical_scale", self.channel, val)
+                # 换挡位后微调触发电平，迫使平均序列重新开始（避免粘滞的旧平均值）
+                self._nudge_trigger_level(val)
 
                 std_value = val * (vertical_div - 2)
                 self._write_calibrator("set_volt", std_value)
 
                 time.sleep(1)
-                self._write_osc("set_number_of_acquisitions", 16)
+                self._write_osc("set_number_of_acquisitions", averages)
                 time.sleep(5)
 
                 self._adjust_vertical_position(val)
 
-                measured = self._read_meas("meas_amp")
+                measured = self._read_meas("meas_amp") * amp_scale
 
                 error = relative_error(measured, std_value)
 

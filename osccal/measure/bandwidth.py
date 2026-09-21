@@ -25,7 +25,9 @@ class BandwidthCalibrator(BaseCalibrator):
         self.setup_measurement("meas_amp")
         self._write_osc("set_horizontal_scale", 1e-5)
         self._write_osc("set_acquisition_mode", self.cmd_osc["keyword"]["acquisition_mode_average"])
-        self._write_osc("set_number_of_acquisitions", 16)
+        # 峰值类测量（无幅度测量的机型用 PK2pk）受噪声影响，平均次数越多波形越"薄"；
+        # 本项不额外微调触发电平：每个校准点都会改写垂直/水平挡位，平均序列本就会重启。
+        self._write_osc("set_number_of_acquisitions", self._get_measurement_averages())
 
         self._write_calibrator("set_shap", "SIN")
 

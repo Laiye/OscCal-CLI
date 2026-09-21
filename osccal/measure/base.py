@@ -46,6 +46,44 @@ class BaseCalibrator:
         self.comm_type = cmd_osc.get("type", "pyvisa")
         self.cal_type = cmd_calibrator.get("type", "pyvisa")
         self.results = []
+        # 触发电平微调方向（每次调用翻转，保证相对上一次都是有效变化）
+        self._level_nudge_sign = 1
+
+    def _get_measurement_averages(self) -> int:
+        """本次测量使用的平均次数（Profile 未声明时为 16，保持既有行为）。"""
+        averages = self.profile.get("averages", 16)
+        return averages if isinstance(averages, int) and averages >= 2 else 16
+
+    def _get_meas_amp_scale(self) -> float:
+        """幅度测量的换算系数（指令集未声明 feature.meas_amp_scale 时为 1）。
+
+        标准值口径是屏幕中部的 6 格**峰峰值**：`PK2pk`/`AMPlitude` 直接就是该口径；
+        没有幅度测量的机型用 `CRMs`（第一周期真有效值），对称方波的有效值等于
+        **幅度**（即峰峰值的一半），故需按 2 换算后再与标准值比较。
+        """
+        value = self.cmd_osc.get("feature", {}).get("meas_amp_scale", 1.0)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            return 1.0
+        return float(value)
+
+    def _nudge_trigger_level(self, scale: float) -> None:
+        """换挡位后微调触发电平，迫使示波器重新开始平均。
+
+        平均模式下示波器可能沿用上一次的累加平均（现场表现为"粘滞"），手册
+        ACQuire:NUMACq? 说明：改变触发参数会复位平均序列（Sample/PeakDetect 模式下
+        改触发电平不复位，Average 模式下复位）。微调量取当前挡位的 0.1 格：
+        既大于触发电平 DAC 的分辨率（保证示波器确实发生状态变化），
+        又远小于被测波形幅度（不影响测量）；符号逐次翻转以确保每次都是有效变化。
+        """
+        if "set_trigger_level" not in self.cmd_osc.get("actions", {}):
+            return
+        level = 0.1 * scale * self._level_nudge_sign
+        self._level_nudge_sign = -self._level_nudge_sign
+        action = self.cmd_osc["actions"]["set_trigger_level"]
+        if action.get("args_num", 0) >= 2:
+            self._write_osc("set_trigger_level", self.channel, level)
+        else:
+            self._write_osc("set_trigger_level", level)
 
     def _get_limits(self, item_name):
         limits = self.profile.get("calibration_limits", {}).get(item_name, None)

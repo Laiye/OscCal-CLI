@@ -111,11 +111,14 @@ def test_this_series_commands_and_profiles_cover_same_models():
 # ── 指令集契约 ──────────────────────────────────────────────────────────
 
 
-def test_group2_uses_manual_commands_and_pk2pk():
-    """非 TBS1000B/EDU 机型：使用手册中的基本命令，幅度测量用 PK2pk。"""
+def test_group2_uses_manual_commands_and_crms():
+    """非 TBS1000B/EDU 机型：使用手册中的基本命令，幅度测量用 CRMs（实机验证）。"""
     cmd = _load(COMMANDS_DIR / GROUP2_CMD)
     keyword = cmd["keyword"]
-    assert keyword["meas_amp"] == "PK2pk"  # 该组机型没有 AMPlitude 测量
+    # 该组机型没有 AMPlitude；PK2pk 会把方波沿的峰化/过冲全额计入（实机偏高 1.3~5.3%），
+    # 改用 CRMs（第一周期真有效值），对称方波时等于幅度 = 标准值峰峰值的一半
+    assert keyword["meas_amp"] == "CRMs"
+    assert cmd["feature"]["meas_amp_scale"] == 2.0
     assert keyword["meas_period"] == "PERIod"
     assert keyword["meas_mean"] == "MEAN"
     assert keyword["meas_max"] == "MAXImum"
@@ -145,6 +148,7 @@ def test_group2_uses_manual_commands_and_pk2pk():
     assert actions["set_acquire_state"]["commands"] == ["ACQuire:STATE "]
     assert actions["set_acquire_stop_after"]["commands"] == ["ACQuire:STOPAfter "]
     assert "RISe" in actions["set_meas_type"]["args"][0]
+    assert "CRMs" in actions["set_meas_type"]["args"][0]
 
 
 def test_group1_supports_extended_measurements():
@@ -185,14 +189,14 @@ def test_measurement_types_stay_within_manual_scope():
 
 
 @pytest.mark.parametrize(
-    "profile_file,channels,min_mhz",
+    "profile_file,channels,min_mhz,averages",
     [
-        (GROUP1_PROFILE, 2, 50),
-        (GROUP2_2CH_PROFILE, 2, 25),
-        (GROUP2_4CH_PROFILE, 4, 70),
+        (GROUP1_PROFILE, 2, 50, 16),  # AMPlitude 测量，噪声不直接抬高结果，保持默认 16
+        (GROUP2_2CH_PROFILE, 2, 25, 64),  # PK2pk，需更多平均把波形"压薄"
+        (GROUP2_4CH_PROFILE, 4, 70, 64),
     ],
 )
-def test_profile_matches_series_hardware(profile_file, channels, min_mhz):
+def test_profile_matches_series_hardware(profile_file, channels, min_mhz, averages):
     profile = _load(PROFILES_DIR / profile_file)
     assert profile["manufacturer"] == "Tektronix"
     assert profile["channels"] == channels
@@ -200,6 +204,7 @@ def test_profile_matches_series_hardware(profile_file, channels, min_mhz):
     assert profile["vertical_div"] == 8  # 屏幕底部为 -4 格
     assert profile["horizontal_div"] == 10
     assert profile["probe_default"] == 10  # 出厂无源探头 10X，需置 1X 直连
+    assert profile.get("averages", 16) == averages
     assert profile["calibration_limits"]["bandwidth"]["min_mhz"] == min_mhz
     for table in ("delta_amp", "dc_gain", "delta_time", "bandwidth"):
         points = profile["points"][table]
@@ -345,13 +350,23 @@ def test_cli_sends_manual_scpi_for_group2_amplitude(tds_scope):
     assert "HORizontal:MAIn:SCAle 0.001" in written
     assert "CH1:SCAle 0.002" in written
     assert "ACQuire:MODe AVErage" in written
-    assert "ACQuire:NUMAVg 16" in written
+    # 低挡位噪声/峰化明显，该组 Profile 把平均次数提到 64（本系列合法值 4/16/64/128）
+    assert "ACQuire:NUMAVg 64" in written
+    # 每个挡位都微调触发电平（0.1 格、符号交替），迫使平均序列重新开始
+    nudges = [c for c in written if c.startswith("TRIGger:MAIn:LEVel ")]
+    assert nudges, "每个挡位后应写入一次触发电平微调"
+    assert nudges[0] == "TRIGger:MAIn:LEVel 0.0002"
+    assert nudges[1] == "TRIGger:MAIn:LEVel -0.0005"
+    assert len({c for c in nudges}) == len(nudges), "相邻挡位的微调值不应重复（否则平均不会重启）"
     assert all("TERmination" not in c and "IMPedance" not in c for c in written)
     assert all("TRIGger:A:" not in c for c in written)  # 该系列用 TRIGger:MAIn
     assert any("MEASUrement:IMMed:SOUrce1 CH1" in c for c in written)
-    assert any("MEASUrement:IMMed:TYPe PK2pk" in c for c in written)
+    assert any("MEASUrement:IMMed:TYPe CRMs" in c for c in written)
+    assert not any("TYPe PK2pk" in c for c in written), "已改用 CRMs，不应再下发 PK2pk"
     assert any("MEASUrement:IMMed:VALue?" in c for c in written)
     assert "amp" in saved["results"]
+    # 假仪器返回 1.0（CRMs 口径 = 幅度），换算到峰峰值口径后应为 2.0
+    assert saved["results"]["amp"][0]["measured"] == pytest.approx(2.0)
     assert saved["metadata"]["profile_file"] == GROUP2_4CH_PROFILE
 
 

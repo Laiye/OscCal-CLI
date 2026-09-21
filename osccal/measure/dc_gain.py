@@ -10,14 +10,17 @@ from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 class DcGainCalibrator(BaseCalibrator):
     def _measure_dc_pair(self, val, impedance_label, row_index):
         vertical_div = self.profile.get("vertical_div", 8)
+        averages = self._get_measurement_averages()
 
         self._write_osc("set_vertical_scale", self.channel, val)
+        # 换挡位后微调触发电平，迫使平均序列重新开始（避免粘滞的旧平均值）
+        self._nudge_trigger_level(val)
 
         std_value_p = val * (vertical_div - 2) * 0.5
         self._write_calibrator("set_volt", std_value_p)
 
         time.sleep(1)
-        self._write_osc("set_number_of_acquisitions", 16)
+        self._write_osc("set_number_of_acquisitions", averages)
         time.sleep(5)
 
         self._adjust_vertical_position(val)
@@ -28,9 +31,11 @@ class DcGainCalibrator(BaseCalibrator):
 
         std_value_n = val * -0.5 * (vertical_div - 2)
         self._write_calibrator("set_volt", std_value_n)
+        # 正/负半周之间挡位不变，同样需要一次微调让平均重新开始
+        self._nudge_trigger_level(val)
 
         time.sleep(1)
-        self._write_osc("set_number_of_acquisitions", 16)
+        self._write_osc("set_number_of_acquisitions", averages)
         time.sleep(5)
 
         measure_n = self._read_meas("meas_mean")

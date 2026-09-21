@@ -1,6 +1,6 @@
 {
     "name": "Tektronix_TDS1000_TDS2000",
-    "description": "Tektronix TBS1000, TDS1000/B/C-EDU, TDS2000/B/C and TPS2000/B series oscilloscope command set, derived from the TBS1000/B/EDU, TDS2000/B/C, TDS1000/B/C-EDU, TDS200, TPS2000/B Series Programmer Manual (077-044403 Rev B). Inputs are 1 MOhm only. These models use the basic immediate-measurement type set: they have no AMPlitude and no POVERshoot, so amplitude is measured with PK2pk (meas_amp) and meas_pos_overshoot is intentionally omitted - the transient item then measures rise time only and reports the overshoot column as not applicable.",
+    "description": "Tektronix TBS1000, TDS1000/B/C-EDU, TDS2000/B/C and TPS2000/B series oscilloscope command set, derived from the TBS1000/B/EDU, TDS2000/B/C, TDS1000/B/C-EDU, TDS200, TPS2000/B Series Programmer Manual (077-044403 Rev B). Inputs are 1 MOhm only. These models use the basic immediate-measurement type set: they have no AMPlitude and no POVERshoot, so amplitude is measured with CRMs (true RMS of the first cycle) and meas_pos_overshoot is intentionally omitted - the transient item then measures rise time only and reports the overshoot column as not applicable. CRMs was chosen over PK2pk on real hardware: PK2pk takes max-min, so deterministic edge peaking/overshoot of the square wave is counted in full (measured 1.3-5.3% high on a TBS1102, worst at low V/div, and averaging does not remove it), while RMS is only second-order sensitive to narrow peaks. For the symmetric square wave from the calibrator CRMs equals the amplitude, i.e. half of the peak-to-peak nominal used by the standard value, hence feature.meas_amp_scale = 2.0.",
     "manufacturer": "Tektronix",
     "models": [
         "TBS1022",
@@ -58,7 +58,8 @@
     "feature": {
         "meas": "merge",
         "return_value_index": 1,
-        "get_value": "Direct"
+        "get_value": "Direct",
+        "meas_amp_scale": 2.0
     },
     "keyword": {
         "imp_fif": "FIFty",
@@ -66,7 +67,7 @@
         "acquisition_mode_sample": "SAMple",
         "acquisition_mode_average": "AVErage",
         "acquisition_mode_peak": "PEAKdetect",
-        "meas_amp": "PK2pk",
+        "meas_amp": "CRMs",
         "meas_period": "PERIod",
         "meas_risetime": "RISe",
         "meas_freq": "FREQuency",

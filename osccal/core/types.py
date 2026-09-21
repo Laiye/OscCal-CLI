@@ -23,6 +23,7 @@ class FeatureConfig(TypedDict, total=False):
     return_value_index: int
     get_value: str
     set_meas: str
+    meas_amp_scale: float
 
 
 # 关键字映射：keyword 名 -> SCPI 助记符
@@ -67,6 +68,7 @@ class ProfileConfig(TypedDict, total=False):
     horizontal_div: int
     probe_default: int
     init_time: float
+    averages: int
     calibration_limits: dict[str, CalibrationLimits]
     points: PointsConfig
     bandwidth: float
