@@ -19,6 +19,8 @@ class AmpCalibrator(BaseCalibrator):
         self._write_osc("set_acquisition_mode", self.cmd_osc["keyword"]["acquisition_mode_average"])
         self._write_osc("set_number_of_acquisitions", 2)
 
+        # 必须显式选方波：校准仪只做 *RST，不会保留上一项（DC/MARK/SIN/EDGE）的形状
+        self._write_calibrator("set_shap", "SQU")
         self._write_calibrator("set_squ_polarity", "SYMM")
         self._setup_signal_impedance("SQU", "1M")
         self._write_calibrator("set_output", "ON")

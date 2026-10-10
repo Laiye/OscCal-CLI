@@ -1,0 +1,328 @@
+{
+    "name": "UNI-T_UPO1000X",
+    "description": "UNI-T UPO1000X series digital phosphor oscilloscope command set (UPO1054X/UPO1104X/UPO1204X/UPO1204X-E), derived from the UPO1000X Series Programming Manual REV.1 (2023). All models have 4 channels and a 1 MOhm only input - the manual has no CHANnel<n>:IMPedance/TERmination command. Measurements use the 'split' mode: the source is selected once with :MEASure:SOURce CHANnel<n> and each item is then read with its own query (:MEASure:VAMPlitude?, :MEASure:VAVerage?, :MEASure:PERiod?, ...), which is exactly the get_value_from_item template below. Amplitude is measured with VAMPlitude (top minus base), not VPP: VPP is max-min and would count the square wave's deterministic edge peaking/overshoot in full, the same failure mode that made the Tektronix TBS1000/TDS2000 family unusable with PK2pk. The manual documents OVERshoot (in percent) and RISetime, so the transient item measures both. There is no :SINGle command: a single acquisition is :TRIGger:SWEep SINGle followed by :RUN. The vertical fine-adjust mode (:CHANnel<n>:VERNier) is left at its *RST default of OFF so that the 1-2-5 coarse scale steps used by the calibration point tables are honoured.",
+    "manufacturer": "UNI-T",
+    "models": [
+        "UPO1000X",
+        "UPO1054X",
+        "UPO1104X",
+        "UPO1204X",
+        "UPO1204X-E"
+    ],
+    "type": "pyvisa",
+    "series": [
+        "UPO1000X",
+        "UPO1054X",
+        "UPO1104X",
+        "UPO1204X",
+        "UPO1204X-E"
+    ],
+    "feature": {
+        "meas": "split",
+        "return_value_index": 0,
+        "get_value": "ByItem",
+        "set_meas": "Channel",
+        "write_delay_ms": 50
+    },
+    "keyword": {
+        "imp_fif": "FIFty",
+        "imp_meg": "MEG",
+        "acquisition_mode_sample": "NORMal",
+        "acquisition_mode_average": "AVERage",
+        "acquisition_mode_peak": "PEAKdetect",
+        "meas_amp": "VAMPlitude",
+        "meas_period": "PERiod",
+        "meas_risetime": "RISetime",
+        "meas_pos_overshoot": "OVERshoot",
+        "meas_freq": "FREQuency",
+        "meas_mean": "VAVerage",
+        "meas_max": "VMAX",
+        "meas_min": "VMIN",
+        "acquire_stop_after_single": "SINGle",
+        "acquire_stop_after_run_stop": "NORMal",
+        "acquire_state_run": "RUN"
+    },
+    "actions": {
+        "preset": {
+            "name": "preset",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "*RST\n"
+            ],
+            "args": []
+        },
+        "set_channel": {
+            "name": "set_channel",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":DISPlay ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
+        },
+        "set_vertical_scale": {
+            "name": "set_vertical_scale",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":SCALe ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_vertical_position": {
+            "name": "set_vertical_position",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":OFFSet ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_probe_gain": {
+            "name": "set_probe_gain",
+            "type": "write",
+            "commands_num": 3,
+            "args_num": 2,
+            "commands": [
+                ":CHANnel",
+                ":PROBe ",
+                "X\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_trigger_source": {
+            "name": "set_trigger_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TRIGger:SOURce CHANnel",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "set_trigger_level": {
+            "name": "set_trigger_level",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TRIGger:LEVel ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_horizontal_scale": {
+            "name": "set_horizontal_scale",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TIMebase:SCALe ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
+        },
+        "set_acquisition_mode": {
+            "name": "set_acquisition_mode",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":ACQuire:TYPE ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "NORMal",
+                    "AVERage",
+                    "PEAKdetect",
+                    "HRESolution"
+                ]
+            ]
+        },
+        "set_number_of_acquisitions": {
+            "name": "set_number_of_acquisitions",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":ACQuire:AVERages:COUNt ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_meas_source": {
+            "name": "set_meas_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":MEASure:SOURce CHANnel",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
+        },
+        "get_value_from_item": {
+            "name": "get_value_from_item",
+            "type": "query",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":MEASure:",
+                "?\n"
+            ],
+            "args": [
+                [
+                    "VMAX",
+                    "VMIN",
+                    "VPP",
+                    "VTOP",
+                    "VBASe",
+                    "VAMPlitude",
+                    "VAVerage",
+                    "CYCVAVerage",
+                    "VMIDdle",
+                    "VRMS",
+                    "ACRMS",
+                    "CYCRMS",
+                    "AREa",
+                    "CYCAREa",
+                    "FREQuency",
+                    "PHASe",
+                    "PERiod",
+                    "OVERshoot",
+                    "PREShoot",
+                    "RISetime",
+                    "FALLtime",
+                    "PWIDth",
+                    "NWIDth",
+                    "PDUTy",
+                    "NDUTy",
+                    "PDELay",
+                    "NDELay",
+                    "PULSes",
+                    "FRR",
+                    "FRF",
+                    "FFR",
+                    "FFF",
+                    "LRR",
+                    "LRF",
+                    "LFR",
+                    "LFF"
+                ]
+            ]
+        },
+        "set_acquire_stop_after": {
+            "name": "set_acquire_stop_after",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":TRIGger:SWEep ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "AUTO",
+                    "NORMal",
+                    "SINGle"
+                ]
+            ]
+        },
+        "set_acquire_state": {
+            "name": "set_acquire_state",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                ":",
+                "\n"
+            ],
+            "args": [
+                [
+                    "RUN",
+                    "STOP"
+                ]
+            ]
+        }
+    }
+}

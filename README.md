@@ -451,6 +451,7 @@ OscCal-CLI/
 │   ├── rigol_mso.json               #   普源 MSO5000
 │   ├── siglent_sds.json             #   鼎阳 SDS6000 PRO/SDS6000A
 │   ├── unit_utd.json                #   优利德 UTD2000CEX/UTD7000C
+│   ├── unit_upo1000x.json           #   优利德 UPO1000X 系列（数字荧光示波器）
 │   ├── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
 │   └── zlg_zds1000.json             #   周立功 ZDS1000
 ├── profiles/                        # 示波器特征配置
@@ -468,6 +469,7 @@ OscCal-CLI/
 │   ├── siglent_sds.json
 │   ├── unit_utd2000cex.json
 │   ├── unit_utd7000c.json
+│   ├── unit_upo1000x.json
 │   ├── zlg_zds2000.json
 │   ├── zlg_zds4000.json
 │   └── zlg_zds1000.json
@@ -479,6 +481,7 @@ OscCal-CLI/
 │   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
 │   ├── test_mdo3_comm_integration.py # SCPI 通信集成测试
 │   ├── test_tek_tbs_tds_configs.py  # TBS1000B/TDS1000/TDS2000/TPS2000 系列配置与指令回归
+│   ├── test_unit_upo1000x_config.py # 优利德 UPO1000X 系列配置与指令回归
 │   └── test_all_configs.py          # 全量配置结构测试（commands/profiles/calibrators）
 ├── data/                            # 校准数据存储目录
 ├── simulate_calibrate.py            # 本地模拟校准脚本
@@ -534,6 +537,7 @@ OscCal-CLI/
 | `type` | 通信方式：`pyvisa` 或 `socket` |
 | `feature.meas` | 测量模式：`merge`（先设源+类型再读值）或 `split`（同时指定项目和通道） |
 | `feature.meas_amp_scale` | 幅度测量换算系数，默认 1（标准值口径 = 峰峰值）。当 `meas_amp` 是有效值类测量（`CRMs`）时填 `2`：对称方波的有效值等于幅度（峰峰值的一半），需换算后才能与标准值比较 |
+| `feature.write_delay_ms` | 每条 SCPI 写入之后的最小间隔（毫秒），默认 0 = 不节流。个别机型**背靠背连续写入时会静默丢弃指令**（错误队列仍报 `No error`），实测优利德 UPO1104X 需要节流，故由指令集声明；未声明者时序完全不变 |
 | `keyword` | SCPI 关键字映射（阻抗、测量类型、max/min 等） |
 | `actions` | SCPI 命令模板，`commands` 为命令片段，`args_num` 为参数数量 |
 
@@ -759,6 +763,7 @@ G = (Ur+ - Ur-) / (U+ - U-)
 | 鼎阳 | SDS6000 PRO, SDS6000A | `siglent_sds.json` | `siglent_sds.json` | VISA |
 | 优利德 | UTD2000CEX | `unit_utd.json` | `unit_utd2000cex.json` | VISA |
 | 优利德 | UTD7000C | `unit_utd.json` | `unit_utd7000c.json` | VISA |
+| 优利德 | UPO1000X 系列（UPO1054X/UPO1104X/UPO1204X/UPO1204X-E，4 通道，50～200 MHz） | `unit_upo1000x.json` | `unit_upo1000x.json` | VISA |
 | 周立功 | ZDS2000/2000B | `zlg_zds.json` | `zlg_zds2000.json` | Socket |
 | 周立功 | ZDS4000/3000 | `zlg_zds.json` | `zlg_zds4000.json` | Socket |
 | 周立功 | ZDS1000 | `zlg_zds1000.json` | `zlg_zds1000.json` | Socket |
@@ -796,6 +801,30 @@ G = (Ur+ - Ur-) / (U+ - U-)
 - **型号上报形式**：真机 `*IDN?` 会上报带空格的型号，例如 `TEKTRONIX,TBS 1102,C030565,CF:91.1CT FV:v26.02`（TBS1102，固件 v26.02）；匹配时忽略大小写与空格，`--auto` 可直接识别。
 - **上机确认**：本系列配置全部依据上述编程手册推导，尚未在真机上验证。首次使用建议先跑单项（如 `--items amp --probe 9530`），确认测量查询响应形如 `:MEASUREMENT:IMMED:VALUE <值>`（带表头）后再执行全部项目；若某机型返回裸数值，把对应指令集 `feature.return_value_index` 改为 0 即可。
 
+## 优利德 UPO1000X 系列特别说明
+
+该系列依据《UPO1000X 系列可编程数字示波器编程手册 REV.1(2023)》与官方服务手册的机型清单实现（UPO1054X 50 MHz、UPO1104X 100 MHz、UPO1204X/UPO1204X-E 200 MHz），**全系列标配 4 通道**。编程手册封面标注适用于 "UPO1000X、UPO1204X-E 系列"，`*IDN?` 的示例返回为 `UNI-T Technologies, UPO1000X, UPO1000, 00.00.01`，故这五种写法都写入了 `models` 白名单。
+
+- **输入阻抗仅 1 MΩ**：数据手册为 `1 MΩ ±2% || 16 pF ±2 pF`，手册中不存在 `CHANnel<n>:IMPedance`/`TERmination` 指令，故指令集不含 `set_impedance`。9560 探头的 MARK/SIN/EDGE 只能输出 50Ω，执行前校验会拒绝 `delta_time`、`bandwidth`、`transient`；请改用 **9530 探头**（各模式均支持 1MΩ）。`amp`/`dc_gain` 用 9530 或 9560 均可。
+- **探头增益**：随机无源探头为 10:1（UT-P04/UT-P05），优利德操作手册亦注明"示波器出厂时菜单中的探头衰减系数的预定设置为 10X"，故 Profile 中 `probe_default: 10` 会在测量前下发 `:CHANnel<n>:PROBe 1X`，对应校准仪直连，避免读数差 10 倍。
+- **分格数 8 垂直 × 14 水平**（由手册的波形换算参数与游标量程推导，与泰克系列"游标量程推分格"的做法一致）：
+  - 垂直：`:WAVeform:YINCrement?` 为 `VerticalScale / 幅格挡纵向波形点数(25)`，即 25 码/格；`:WAVeform:YREFerence?` 固定为 128（8 位转换器中心、通道零点）；`:CURSor:CURAY`（纵向位置）只允许 `[28,227]`——正好 200 码，以参考电平 128 为中心，200 ÷ 25 = **8 格**。
+  - 水平：`:WAVeform:XINCrement?` 为 `TimeScale / 时基挡横向的波形点数(50)`，`:WAVeform:XORigin?` 为 `-1 × TimeScale × 7`（触发点在屏幕中心，波形数据从触发前 7 格开始），700 点 ÷ 50 点/格 = **14 格**。
+  - 标准值仍取 `挡位 × (垂直分格 - 2)`（屏幕中部的 6 格峰峰值），`delta_time` 取 `水平分格 - 2 = 12` 格（该系数在相对误差中约掉，只影响报表里的标准值/实测值绝对值）。
+
+  > 说明：`vertical_div` 只决定"让波形占屏幕几格"，标准值对应的电压由校准仪输出，因此分格数取值不影响误差计算的正确性——只要波形完整落在屏幕内即可。若某台机器实测是 10 格，把 `vertical_div` 改成 10 也只是让波形占 8 格、余量更大。
+- **背靠背连续写入会被静默丢弃（实机发现，必须节流）**：UPO1104X 在无间隔连续下发指令时会丢掉其中若干条，**错误队列仍返回 `0,"No error"`**，因此现象是"某些设置没生效"而不是报错。实测 `amp` 项目初始化阶段连写 8 条时，`:CHANnel<n>:SCALe` 被丢掉，示波器仍停在 `*RST` 默认的 1 V/div 下测量，读出的 80 mV×13 倍误差又被误当成超屏波形。指令集因此声明 `feature.write_delay_ms: 50`（每条写入后间隔 50 ms），实测 13 个挡位全部正确生效。**这是该机型特有的行为，其他指令集不声明该字段，时序完全不变。**
+- **无效测量用 `*` 表示（手册原文："当返回数据为无效数据均用*表示"）**：刚改过挡位/触发电平/垂直位置时读数可能短暂无效，`read_measurement` 会重试 3 次；仍无效时抛出指明测量项的错误，而不是 `could not convert string to float`。
+- **幅度测量用 `VAMPlitude` 而不是 `VPP`（实机验证）**：手册把 `VPP`（最大值 − 最小值）与 `VAMPlitude`（顶端值 − 底端值）列为两个不同的测量项。`VPP` 会把方波沿的确定性峰化/过冲**全额计入**——这正是泰克 TBS1000/TDS2000 系列弃用 `PK2pk` 的原因。实机对比（9530 输出，1 MΩ）：`VAMPlitude` 误差 **≤0.4%**，而 `VPP` 系统性偏高 **+2.4%～+9.3%**（挡位越低越差），故指令集用 `VAMPlitude` 且**不需要** `feature.meas_amp_scale` 换算。
+- **瞬态项目两项都测**：手册有 `:MEASure:OVERshoot?`（返回百分比）与 `:MEASure:RISetime?`，故指令集声明 `meas_pos_overshoot`，过冲列给出数值而非"不适用"。
+- **没有 `:SINGle` 命令**：单次采集由 `:TRIGger:SWEep SINGle`（"符合触发条件时触发一次然后停止"）加 `:RUN` 完成，对应 `acquire_stop_after_single: "SINGle"` 与 `acquire_state_run: "RUN"`。
+- **测量为 split 模式**：手册的 `:MEASure:<item>?` 逐项查询（先 `:MEASure:SOURce CHANnel<n>` 选源），共 36 种波形参数，指令集候选测量项与手册列表逐项一致。响应为裸科学计数法（`3.120e000`），故 `return_value_index: 0`。
+- **垂直挡位 500 µV/div ～ 20 V/div（1-2-5）**：`delta_amp`/`dc_gain` 点表取 **1 mV ～ 10 V/div（13 点）**，与优利德 UTD 系列一致；不取 500 µV/div 是因为校准仪在 `挡位 × 6 = 3 mV` 峰峰值上已接近方波/直流输出的下限。
+- **水平时基为 1-2-5 序列（实机确认）**：手册 `:TIMebase:SCALe` 举例列出 `1 ns/div、2 ns/div、5 ns/div、10 ns/div、25 ns/div…`，实机确认该机型档位按 **1-2-5** 步进（10/20/50/100/200/500…），仅 **25 ns/div** 一档是 2.5 步进。因此 `delta_time` 点表按此排列（**10 ns ～ 20 ms，20 点**），不会出现会被示波器钳位而报出虚假大误差的档位。
+- **平均次数保持默认 16**：手册 `:ACQuire:AVERages:COUNt` 支持 2 的幂（2～8192），`VAMPlitude` 取顶/底电平，噪声不会像峰峰值那样直接抬高结果，故 Profile 不声明 `averages`（沿用默认 16）；换挡位后仍会微调触发电平（0.1 格、符号交替）迫使平均序列重启。
+- **带宽判定阈值**：`bandwidth.min_mhz` 取系列最低带宽 **50**（UPO1054X）。如需按具体机型严格判定，请把 Profile 的 `min_mhz` 改为实际标称带宽（UPO1104X 改 100、UPO1204X/-E 改 200）。
+- **实机验证进度**：已在 **UPO1104X**（固件 1.01.0046，9530 头接 CH1，1 MΩ）上验证 `amp` 项目——13 个挡位全部跑通，相对误差 **−1.29% ～ +0.2%**（最差为 1 mV/div 的 −1.29%，其余均 ≤0.4%）；`delta_time` 点表亦已按实机实际可设档位调整。`dc_gain`/`bandwidth`/`transient` 尚未实机验证，首次使用建议逐项跑（如 `--items dc_gain --probe 9530`）。
+
 ## 周立功 ZDS1000 系列特别说明
 
 ZDS1000 系列使用 **完整 SCPI 关键字**（`:CHANnel`/`:MEASure`/`:TIMebase`/`:ACQuire`/`:TRIGger`），与 ZDS2000/4000 系列不兼容。主要差异：
@@ -829,7 +858,7 @@ pytest -v
 |---------|---------|
 | `tests/test_mdo3_commands.py` | MDO3 指令集结构完整性、action/keyword 齐全性、SCPI 组装与手册一致性 |
 | `tests/test_mdo3_profiles.py` | MDO34/MDO32 Profile 参数校验（通道数、带宽、校准点、限值） |
-| `tests/test_mdo3_comm_integration.py` | `scpi_write`/`scpi_query`/`read_measurement`/`setup_impedance` 通信链路 |
+| `tests/test_mdo3_comm_integration.py` | `scpi_write`/`scpi_query`/`read_measurement`/`setup_impedance` 通信链路；无效值标记 `*` 的重试与可诊断报错 |
 | `tests/test_all_configs.py` | 全量配置结构校验：commands/ 指令集 action/keyword 契约、profiles/ 校准点与限值、calibrators/ 探头阻抗规则 |
 | `tests/test_sim_integration.py` | 模拟仪器端到端集成测试：无硬件跑通全部校准项目，含带宽向下扫描边界用例 |
 | `tests/test_cli_flow.py` | CLI 校准流程测试：手动/自动模式、`--log-scpi`、SCPI 失败统计（mock 设备） |
@@ -837,6 +866,7 @@ pytest -v
 | `tests/test_export_grouping.py` | 报告分组：同一项目的多通道数据合并到同一 sheet / 同一表格 |
 | `tests/test_export_precision.py` | 报告显示精度：`ITEM_PRECISION` 与列数一致性、Excel 单元格数值/数字格式与终端位数一致、舍入不掩盖超差 |
 | `tests/test_tek_tbs_tds_configs.py` | 泰克 TBS1000B/EDU、TBS1000、TDS1000/2000、TPS2000 系列：型号唯一匹配、指令契约（CRMs+换算系数/TRIGger:MAIn/无 50Ω 指令）、1-2.5-5 时基点表、瞬态只测上升时间、mock 仪器端到端指令 |
+| `tests/test_unit_upo1000x_config.py` | 优利德 UPO1000X 系列：型号唯一匹配、指令契约（split 逐项查询/VAMPlitude 而非 VPP/无阻抗指令/`TRIGger:SWEep SINGle`+`:RUN`/写入节流）、36 种测量项与手册一致、8×14 分格与实机确认的 1-2-5 时基点表、瞬态两项都测、`amp` 先选方波、mock 仪器端到端指令 |
 
 > 配置结构校验规则与运行时加载校验共用同一实现（`osccal/core/config_validation.py`）：
 > 加载配置时即校验结构，出错会直接指出具体 JSON 文件与字段，而非运行时才报错。

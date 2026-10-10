@@ -45,4 +45,7 @@
 - 启动时强制 stdout/stderr 为 UTF-8（Windows 中文控制台/重定向的 `UnicodeEncodeError` 修复），改相关代码别破坏该行为。
 - 校准记录 `metadata` 的状态字段（`status`/`item_status`/`failures`/`configurations`/`scpi_errors`）与中断续存行为见 `README.md`，由 `tests/test_storage.py`、`tests/test_cli_flow.py` 守护。
 - 受限沙箱环境下运行 `pytest` 时，使用 `tmp_path` 的用例可能因临时目录权限报 fixture setup 的 `PermissionError`；那是环境限制而非代码问题（正常终端不受影响）。
+- 无效测量值的处理集中在 `core/comm.py`：`read_measurement` 识别手册规定的无效标记 `*`（优利德 UPO1000X："返回数据为无效数据均用\*表示"）并重试，仍无效才抛出指明测量项的错误——不要在调用方再写浮点解析兜底。
+- 个别机型**背靠背连续写入会静默丢指令**（UPO1104X 实测，错误队列仍报 `No error`）：指令集用 `feature.write_delay_ms` 声明写入间隔，`BaseCalibrator.__init__` 会调用 `comm.set_write_delay` 生效；未声明该字段的机型时序完全不变。排查"某条设置没生效"类问题时优先怀疑这一点。
+- `measure/base.py:_adjust_vertical_position` 有防呆：波形远超整屏时判定为挡位问题并跳过调整。历史事故是按超屏量算出 −45.6 V 偏移、把波形推出屏幕，导致后续测量全部返回无效值——不要去掉该判断。
 - 已支持设备与各字段含义见 `README.md`（内容详尽，改动前先读）。

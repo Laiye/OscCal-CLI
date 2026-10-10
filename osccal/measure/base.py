@@ -5,7 +5,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from osccal.core.comm import read_measurement, scpi_query, scpi_setup_measurement, scpi_write
+from osccal.core.comm import (
+    read_measurement,
+    scpi_query,
+    scpi_setup_measurement,
+    scpi_write,
+    set_write_delay,
+)
 from osccal.core.command import assemble_cmd
 
 console = Console()
@@ -48,6 +54,9 @@ class BaseCalibrator:
         self.results = []
         # 触发电平微调方向（每次调用翻转，保证相对上一次都是有效变化）
         self._level_nudge_sign = 1
+        # 指令间隔由指令集声明：少数机型背靠背连续写入会静默丢指令（实测 UPO1104X），
+        # 未声明或为 0 时不节流，既有各机型时序不变。
+        set_write_delay(cmd_osc.get("feature", {}).get("write_delay_ms", 0))
 
     def _get_measurement_averages(self) -> int:
         """本次测量使用的平均次数（Profile 未声明时为 16，保持既有行为）。"""
@@ -162,10 +171,24 @@ class BaseCalibrator:
             return
         vertical_div = self.profile.get("vertical_div", 8)
         half_div = vertical_div / 2.0
+        # 整屏电压与允许的最大位移（本调整只为把略微超出格线的波形挪回格内）
+        screen = vertical_div * scale
+        max_shift = half_div * scale
         position = 0.0
         for _ in range(5):
             max_val = self._read_meas("meas_max")
             min_val = self._read_meas("meas_min")
+            # 波形远超整屏时（例如挡位与信号不匹配，或刚换挡读到尚未刷新的旧数据），
+            # 按超屏量换算出的位移会大到把波形整个推出屏幕——实机出现过算出 -45.6 V
+            # 偏移，之后所有测量都返回无效值。这种情况属于挡位问题而非位置问题，
+            # 直接跳过自动调整，避免把可恢复的读数问题变成整项失败。
+            if abs(max_val) > 2 * screen or abs(min_val) > 2 * screen:
+                console.print(
+                    f"[yellow]⚠ 波形远超当前挡位量程"
+                    f"（max={max_val:.4g} V, min={min_val:.4g} V，整屏 {screen:.4g} V），"
+                    f"跳过垂直位置自动调整[/yellow]"
+                )
+                return
             top_limit = half_div * scale
             bottom_limit = -half_div * scale
             need_adjust = False
@@ -179,7 +202,8 @@ class BaseCalibrator:
                 need_adjust = True
             if not need_adjust:
                 break
-            position = round(position, 2)
+            # 先按既有精度取整，再限幅：保证写入的偏移绝不超过半屏电压
+            position = max(-max_shift, min(max_shift, round(position, 2)))
             self._write_osc("set_vertical_position", self.channel, position)
             time.sleep(0.5)
 

@@ -68,6 +68,9 @@ def test_original_error_drives_calculation_and_report(
         (("feature", "meas"), []),
         (("feature", "meas_amp_scale"), 0),
         (("feature", "meas_amp_scale"), "2"),
+        (("feature", "write_delay_ms"), -1),
+        (("feature", "write_delay_ms"), 6000),
+        (("feature", "write_delay_ms"), "50"),
         (("keyword", "meas_amp"), None),
         (("series",), [None]),
         (("models",), "MDO34"),
@@ -200,6 +203,47 @@ def test_meas_amp_scale_defaults_to_one_and_reads_config(
         assert cal._get_meas_amp_scale() == 1.0, f"{bad!r} 应回退为 1"
 
 
+def test_write_delay_comes_from_command_set(
+    mdo3_commands, mdo34_profile, fluke_calibrator, fake_osc
+):
+    """写入间隔由指令集 feature.write_delay_ms 声明，构造函数即生效；未声明则不节流。"""
+    from osccal.core.comm import set_write_delay, write_delay
+
+    try:
+        commands = copy.deepcopy(mdo3_commands)
+        commands["feature"].pop("write_delay_ms", None)
+        AmpCalibrator(fake_osc, fake_osc, commands, fluke_calibrator, mdo34_profile, "1", "9560")
+        assert write_delay() == 0.0
+
+        commands["feature"]["write_delay_ms"] = 50
+        AmpCalibrator(fake_osc, fake_osc, commands, fluke_calibrator, mdo34_profile, "1", "9560")
+        assert write_delay() == pytest.approx(0.05)
+
+        for bad in (-1, "abc", None):
+            set_write_delay(bad)
+            assert write_delay() == 0.0, f"{bad!r} 应回退为不节流"
+    finally:
+        set_write_delay(0)
+
+
+def test_write_delay_paces_each_write(mdo3_commands, fake_osc, monkeypatch):
+    """节流应对每条写入生效（查询不受影响），避免示波器静默丢弃背靠背指令。"""
+    from osccal.core import comm
+    from osccal.core.comm import scpi_query, scpi_write, set_write_delay, write_delay
+
+    slept: list[float] = []
+    monkeypatch.setattr(comm.time, "sleep", lambda s: slept.append(s))
+    try:
+        set_write_delay(50)
+        scpi_write(fake_osc, "CMD1", "pyvisa")
+        scpi_query(fake_osc, "CMD2?", "pyvisa")
+        scpi_write(fake_osc, "CMD3", "pyvisa")
+        assert slept == [0.05, 0.05], "仅写入后应节流，查询后不节流"
+    finally:
+        set_write_delay(0)
+        assert write_delay() == 0.0
+
+
 def test_crms_scale_is_applied_to_measured_value(
     mdo3_commands, mdo34_profile, fluke_calibrator, fake_osc, monkeypatch
 ):
@@ -217,3 +261,5 @@ def test_crms_scale_is_applied_to_measured_value(
     result = cal.get_results()[0]
     assert result["measured"] == pytest.approx(0.6)
     assert result["error"] == pytest.approx(0.0)
+    # 幅度项目必须自己选方波形状（校准仪每次只做 *RST，形状会回到默认值）
+    assert "SOUR:SCOP:SHAP SQU" in fake_osc.written

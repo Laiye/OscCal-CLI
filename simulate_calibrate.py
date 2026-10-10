@@ -136,11 +136,17 @@ _MEAS_TYPE_MAP = {
     "AMP": "amp",
     # 峰峰值类：直接等于峰峰值（标准值口径）
     "PK2PK": "amp",
+    # 优利德 UPO1000X：AMPlitude 的助记符是 VAMPlitude（顶端值-底端值），
+    # 与 VPP（最大值-最小值，会把方波沿的过冲全额计入）区分开
+    "VAMPLITUDE": "amp",
+    "VPP": "amp",
     # TBS1000/TDS1000/TDS2000/TPS2000 系列没有 AMPlitude/PK2pk 方案：
     # 用 CRMs 测幅度，对称方波的有效值 = 幅度 = 峰峰值/2，故单列一种类型
     "CRMS": "amp_rms",
     "MEAN": "mean",
     "CMEAN": "mean",
+    # 优利德 UPO1000X：平均值的助记符是 VAVerage
+    "VAVERAGE": "mean",
     "PERIOD": "period",
     "PERI": "period",
     "PER": "period",
@@ -152,9 +158,13 @@ _MEAS_TYPE_MAP = {
     "VMIN": "min",
     "RISE": "risetime",
     "RIS": "risetime",
+    # 优利德 UPO1000X 的长写法
+    "RISETIME": "risetime",
     "POVERSHOOT": "overshoot",
     "POV": "overshoot",
     "ROVE": "overshoot",
+    # 优利德 UPO1000X：正过冲的助记符是 OVERshoot
+    "OVERSHOOT": "overshoot",
     "FREQUENCY": "freq",
     "FREQ": "freq",
 }
@@ -224,7 +234,39 @@ class SimulatedOscilloscope:
         if cu in ("FACTORY", "*RST", "*CLS;*RST", "FAC"):
             self._reset_state()
             return
-        if cu.startswith("SELECT:CH"):
+        # 优利德 UPO1000X 等"完整助记符 + 前导冒号"方言：去掉冒号后按整名匹配，
+        # 与上方泰克/是德风格的缩写前缀互不冲突。
+        nrm = cu[1:] if cu.startswith(":") else cu
+        nrm_value = c[1:] if c.startswith(":") else c
+        if nrm in ("RUN", "STOP"):
+            self.acquire_state = nrm
+        elif nrm.startswith("CHANNEL"):
+            rest = nrm[len("CHANNEL") :]
+            ch = rest.split(":")[0]
+            value = nrm_value.split(" ", 1)[1] if " " in nrm_value else ""
+            if ":DISPLAY" in rest:
+                self.channel_on[ch] = value
+            elif ":SCALE" in rest:
+                self.vertical_scale[ch] = float(value)
+            elif ":OFFSET" in rest:
+                self.vertical_position[ch] = float(value)
+            # :PROBe（探头衰减）不影响模拟的测量模型，忽略
+        elif nrm.startswith("TRIGGER:SOURCE"):
+            self.trigger_source = nrm_value.split(" ", 1)[1] if " " in nrm_value else ""
+        elif nrm.startswith("TRIGGER:LEVEL"):
+            # TRIGger:LEVel 是全局触发电平（不按通道），模拟器只记录
+            self.trigger_level["global"] = float(nrm_value.split(" ", 1)[1])
+        elif nrm.startswith("TRIGGER:SWEEP"):
+            self.stop_after = nrm_value.split(" ", 1)[1]
+        elif nrm.startswith("TIMEBASE:SCALE"):
+            self.horizontal_scale = float(nrm_value.split(" ", 1)[1])
+        elif nrm.startswith("ACQUIRE:TYPE"):
+            self.acq_mode = nrm_value.split(" ", 1)[1]
+        elif nrm.startswith("ACQUIRE:AVERAGES:COUNT"):
+            self.numav = int(float(nrm_value.split(" ", 1)[1]))
+        elif nrm.startswith("MEASURE:SOURCE"):
+            self.meas_source = nrm_value.split(" ", 1)[1] if " " in nrm_value else ""
+        elif cu.startswith("SELECT:CH"):
             rest = cu[len("SELECT:CH") :]
             ch = rest.split(" ")[0]
             val = c.split(" ", 1)[1] if " " in c else ""
@@ -279,11 +321,11 @@ class SimulatedOscilloscope:
     # ---- 测量响应 ----
 
     def _current_channel(self) -> str:
+        """从测量源助记符取通道号（兼容 CH1/CHAN1/CHANnel1 三种写法）。"""
         src = (self.meas_source or "").upper()
-        if src.startswith("CHAN"):
-            return src[4:].split(":")[0]
-        if src.startswith("CH"):
-            return src[2:].split(":")[0]
+        for prefix in ("CHANNEL", "CHAN", "CH"):
+            if src.startswith(prefix):
+                return src[len(prefix) :].split(":")[0] or "1"
         return "1"
 
     def _resolve_meas_type(self, query_cmd: str) -> str:
@@ -292,12 +334,13 @@ class SimulatedOscilloscope:
             t = _MEAS_TYPE_MAP.get(self.meas_type.upper())
             if t:
                 return t
-        # split 模式：从查询指令中提取助记符
-        cu = query_cmd.upper()
-        for token in cu.replace("?", " ").replace(",", " ").split():
-            t = _MEAS_TYPE_MAP.get(token)
-            if t:
-                return t
+        # split 模式：从查询指令中提取助记符（兼容 ":MEAS:VPP?" 与 "MEAS:VPP?" 写法）
+        cu = query_cmd.upper().replace("?", " ").replace(",", " ")
+        for token in cu.split():
+            for name in (token, token.rsplit(":", 1)[-1]):
+                t = _MEAS_TYPE_MAP.get(name)
+                if t:
+                    return t
         return ""
 
     def _attenuation(self, freq: float) -> float:

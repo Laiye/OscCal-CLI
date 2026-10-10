@@ -1,0 +1,102 @@
+{
+    "name": "osc",
+    "description": "UNI-T UPO1000X series digital phosphor oscilloscope profile: UPO1054X (50 MHz), UPO1104X (100 MHz), UPO1204X (200 MHz) and UPO1204X-E (200 MHz). All models are 4-channel with a 1 MOhm only input (datasheet input impedance 1 MOhm || 16 pF, no 50 Ohm mode), so every item is measured through the 1 MOhm path. Display geometry is 8 vertical x 14 horizontal divisions: the programming manual fixes the vertical waveform steps at 25 codes per division and YREFerence at 128 (centre of the 8-bit converter), and the cursor command allows :CURSor:CURAY only over [28,227] - 200 codes, i.e. 8 divisions centred on the reference; horizontally :WAVeform:XINCrement is TimeScale/50 and :WAVeform:XORigin is -7*TimeScale, i.e. 700 acquisition points starting seven divisions before the trigger, which at 50 points per division is 14 divisions. The vertical scale therefore follows the project convention of a 6-division peak-to-peak standard value (vertical_div - 2), and delta_time uses 12 divisions (horizontal_div - 2), which cancels out of its relative error. Vertical scale is 500 uV/div to 20 V/div in 1-2-5 steps; the point tables start at 1 mV/div because the calibrator's square/DC output cannot reach the 3 mV peak-to-peak that a 500 uV/div setting would need. The time base steps are 1-2-5 (the manual lists 1 ns, 2 ns, 5 ns, 10 ns, 25 ns, so 25 ns/div is the one 2.5 step that also exists at the low end); the delta_time point table was tuned against the instrument itself and runs 10 ns/div to 20 ms/div in those steps. Input probes ship as 10:1 and the scope powers up with a 10X probe attenuation setting (UNI-T operating manuals state the factory probe attenuation is 10X), so probe gain is forced to 1X for the direct calibrator connection. The scope is a UNI-T instrument and needs the longer reset settling time used by the other UNI-T profiles. Amplitude is read with VAMPlitude (top minus base) rather than VPP, so the standard value needs no conversion factor (feature.meas_amp_scale is left at its default of 1) and the deterministic edge peaking of the square wave is not counted. Bandwidth min_mhz is the lowest rating of the series (50 MHz, UPO1054X); set it to the rating of the model under calibration for a strict pass/fail judgement.",
+    "manufacturer": "UNI-T",
+    "models": [
+        "UPO1000X",
+        "UPO1054X",
+        "UPO1104X",
+        "UPO1204X",
+        "UPO1204X-E"
+    ],
+    "factor": "UNI-T",
+    "series": "UPO1000X",
+    "channels": 4,
+    "imp_has_50": false,
+    "vertical_div": 8,
+    "horizontal_div": 14,
+    "probe_default": 10,
+    "init_time": 10,
+    "bd_step": 5.0e6,
+    "calibration_limits": {
+        "amp": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "dc_gain": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "delta_time": {
+            "upper": 2.0,
+            "lower": -2.0
+        },
+        "bandwidth": {
+            "min_mhz": 50
+        },
+        "transient": {}
+    },
+    "points": {
+        "bandwidth": [
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500
+        ],
+        "delta_amp": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "dc_gain": [
+            0.001,
+            0.002,
+            0.005,
+            0.010,
+            0.020,
+            0.050,
+            0.100,
+            0.200,
+            0.500,
+            1.000,
+            2.000,
+            5.000,
+            10.000
+        ],
+        "delta_time": [
+            10e-9,
+            25e-9,
+            50e-9,
+            100e-9,
+            200e-9,
+            500e-9,
+            1e-6,
+            2e-6,
+            5e-6,
+            10e-6,
+            20e-6,
+            50e-6,
+            100e-6,
+            200e-6,
+            500e-6,
+            1e-3,
+            2e-3,
+            5e-3,
+            10e-3,
+            20e-3
+        ]
+    }
+}

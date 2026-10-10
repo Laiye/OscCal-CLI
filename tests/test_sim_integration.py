@@ -23,14 +23,21 @@ ITEM_CASES = [
 ]
 
 
-def _make_args(items: str, channel: str = "1", sim_bandwidth: float = 200.0) -> SimpleNamespace:
+def _make_args(
+    items: str,
+    channel: str = "1",
+    sim_bandwidth: float = 200.0,
+    commands: str = "tektronix_mdo3",
+    profile: str = "tektronix_mdo34",
+    probe: str = "9560",
+) -> SimpleNamespace:
     return SimpleNamespace(
-        commands="tektronix_mdo3",
-        profile="tektronix_mdo34",
+        commands=commands,
+        profile=profile,
         calibrator="fluke_9500b",
         items=items,
         channel=channel,
-        probe="9560",
+        probe=probe,
         bandwidth=100.0,
         bd_step=20.0,
         sim_bandwidth=sim_bandwidth,
@@ -97,3 +104,53 @@ def test_sim_bandwidth_bisect_efficiency(fast_mode):
     assert writes <= 200, f"二分扫描测量次数过多（{writes}），疑似退化为线性扫描"
     bws = [r["bandwidth_mhz"] for r in all_results["bandwidth"]]
     assert all(990 <= bw <= 1010 for bw in bws), f"带宽应接近 1000MHz，实际 {bws}"
+
+
+# ── 优利德 UPO1000X 方言（完整助记符 + 前导冒号） ────────────────────────
+#
+# 该系列用 :CHANnel<n>:SCALe、:ACQuire:TYPE、:MEASure:SOURce CHANnel<n> 等完整
+# 助记符写法，与泰克/是德的缩写前缀不同，需要模拟器单独解析，否则垂直挡位、
+# 触发电平等状态全部丢失，自动垂直位置调整等行为就不再被模拟。
+
+
+def _upo_args(items: str, sim_bandwidth: float = 100.0) -> SimpleNamespace:
+    # 该系列仅 1MΩ 输入，必须用 9530 探头（各模式均支持 1MΩ）
+    return _make_args(
+        items,
+        commands="unit_upo1000x",
+        profile="unit_upo1000x",
+        probe="9530",
+        sim_bandwidth=sim_bandwidth,
+    )
+
+
+def test_sim_upo1000x_runs_all_items(fast_mode):
+    """无硬件端到端：优利德 UPO1000X 配置五项校准全部跑通且结果合理。"""
+    _, _, _, all_results = run_calibration(_upo_args("all"))
+    assert set(all_results) == {"amp", "dc_gain", "delta_time", "bandwidth", "transient"}
+    for key in ("amp", "dc_gain", "delta_time"):
+        errs = [abs(r["error"]) for r in all_results[key]]
+        assert max(errs) < 1.0, f"{key} 误差异常: {errs}"
+    bws = [r["bandwidth_mhz"] for r in all_results["bandwidth"]]
+    assert all(90 <= bw <= 110 for bw in bws), f"带宽应接近 100MHz，实际 {bws}"
+    row = all_results["transient"][0]
+    assert row["risetime_ns"] > 0
+    assert row["pos_overshoot"] >= 0, "该系列有正过冲测量，应给出数值"
+
+
+def test_sim_upo1000x_dialect_is_parsed(fast_mode):
+    """模拟器必须真正解析该方言：垂直挡位、测量源、采集模式、扫描模式与触发电平。"""
+    inst_osc, _, _, _ = run_calibration(_upo_args("amp"))
+    # 幅度点表最后一个挡位是 10 V/div，说明 :CHANnel<n>:SCALe 被解析
+    assert inst_osc.vertical_scale["1"] == pytest.approx(10.0)
+    assert inst_osc.meas_source == "CHANnel1"
+    assert inst_osc.acq_mode == "AVERage"
+    assert inst_osc.horizontal_scale == pytest.approx(1e-3)
+    assert inst_osc.channel_on["1"] == "ON"
+
+    inst_osc, _, _, _ = run_calibration(_upo_args("transient"))
+    # 没有 :SINGle 命令，单次采集靠 :TRIGger:SWEep SINGle + :RUN
+    assert inst_osc.stop_after == "SINGle"
+    assert inst_osc.acquire_state == "RUN"
+    assert inst_osc.trigger_level["global"] == pytest.approx(-0.5)
+    assert inst_osc.horizontal_scale == pytest.approx(5e-9)  # 1MΩ 慢沿用 5 ns/div

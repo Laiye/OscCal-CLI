@@ -362,6 +362,11 @@ def validate_commands(data: dict) -> list[str]:
             not _is_number(feature["meas_amp_scale"]) or feature["meas_amp_scale"] <= 0
         ):
             errors.append("feature.meas_amp_scale 必须为有限正数")
+        # 写入间隔（毫秒）：部分机型背靠背连续写入会静默丢指令，由指令集声明节流值。
+        if "write_delay_ms" in feature and (
+            not _is_number(feature["write_delay_ms"]) or not 0 <= feature["write_delay_ms"] <= 5000
+        ):
+            errors.append("feature.write_delay_ms 必须为 0~5000 的有限数值")
 
     keyword = data.get("keyword")
     if not isinstance(keyword, dict):

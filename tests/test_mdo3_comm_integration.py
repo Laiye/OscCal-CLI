@@ -139,6 +139,43 @@ class TestReadMeasurement:
             read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert scpi_trace.failure_count() >= 1
 
+    def test_invalid_marker_star_retries_then_reports_item(
+        self, mdo3_commands, fake_osc, monkeypatch
+    ):
+        """优利德 UPO1000X 用 "*" 表示无效测量（手册原文"无效数据均用*表示"）。
+
+        旧实现会抛 "could not convert string to float: '*'" —— 完全看不出是仪器的
+        无效数据标记。现在应重试几次，并给出指明测量项的可诊断提示。
+        """
+        import osccal.core.comm as comm
+
+        monkeypatch.setattr(comm.time, "sleep", lambda _: None)
+        fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": "*\r\n"}
+        with pytest.raises(ScpiError, match="无效测量值"):
+            read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
+        # 已重试：查询次数 = 1 + INVALID_VALUE_RETRIES
+        assert len(fake_osc.commands_matching("VALue?")) == 1 + comm.INVALID_VALUE_RETRIES
+
+    def test_invalid_marker_then_valid_value_recovers(self, mdo3_commands, fake_osc, monkeypatch):
+        """读数只是瞬时无效（换挡/改触发电平后）时应重试成功，不判整项失败。"""
+        import osccal.core.comm as comm
+
+        monkeypatch.setattr(comm.time, "sleep", lambda _: None)
+        state = {"queries": 0}
+
+        def query(cmd: str) -> str:
+            fake_osc.written.append(cmd)
+            if cmd.endswith("VALue?"):
+                state["queries"] += 1
+                if state["queries"] < 3:
+                    return "*\r\n"
+            return ":MEASUREMENT:IMMED:VALUE 2.5E+0"
+
+        fake_osc.query = query
+        assert read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude") == pytest.approx(
+            2.5
+        )
+
     @pytest.mark.parametrize("channel", ["1", "2", "3", "4"])
     def test_read_all_channels(self, mdo3_commands, fake_osc, channel):
         val = read_measurement(fake_osc, None, mdo3_commands, channel, "AMPlitude")

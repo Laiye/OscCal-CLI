@@ -2,7 +2,7 @@
 
 import copy
 import time
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 from openpyxl import Workbook
@@ -91,6 +91,53 @@ def test_invalid_reading_raises(mdo3_commands, fake_osc, value):
     fake_osc.default_response = f":MEASUREMENT:IMMED:VALUE {value}"
     with pytest.raises(ScpiError):
         read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
+
+
+def test_vertical_adjust_skipped_when_waveform_far_off_screen(bandwidth_cal):
+    """实机回归（UPO1104X）：波形远超整屏时不得据此算出巨大垂直偏移。
+
+    真机在 1 mV/div 读到一次 max=80 mV（整屏仅 8 mV），旧实现按超屏量算出
+    -45.6 V 偏移并下发，把波形整个推出屏幕，之后所有测量都返回无效值 *，
+    整个 amp 项目在第一个点就失败。这种"读数远超量程"属于挡位问题，
+    应当跳过自动调整而不是硬算偏移。
+    """
+    cal = bandwidth_cal
+    cal.profile["vertical_div"] = 8
+    cal.profile.pop("skip_vertical_adjust", None)
+    cal._write_osc = Mock()
+    cal._read_meas = lambda _: next(iter([0.08, 0.0]))  # max=80 mV, min=0 V
+
+    cal._adjust_vertical_position(0.001)
+
+    # 只允许写入初始归零位置，绝不允许写入按超屏量算出的 -45.6 V
+    assert cal._write_osc.call_args_list == [call("set_vertical_position", "1", 0.0)]
+
+
+def test_vertical_adjust_offset_never_exceeds_half_screen(bandwidth_cal):
+    """即使读数只是略超屏，写入的偏移也必须被限制在半屏电压以内。"""
+    cal = bandwidth_cal
+    cal.profile["vertical_div"] = 8
+    cal.profile.pop("skip_vertical_adjust", None)
+    cal._write_osc = Mock()
+    # max=10 mV 在 2 mV/div 下超过整屏 16 mV 的一半，但不触发"远超量程"跳过
+    cal._read_meas = lambda _: next(iter([0.010, -0.004]))
+
+    cal._adjust_vertical_position(0.002)
+
+    offsets = [
+        c.args[2] for c in cal._write_osc.call_args_list if c.args[0] == "set_vertical_position"
+    ]
+    assert offsets[0] == 0.0  # 先归零
+    assert all(abs(v) <= 4 * 0.002 for v in offsets), offsets  # 半屏 = 4 格 × 2 mV
+
+
+def test_vertical_adjust_untouched_for_large_scales(bandwidth_cal):
+    """挡位大于 2 mV/div 时本就不做自动调整，只归零一次。"""
+    cal = bandwidth_cal
+    cal._write_osc = Mock()
+    cal._read_meas = Mock(side_effect=AssertionError("不应读取测量值"))
+    cal._adjust_vertical_position(0.1)
+    assert cal._write_osc.call_args_list == [call("set_vertical_position", "1", 0.0)]
 
 
 def test_dc_zero_gain_rejected_and_raw_precision_used(bandwidth_cal):
