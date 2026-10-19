@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "osccal"
-version = "0.1.0"
+dynamic = ["version"]
 description = "示波器自动校准 CLI 工具"
 requires-python = ">=3.10"
 dependencies = [
@@ -27,6 +27,9 @@ osccal = "osccal.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["osccal*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "osccal.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -101,14 +101,14 @@ def test_normalized_duplicate_models_are_reported_as_ambiguous(tmp_path):
 
 
 @pytest.mark.parametrize("invalid", ["actions", "profile", "duplicate", "empty_identity"])
-def test_auto_detection_uses_runtime_validation(tmp_path, mdo3_commands, mdo34_profile, invalid):
+def test_auto_detection_uses_runtime_validation(tmp_path, mdo3_commands, mdo3052_profile, invalid):
     import copy
 
     commands = tmp_path / "commands"
     profiles = tmp_path / "profiles"
     commands.mkdir()
     profiles.mkdir()
-    cmd, profile = copy.deepcopy(mdo3_commands), copy.deepcopy(mdo34_profile)
+    cmd, profile = copy.deepcopy(mdo3_commands), copy.deepcopy(mdo3052_profile)
     if invalid == "actions":
         cmd["actions"] = {}
     if invalid == "profile":
@@ -117,7 +117,7 @@ def test_auto_detection_uses_runtime_validation(tmp_path, mdo3_commands, mdo34_p
     _write(profiles / "a.json", profile)
     if invalid == "duplicate":
         _write(commands / "b.json", cmd)
-    idn = {"manufacturer": "TEKTRONIX", "model": "" if invalid == "empty_identity" else "MDO34"}
+    idn = {"manufacturer": "TEKTRONIX", "model": "" if invalid == "empty_identity" else "MDO3052"}
     found_cmd, found_profile, _, _ = detect_configs(str(commands), str(profiles), idn)
     assert not found_cmd or not found_profile
 

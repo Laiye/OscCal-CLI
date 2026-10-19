@@ -9,8 +9,9 @@ from osccal.core.config_validation import (
     validate_calibrator,
     validate_commands,
     validate_profile,
+    validate_spec,
 )
-from osccal.core.types import CalibratorConfig, CommandConfig, ProfileConfig
+from osccal.core.types import CalibratorConfig, CommandConfig, ProfileConfig, SpecConfig
 
 console = Console()
 
@@ -93,3 +94,26 @@ def load_calibrator(filepath: str) -> CalibratorConfig:
         series = data.get("series", [])
         console.print(f"  校准仪: [yellow]{name}[/yellow] | 系列: {series}")
     return cast(CalibratorConfig, data)
+
+
+def load_spec(filepath: str) -> SpecConfig:
+    data = _load_json(filepath, validator=validate_spec, label="校准规范")
+    if data:
+        code = data.get("spec_code", "unknown")
+        effective = data.get("effective", "")
+        suffix = f" | 实施: {effective}" if effective else ""
+        console.print(f"  校准规范: [yellow]{code}[/yellow]{suffix}")
+    return cast(SpecConfig, data)
+
+
+def resolve_spec_path(specs_dir: str, name_or_path: str | None) -> str | None:
+    """把 --spec 的取值解析为规范配置文件路径：支持名称（可省 .json）或直接给路径。"""
+    if not name_or_path:
+        return None
+    if os.path.isfile(name_or_path):
+        return name_or_path
+    for candidate in (name_or_path, f"{name_or_path}.json"):
+        path = os.path.join(specs_dir, candidate)
+        if os.path.isfile(path):
+            return path
+    return None

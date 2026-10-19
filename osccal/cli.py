@@ -7,7 +7,15 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from osccal.core.config import list_config_files, load_calibrator, load_commands, load_profile
+from osccal import __version__
+from osccal.core.config import (
+    list_config_files,
+    load_calibrator,
+    load_commands,
+    load_profile,
+    load_spec,
+    resolve_spec_path,
+)
 from osccal.core.connect import (
     close_all_connections,
     connect_socket,
@@ -102,24 +110,17 @@ def _pick_channel(channel_arg: str | None, max_channels: int = 4) -> str:
 
 
 def _select_items() -> str:
-    """交互式选择校准项目。"""
+    """交互式选择校准项目：项目集与顺序来自 registry，界面不再硬编码。"""
+    from osccal.measure.registry import CALIBRATION_ITEMS
+
     console.print("\n[bold]选择校准项目:[/bold]")
     console.print("  [0] 全部项目")
-    console.print("  [1] 幅度(ΔV)")
-    console.print("  [2] 直流增益")
-    console.print("  [3] Δt(时间)")
-    console.print("  [4] 频带宽度")
-    console.print("  [5] 上升时间及过冲")
+    presets = {"0": "all"}
+    for index, item in enumerate(CALIBRATION_ITEMS, start=1):
+        console.print(f"  [{index}] {item['title']}（{item['clause']}）")
+        presets[str(index)] = item["name"]
     console.print("  也可输入序号多选(逗号分隔)，如: 1,3")
     choice = click.prompt("请选择或输入", default="0")
-    presets = {
-        "0": "all",
-        "1": "amp",
-        "2": "dc_gain",
-        "3": "delta_time",
-        "4": "bandwidth",
-        "5": "transient",
-    }
     if "," in choice:
         return ",".join(presets.get(c.strip(), c.strip()) for c in choice.split(","))
     return presets.get(choice, choice)
@@ -288,7 +289,7 @@ def _print_scpi_log(max_entries: int = 200) -> None:
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="osccal")
+@click.version_option(version=__version__, prog_name="osccal")
 def cli():
     """OscCal-CLI - 示波器自动校准系统"""
     pass
@@ -297,6 +298,12 @@ def cli():
 @cli.command(cls=CalibrationCommand)
 @click.option("--osc", type=click.Path(exists=True), help="示波器指令集配置文件路径")
 @click.option("--profile", type=click.Path(exists=True), help="示波器特征配置文件路径")
+@click.option(
+    "--spec",
+    type=click.STRING,
+    default=None,
+    help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
+)
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
 @click.option("--channel", type=click.STRING, default=None, help="校准通道，逗号分隔 (1,2,3,4)")
 @click.option("--probe", type=click.STRING, default=None, help="校准仪探头型号 (9560/9550/9530)")
@@ -304,7 +311,7 @@ def cli():
     "--items",
     type=click.STRING,
     default=None,
-    help="校准项目，逗号分隔 (amp,dc_gain,delta_time,bandwidth,transient,all)",
+    help="校准项目，逗号分隔（项目集见 osccal.measure.registry，旧项目名已删除）",
 )
 @click.option("--resource-osc", type=click.STRING, help="示波器 VISA 资源地址")
 @click.option("--resource-cal", type=click.STRING, help="校准仪 VISA 资源地址")
@@ -316,6 +323,7 @@ def cli():
 def calibrate(
     osc,
     profile,
+    spec,
     calibrator,
     channel,
     probe,
@@ -331,7 +339,7 @@ def calibrate(
     """执行示波器校准流程"""
     from osccal.core import scpi_trace
     from osccal.core.config_validation import validate_device_identity, validate_selection
-    from osccal.core.storage import CalibrationRecording, configuration_snapshot
+    from osccal.core.storage import CalibrationRecording, configuration_snapshot, spec_record
 
     scpi_trace.reset()
     scpi_trace.set_log_enabled(log_scpi)
@@ -343,8 +351,42 @@ def calibrate(
     commands_dir = os.path.join(project_dir, "commands")
     profiles_dir = os.path.join(project_dir, "profiles")
     calibrators_dir = os.path.join(project_dir, "calibrators")
+    specs_dir = os.path.join(project_dir, "specs")
+
+    spec_data: dict = {}
+    spec_filepath = ""
+    if spec is not None:
+        resolved = resolve_spec_path(specs_dir, spec)
+        if resolved is None:
+            raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
+        spec_data = load_spec(resolved)
+        if not spec_data:
+            raise click.UsageError("校准规范配置校验失败，已中止")
+        spec_filepath = resolved
+        console.print(
+            Panel(
+                f"[bold]{spec_data.get('spec_code', '')}[/bold]"
+                f"　实施: {spec_data.get('effective', '未注明')}"
+                f"　复校间隔: {spec_data.get('recall_interval_months', '未注明')} 个月"
+                f"　偏离声明: {len(spec_data.get('deviations', []))} 条",
+                title="校准规范",
+                expand=False,
+            )
+        )
+        console.print(
+            "[yellow]⚠ 规范口径尚未启用（当前版本只记录规范标识），"
+            "本轮仍按现有项目方法执行[/yellow]"
+        )
 
     session_failed = False
+
+    from osccal.measure.registry import RUNNERS as _RUNNERS
+
+    if not _RUNNERS:
+        raise click.UsageError(
+            "v0.2.0 重建中：校准项目尚未实现（M3'~M5' 逐个落地），本轮不执行采集。\n"
+            "现有可用：`osccal show` / `osccal export` 查看历史记录、`--spec` 校验规范配置。"
+        )
     try:
         if socket_osc is not None and _parse_socket_addr(socket_osc) is None:
             raise click.BadParameter("应为有效的 host:port 地址", param_hint="--socket-osc")
@@ -561,7 +603,8 @@ def calibrate(
                 "profile_file": os.path.basename(profile_filepath) if profile_filepath else "",
                 "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
                 "simulated": False,
-                "limits": profile_data.get("calibration_limits", {}),
+                "limits": spec_data.get("reference_limits", {}) if spec_data else {},
+                "spec": spec_record(spec_data, spec_filepath) if spec_data else {},
                 "status": "in_progress",
                 "requested_items": item_list,
                 "item_status": {},
@@ -649,6 +692,98 @@ def calibrate(
             )
         if log_scpi:
             _print_scpi_log()
+
+
+@cli.command()
+@click.option(
+    "--spec",
+    type=click.STRING,
+    default="jjf1057_2026",
+    help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
+)
+@click.option("--profile", type=click.Path(exists=True), help="示波器 Profile 路径")
+@click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置路径")
+@click.option("--probe", type=click.STRING, default="9530", help="校准仪探头型号")
+@click.option("--channel", type=click.STRING, default="1,2", help="通道，逗号分隔")
+@click.option("--json", "json_out", type=click.Path(), default=None, help="同时写出计划 JSON")
+def plan(spec, profile, calibrator, probe, channel, json_out):
+    """只解析校准点表，不连接任何仪器。"""
+    import json
+
+    from osccal.core.points import STRATEGY_DESCRIPTIONS, build_plan
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    specs_dir = os.path.join(base_dir, "specs")
+    profiles_dir = os.path.join(base_dir, "profiles")
+    calibrators_dir = os.path.join(base_dir, "calibrators")
+
+    console.print(Panel("[bold blue]校准点表解析[/bold blue]（离线，不连接仪器）", expand=False))
+
+    spec_path = resolve_spec_path(specs_dir, spec)
+    if spec_path is None:
+        raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
+    spec_data = load_spec(spec_path)
+    if not spec_data:
+        raise click.UsageError("校准规范配置校验失败，已中止")
+
+    profile_path = profile or _first_config(profiles_dir, "Profile")
+    calibrator_path = calibrator or _first_config(calibrators_dir, "校准仪")
+    if profile_path is None or calibrator_path is None:
+        raise click.UsageError("缺少 Profile 或校准仪配置")
+
+    profile_data = load_profile(profile_path)
+    calibrator_data = load_calibrator(calibrator_path)
+    if not profile_data or not calibrator_data:
+        raise click.UsageError("Profile 或校准仪配置加载失败")
+
+    channels = [c.strip() for c in channel.split(",") if c.strip()]
+    plan_data = build_plan(spec_data, profile_data, calibrator_data, probe, channels)
+
+    table = Table(title=f"校准点表　{plan_data['spec_code']}　{plan_data['profile_series']}")
+    table.add_column("条款")
+    table.add_column("校准项目")
+    table.add_column("取点策略")
+    table.add_column("点数", justify="right")
+    table.add_column("跳过", justify="right")
+    for item in plan_data["items"]:
+        strategy = item["strategy"] or "人工"
+        table.add_row(
+            item["clause"],
+            item["title"],
+            f"{strategy}（{STRATEGY_DESCRIPTIONS.get(strategy, '')}）"
+            if item["strategy"]
+            else "人工",
+            str(len(item["points"])),
+            str(len(item["skipped"])),
+        )
+    console.print(table)
+    console.print(
+        f"合计 [bold]{plan_data['total_points']}[/bold] 个校准点，"
+        f"跳过 [bold]{plan_data['total_skipped']}[/bold] 处"
+    )
+
+    for item in plan_data["items"]:
+        for skip in item["skipped"]:
+            detail = " ".join(f"{k}={v}" for k, v in skip.items() if k != "reason")
+            console.print(
+                f"[yellow]·[/yellow] {item['title']} 跳过 {detail or '-'}：{skip.get('reason', '')}"
+            )
+
+    if json_out:
+        directory = os.path.dirname(os.path.abspath(json_out))
+        os.makedirs(directory, exist_ok=True)
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(plan_data, f, ensure_ascii=False, indent=2)
+        console.print(f"[green]✓[/green] 计划已写入: [cyan]{json_out}[/cyan]")
+
+
+def _first_config(directory: str, label: str) -> str | None:
+    """返回目录下第一个 JSON 配置的完整路径。"""
+    files = list_config_files(directory)
+    if not files:
+        console.print(f"[red]✗[/red] {label} 目录为空: {directory}")
+        return None
+    return os.path.join(directory, files[0])
 
 
 @cli.command()

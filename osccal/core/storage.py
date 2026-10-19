@@ -34,6 +34,24 @@ def configuration_snapshot(config: dict) -> dict:
     }
 
 
+def spec_record(spec: dict, filepath: str, *, applied: bool = False) -> dict:
+    """记录本轮所用校准规范的标识与摘要。
+
+    规范全文不写入记录，只保留代号、文件名、内容 sha256、偏离声明与判据语义，
+    便于事后追溯"这一轮到底依据哪份规范、声明了哪些偏离"。
+    """
+    snapshot = configuration_snapshot(spec)
+    return {
+        "spec_code": spec.get("spec_code", ""),
+        "name": spec.get("name", ""),
+        "file": os.path.basename(filepath),
+        "sha256": snapshot["sha256"],
+        "deviations": spec.get("deviations", []),
+        "limits_semantics": spec.get("limits_semantics", {}),
+        "applied": applied,
+    }
+
+
 class CalibrationRecording:
     """一轮校准的阶段记录，持有独立路径、结果和错误计数基线。"""
 
@@ -90,6 +108,7 @@ def save_calibration_data(cal_results: dict, metadata: dict, *, filepath: str | 
             "calibrator_file": metadata.get("calibrator_file", ""),
             "simulated": metadata.get("simulated", False),
             "limits": metadata.get("limits", {}),
+            "spec": metadata.get("spec", {}),
             "scpi_errors": 0,
             **metadata,
             "updated_at": now.isoformat(),

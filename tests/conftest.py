@@ -41,17 +41,9 @@ def mdo3_commands_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def mdo34_profile() -> dict:
-    """加载 MDO34 特征配置。"""
-    path = PROFILES_DIR / "tektronix_mdo34.json"
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-@pytest.fixture(scope="session")
-def mdo32_profile() -> dict:
-    """加载 MDO32 特征配置。"""
-    path = PROFILES_DIR / "tektronix_mdo32.json"
+def mdo3052_profile() -> dict:
+    """加载 MDO3052 特征配置（v0.2.0 起只保留该机型的 Profile）。"""
+    path = PROFILES_DIR / "tektronix_mdo3052.json"
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 

@@ -50,28 +50,21 @@ def _valid_commands() -> dict:
 
 
 def _valid_profile() -> dict:
+    """v0.2.0 契约：Profile 只声明硬件事实，不含校准点与限值。"""
     return {
         "name": "n",
         "description": "d",
         "factor": "f",
         "series": "S",
+        "channels": 2,
         "imp_has_50": True,
+        "bandwidth_hz": 5e8,
         "vertical_div": 8,
+        "horizontal_div": 10,
+        "vertical_scales": [0.01, 0.1, 1.0],
+        "horizontal_scales": [1e-9, 1e-6],
         "probe_default": 1,
         "init_time": 2,
-        "calibration_limits": {
-            "amp": {"lower": -2.0, "upper": 2.0},
-            "dc_gain": {"lower": -2.0, "upper": 2.0},
-            "delta_time": {"lower": -2.0, "upper": 2.0},
-            "bandwidth": {"min_mhz": 100},
-            "transient": {},
-        },
-        "points": {
-            "delta_amp": [0.001],
-            "dc_gain": [0.001],
-            "delta_time": [1e-9],
-            "bandwidth": [0.005],
-        },
     }
 
 
@@ -118,25 +111,49 @@ class TestMalformedProfile:
         data = _valid_profile()
         data["vertical_div"] = "8"
         errors = validate_profile(data)
-        assert "vertical_div 必须为正数" in errors
+        assert any("vertical_div" in e for e in errors)
 
-    def test_limits_missing_lower(self):
+    def test_deprecated_points_rejected(self):
         data = _valid_profile()
-        del data["calibration_limits"]["amp"]["lower"]
+        data["points"] = {"delta_amp": [0.001]}
         errors = validate_profile(data)
-        assert any("lower/upper" in e for e in errors)
+        assert any("已废弃字段" in e and "points" in e for e in errors)
 
-    def test_limits_wrong_type(self):
+    def test_deprecated_limits_rejected(self):
         data = _valid_profile()
-        data["calibration_limits"] = "nope"
+        data["calibration_limits"] = {"amp": {"lower": -2.0, "upper": 2.0}}
         errors = validate_profile(data)
-        assert any("calibration_limits" in e for e in errors)
+        assert any("已废弃字段" in e and "calibration_limits" in e for e in errors)
 
-    def test_points_contains_string(self):
+    def test_scale_list_must_ascend(self):
         data = _valid_profile()
-        data["points"]["delta_amp"] = ["0.001"]
+        data["vertical_scales"] = [1.0, 0.1]
+        errors = validate_profile(data)
+        assert any("未升序" in e for e in errors)
+
+    def test_scale_list_rejects_non_positive(self):
+        data = _valid_profile()
+        data["horizontal_scales"] = [0, 1e-6]
         errors = validate_profile(data)
         assert any("含非正数" in e for e in errors)
+
+    def test_scale_list_rejects_duplicates(self):
+        data = _valid_profile()
+        data["vertical_scales"] = [0.1, 0.1]
+        errors = validate_profile(data)
+        assert any("重复" in e for e in errors)
+
+    def test_missing_bandwidth_hz(self):
+        data = _valid_profile()
+        del data["bandwidth_hz"]
+        errors = validate_profile(data)
+        assert any("bandwidth_hz" in e for e in errors)
+
+    def test_channels_must_be_positive(self):
+        data = _valid_profile()
+        data["channels"] = 0
+        errors = validate_profile(data)
+        assert any("channels" in e for e in errors)
 
 
 class TestMalformedCalibrator:

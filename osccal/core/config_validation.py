@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import TypeGuard
 
 REQUIRED_COMMAND_KEYS = {"name", "description", "type", "series", "feature", "keyword", "actions"}
@@ -28,20 +29,60 @@ VALID_COMM_TYPES = {"pyvisa", "socket"}
 VALID_MEAS_MODES = {"merge", "split"}
 VALID_ACTION_TYPES = {"write", "query"}
 
+# profiles/ 只声明硬件事实：校准点来自 specs/，标准器能力来自 calibrators/，
+# 参考指标来自 specs.reference_limits。Profile 里不再允许出现 points / calibration_limits。
 REQUIRED_PROFILE_KEYS = {
     "name",
     "description",
     "factor",
     "series",
+    "channels",
     "imp_has_50",
+    "bandwidth_hz",
     "vertical_div",
+    "horizontal_div",
+    "vertical_scales",
+    "horizontal_scales",
     "probe_default",
     "init_time",
-    "calibration_limits",
-    "points",
 }
-REQUIRED_LIMIT_ITEMS = {"amp", "dc_gain", "delta_time", "bandwidth", "transient"}
-REQUIRED_POINT_TABLES = {"bandwidth", "delta_amp", "dc_gain", "delta_time"}
+DEPRECATED_PROFILE_KEYS = {"points", "calibration_limits", "bandwidth", "bd_step", "bd_scan"}
+
+# ── 校准规范配置（specs/*.json）──
+# 规范只声明"口径"，硬件能力来自 profiles/、标准器能力来自 calibrators/。
+REQUIRED_SPEC_KEYS = {"name", "spec_code", "items", "deviations"}
+# 规范项目键：既允许规范自身的条目名，也允许与 registry 同名的项目键。
+VALID_SPEC_ITEM_KEYS = {
+    "visual_check",
+    "input_impedance",
+    "dc_gain",
+    "dc_offset",
+    "freq_response_bandwidth",
+    "enob",
+    "rise_time",
+    "timebase_error",
+    "self_cal_signal",
+    "delta_v",
+    "delta_t",
+    "random_noise",
+    "amp",
+    "delta_time",
+    "bandwidth",
+    "transient",
+}
+# 取点策略：见 specs/ 中各项的 points.strategy。
+VALID_POINT_STRATEGIES = {
+    "explicit",
+    "screen_fraction",
+    "scale_list",
+    "bw_ratio",
+    "derived",
+    "fixed",
+    "channel_x_impedance",
+    "channel_x_edge_speed",
+}
+# 规范表 1 注明"技术指标仅供参考，不作为符合性判定依据"。
+VALID_LIMIT_SEMANTICS = {"reference_only"}
 
 REQUIRED_CALIBRATOR_KEYS = {
     "name",
@@ -412,8 +453,21 @@ def validate_commands(data: dict) -> list[str]:
     return errors
 
 
+def _validate_scale_list(data: dict, field: str) -> list[str]:
+    values = data.get(field)
+    if not isinstance(values, list) or not values:
+        return [f"{field} 必须为非空数值列表"]
+    if not all(_is_number(v) and v > 0 for v in values):
+        return [f"{field} 含非正数或非数值"]
+    if values != sorted(values):
+        return [f"{field} 未升序"]
+    if len(values) != len(set(values)):
+        return [f"{field} 有重复档位"]
+    return []
+
+
 def validate_profile(data: dict) -> list[str]:
-    """校验特征配置结构，返回错误列表（畸形字段只报错不抛异常）。"""
+    """校验示波器 Profile：只允许声明硬件事实，返回错误列表。"""
     errors: list[str] = []
     if not isinstance(data, dict):
         return ["配置必须是 JSON 对象"]
@@ -424,84 +478,38 @@ def validate_profile(data: dict) -> list[str]:
         return errors
 
     errors.extend(_validate_identity(data))
-    channels = data.get("channels", 4)
     if not isinstance(data.get("series"), str) or not data["series"].strip():
         errors.append("Profile series 必须为非空字符串")
-    if "skip_vertical_adjust" in data and not isinstance(data["skip_vertical_adjust"], bool):
-        errors.append("skip_vertical_adjust 必须为布尔值")
+
+    deprecated = sorted(DEPRECATED_PROFILE_KEYS & set(data.keys()))
+    if deprecated:
+        errors.append(f"已废弃字段: {deprecated}（校准点取自 specs/，限值取自规范参考指标）")
+
+    channels = data.get("channels")
     if not _is_count(channels) or channels == 0:
         errors.append("channels 必须为正整数")
     for field, default in (("init_time", 2), ("probe_default", 1)):
         value = data.get(field, default)
         if not _is_number(value) or value < 0 or (field == "probe_default" and value == 0):
             errors.append(f"{field} 数值非法")
-    for field in ("bandwidth", "bd_step"):
-        if field in data and (not _is_number(data[field]) or data[field] <= 0):
-            errors.append(f"{field} 必须为有限正数")
-    # 平均次数：波形越"厚"，峰峰值类测量被噪声抬得越高，低挡位尤其明显；
-    # 示波器的合法取值各系列不同（如 TBS1000/TDS2000 为 4/16/64/128），故由 Profile 声明。
+    if not isinstance(data.get("imp_has_50"), bool):
+        errors.append("imp_has_50 必须为布尔值")
+    for field, default in (("vertical_div", 8), ("horizontal_div", 10)):
+        value = data.get(field, default)
+        if not _is_number(value) or value <= 2:
+            errors.append(f"{field} 必须为大于 2 的数值")
+    bandwidth = data.get("bandwidth_hz")
+    if not _is_number(bandwidth) or bandwidth <= 0:
+        errors.append("bandwidth_hz 必须为有限正数")
     if "averages" in data and (
         not _is_count(data["averages"]) or not 2 <= data["averages"] <= 4096
     ):
         errors.append("averages 必须为 2~4096 的整数")
-    if not isinstance(data.get("imp_has_50"), bool):
-        errors.append("imp_has_50 必须为布尔值")
-    if not _is_number(data.get("vertical_div")) or data["vertical_div"] <= 0:
-        errors.append("vertical_div 必须为正数")
-    if not _is_number(data.get("horizontal_div", 10)) or data.get("horizontal_div", 10) <= 0:
-        errors.append("horizontal_div 必须为正数")
-    for field, default in (("vertical_div", 8), ("horizontal_div", 10)):
-        if _is_number(data.get(field, default)) and data.get(field, default) <= 2:
-            errors.append(f"{field} 必须大于 2，保证标准值非零")
-    if data.get("bd_scan", "bisect") not in ("bisect", "linear"):
-        errors.append(f"非法带宽扫描模式 bd_scan: {data.get('bd_scan')}")
+    if "skip_vertical_adjust" in data and not isinstance(data["skip_vertical_adjust"], bool):
+        errors.append("skip_vertical_adjust 必须为布尔值")
 
-    limits = data.get("calibration_limits")
-    if not isinstance(limits, dict):
-        errors.append("calibration_limits 必须是对象")
-    else:
-        missing_lim = REQUIRED_LIMIT_ITEMS - set(limits.keys())
-        if missing_lim:
-            errors.append(f"calibration_limits 缺少项: {sorted(missing_lim)}")
-        else:
-            for item in ("amp", "dc_gain", "delta_time"):
-                lim = limits.get(item)
-                if not isinstance(lim, dict):
-                    errors.append(f"{item} 限值必须是对象")
-                    continue
-                lower, upper = lim.get("lower"), lim.get("upper")
-                if not (_is_number(lower) and _is_number(upper)):
-                    errors.append(f"{item} 限值 lower/upper 必须为数值")
-                    continue
-                if not lower < upper:
-                    errors.append(f"{item} 限值区间非法")
-                if abs(lower) > 20 or abs(upper) > 20:
-                    errors.append(f"{item} 限值数量级异常")
-            bw = limits.get("bandwidth")
-            if (
-                not isinstance(bw, dict)
-                or not _is_number(bw.get("min_mhz", 0))
-                or bw.get("min_mhz", 0) <= 0
-            ):
-                errors.append("bandwidth min_mhz 必须为正数")
-
-    points = data.get("points")
-    if not isinstance(points, dict):
-        errors.append("points 必须是对象")
-    else:
-        missing_pts = REQUIRED_POINT_TABLES - set(points.keys())
-        if missing_pts:
-            errors.append(f"points 缺少点表: {sorted(missing_pts)}")
-        else:
-            for table in REQUIRED_POINT_TABLES:
-                pts = points.get(table)
-                if not isinstance(pts, list) or not pts:
-                    errors.append(f"{table} 点表为空")
-                    continue
-                if not all(_is_number(v) and v > 0 for v in pts):
-                    errors.append(f"{table} 含非正数")
-                elif pts != sorted(pts):
-                    errors.append(f"{table} 未升序")
+    errors.extend(_validate_scale_list(data, "vertical_scales"))
+    errors.extend(_validate_scale_list(data, "horizontal_scales"))
     return errors
 
 
@@ -569,4 +577,95 @@ def validate_calibrator(data: dict) -> list[str]:
         max_freq = info.get("max_frequency_hz", 0)
         if not _is_number(max_freq) or max_freq < 0:
             errors.append(f"探头 {probe} max_frequency_hz 必须为非负有限数值")
+    return errors
+
+
+_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_RECORD_TABLE_PATTERN = re.compile(r"^[AB]\.\d+$")
+
+
+def validate_spec(data: dict) -> list[str]:
+    """校验校准规范配置（specs/*.json），返回错误列表。
+
+    只校验"口径"声明本身：条款号、取点策略、记录表号、偏离声明与参考指标语义。
+    条目实际怎么测量由对应项目实现保证，不在此处校验。
+    """
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return ["配置必须是 JSON 对象"]
+
+    missing = REQUIRED_SPEC_KEYS - set(data.keys())
+    if missing:
+        errors.append(f"缺少字段: {sorted(missing)}")
+        return errors
+
+    for field in ("name", "spec_code"):
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} 必须为非空字符串")
+
+    for field in ("issued", "effective"):
+        if field not in data:
+            continue
+        value = data[field]
+        if not isinstance(value, str) or not _DATE_PATTERN.match(value):
+            errors.append(f"{field} 必须为 YYYY-MM-DD 格式")
+
+    recall = data.get("recall_interval_months")
+    if recall is not None and (not _is_count(recall) or recall == 0):
+        errors.append("recall_interval_months 必须为正整数")
+
+    deviations = data.get("deviations")
+    if not isinstance(deviations, list) or not deviations:
+        errors.append("deviations 必须为非空字符串列表")
+    elif not all(isinstance(v, str) and v.strip() for v in deviations):
+        errors.append("deviations 含空条目")
+
+    semantics = data.get("limits_semantics")
+    if semantics is not None:
+        if not isinstance(semantics, dict):
+            errors.append("limits_semantics 必须是对象")
+        elif semantics.get("kind") not in VALID_LIMIT_SEMANTICS:
+            errors.append(
+                "limits_semantics.kind 必须为 reference_only（规范表 1 指标不作符合性判定依据）"
+            )
+
+    if "environment" in data and not isinstance(data["environment"], dict):
+        errors.append("environment 必须是对象")
+
+    items = data.get("items")
+    if not isinstance(items, dict) or not items:
+        errors.append("items 必须为非空对象")
+        return errors
+
+    unknown = sorted(set(items) - VALID_SPEC_ITEM_KEYS)
+    if unknown:
+        errors.append(f"items 含未知校准项目: {unknown}")
+
+    for key, item in items.items():
+        if not isinstance(item, dict):
+            errors.append(f"items.{key} 必须是对象")
+            continue
+        clause = item.get("clause")
+        if not isinstance(clause, str) or not clause.strip():
+            errors.append(f"items.{key}.clause 必须为非空字符串")
+        title = item.get("title")
+        if not isinstance(title, str) or not title.strip():
+            errors.append(f"items.{key}.title 必须为非空字符串")
+        automatable = item.get("automatable")
+        if not isinstance(automatable, bool):
+            errors.append(f"items.{key}.automatable 必须为布尔值")
+            continue
+        if not automatable:
+            continue
+        points = item.get("points")
+        if not isinstance(points, dict):
+            errors.append(f"items.{key} 缺少 points 对象")
+        else:
+            strategy = points.get("strategy")
+            if strategy not in VALID_POINT_STRATEGIES:
+                errors.append(f"items.{key}.points.strategy 非法: {strategy!r}")
+        record = item.get("record_table")
+        if not isinstance(record, str) or not _RECORD_TABLE_PATTERN.match(record):
+            errors.append(f"items.{key}.record_table 必须形如 A.3 或 B.4")
     return errors

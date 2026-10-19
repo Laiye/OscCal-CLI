@@ -2,6 +2,13 @@
 
 示波器自动校准命令行工具。通过 SCPI 指令控制 FLUKE 9500B 校准仪和示波器，自动完成示波器各项校准项目，生成校准结果和报告。
 
+> **v0.2.0 重建中（不兼容 V0.1.0）**
+>
+> 项目正按 **JJF 1057-2026《数字示波器校准规范》** 重建：校准项目集改为规范第 7 章的 10 项；
+> `profiles/` 收敛为 MDO3052 一份且只声明硬件事实；旧项目（amp、delta_time 等）已删除，
+> **不保留别名或回退路径**。当前 `osccal calibrate` 尚未接入新项目实现，会明确提示"重建中"；
+> 可用 `osccal plan` 离线查看解析出的校准点表。需要旧行为请检出标签 `V0.1.0`。
+
 ## 功能特性
 
 - **6 项校准项目**：幅度（ΔV）、直流增益、Δt（时间）、频带宽度、上升时间及过冲、全项目校准
@@ -84,7 +91,7 @@ where.exe osccal        # Windows
 which osccal            # Linux / macOS
 
 # 3. 命令可用
-osccal --version        # 应输出 osccal, version 0.1.0
+osccal --version        # 应输出 osccal, version 0.2.0
 ```
 
 > **不要只用 `osccal --version` 判断是否装好**：激活虚拟环境只是在 PATH **最前面插入** `.venv\Scripts`，并不会移除系统 Python 的 `Scripts` 目录。若虚拟环境里尚未安装本项目，系统里已有的那份 `osccal` 仍会被找到并执行（Windows 的 `osccal.exe` 内嵌了安装它时的解释器路径，所以实际运行的是系统 Python 与系统里的依赖）。判定依据用 `pip list`（是否列出 `osccal` 与依赖）、`pip show osccal`、`where/which osccal` 三者之一。
@@ -311,6 +318,7 @@ osccal calibrate [OPTIONS]
 | `--auto` | 自动扫描 VISA 资源，识别设备并匹配配置 | — |
 | `--osc` | 示波器指令集配置文件路径 | 交互选择 |
 | `--profile` | 示波器特征配置文件路径 | 交互选择 |
+| `--spec` | 校准规范配置：`specs/` 下名称（可省 `.json`）或文件路径 | — |
 | `--calibrator` | 校准仪配置文件路径 | 自动加载首个 |
 | `--channel` | 校准通道，逗号分隔（1,2,3,4） | 交互选择 |
 | `--probe` | 校准仪探头型号（9560/9550/9530） | 交互选择 / 自动识别 |
@@ -364,6 +372,18 @@ osccal calibrate --channel 1,2,3,4
 # 使用 Socket 连接示波器
 osccal calibrate --socket-osc 192.168.1.100:5025
 ```
+
+### `osccal plan`
+
+只解析校准点表，**不连接任何仪器**：把 `specs/`（规范口径）+ `profiles/`（硬件事实）+ `calibrators/`（标准器能力）合成可执行的校准点，并逐条列出被跳过的点及原因。
+
+```bash
+osccal plan                              # 默认规范 + 默认 Profile/校准仪
+osccal plan --json data/plan.json        # 同时写出计划 JSON
+osccal plan --channel 1 --probe 9530
+```
+
+不静默降级：某个点超出标准器能力（例如 1 V/div 的方波需要 6.4 Vpp，超过 50 Ω 档 5 Vpp 上限）时，一定记入"跳过"并给出理由。
 
 ### `osccal show`
 
@@ -627,6 +647,24 @@ OscCal-CLI/
 | `keyword.meas_pos_overshoot` | 正过冲测量助记符。**可省略**：省略表示该机型没有此测量能力，瞬态项目只测上升时间、过冲列记"不适用"（例：泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列） |
 | `probes` | 探头信息，`edge_rise_times` 为可用的上升时间列表（秒），`max_frequency` 为最大正弦波频率 |
 | `impedance_rules` | 阻抗规则，按探头型号和信号模式定义支持的阻抗列表。`["1M","50"]` 表示两种都支持，`["50"]` 表示仅支持 50Ω |
+
+### 校准规范文件（specs/）
+
+声明"按哪份校准规范、用什么口径"的配置层。**规范只写口径**（条款号、取点策略、屏占比、基准频率、记录表号、偏离声明、参考指标），硬件能力仍来自 `profiles/`，标准器输出能力来自 `calibrators/`。
+
+| 字段 | 说明 |
+|------|------|
+| `spec_code` / `name` / `effective` | 规范代号、名称、实施日期 |
+| `recall_interval_months` | 复校时间间隔（月） |
+| `deviations` | 对规范的偏离声明，逐条写入校准记录 |
+| `limits_semantics` | 必须为 `reference_only`：规范表 1 指标仅供参考，不作符合性判定依据 |
+| `items` | 各校准项目：`clause` 条款号、`automatable` 是否程序实现、`points.strategy` 取点策略、`record_table` 原始记录表号、`formula` 计算式 |
+
+取点策略（`points.strategy`）共 8 种：`explicit` 绝对点表、`screen_fraction` 屏占比、`scale_list` 档位列表、`bw_ratio` 相对带宽比值、`derived` 现场公式、`fixed` 固定条件、`channel_x_impedance` 通道×阻抗、`channel_x_edge_speed` 通道×边沿速度。
+
+用 `--spec` 指定：可写 `specs/` 下的名称（可省 `.json`）或直接给文件路径。
+
+> **当前状态（v0.2.0）**：`--spec` 只做"记录规范标识 + 校验规范配置"，**尚未切换测量口径**——本轮仍按现有 5 个项目的方法执行，记录里 `metadata.spec.applied` 恒为 `false`。
 
 ## 自动识别流程
 

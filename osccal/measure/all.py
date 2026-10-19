@@ -1,12 +1,25 @@
-import time
+"""校准项目调度。
 
-import click
+重建期（v0.2.0 M1'）`registry.RUNNERS` 为空，任何项目都会明确抛出
+`ItemNotImplementedError`，**不静默跳过、不降级**。M3'~M5' 把 runner 注册进
+`RUNNERS` 后本模块即可直接工作。
+"""
+
 from rich.console import Console
 
-from osccal.measure.base import OutputShutdownError
-from osccal.measure.registry import CALIBRATOR_ORDER, CALIBRATORS_MAP
+from osccal.measure.registry import ITEM_ORDER, RUNNERS
 
 console = Console()
+
+
+class ItemNotImplementedError(RuntimeError):
+    """校准项目尚未实现（v0.2.0 重建期）。"""
+
+
+def pending_items(items: list[str] | None = None) -> list[str]:
+    """返回尚未实现的项目名；items 为空表示按注册顺序检查全部。"""
+    names = list(items) if items else list(ITEM_ORDER)
+    return [name for name in names if name not in RUNNERS]
 
 
 def run_items(
@@ -19,40 +32,25 @@ def run_items(
     probe,
     items,
     on_result=None,
-    pause=0,
 ):
-    """统一执行项目；每项结束或中断时回传已完成的数据点及失败原因。"""
-    all_results = {}
+    """依次执行项目；存在未实现项目时直接报错，避免产出半套结果。"""
+    pending = pending_items(list(items))
+    if pending:
+        raise ItemNotImplementedError(f"项目尚未实现: {', '.join(pending)}")
 
+    results: dict = {}
     for name in items:
-        cal = None
-        error = None
-        try:
-            console.rule(f"[bold blue]{name}[/bold blue]")
-            CalClass = CALIBRATORS_MAP.get(name)
-            if CalClass is None:
-                raise ValueError(f"未知校准项目: {name}")
-            cal = CalClass(
-                inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe
-            )
-            cal.run()
-        except BaseException as exc:
-            error = exc
-            if not isinstance(exc, Exception) or isinstance(
-                exc, (OutputShutdownError, click.Abort)
-            ):
-                raise
-            console.print(f"[red]✗[/red] {name} 校准失败: {exc}")
-        finally:
-            rows = cal.get_results() if cal is not None else []
-            all_results[name] = rows
-            # 回调的存储错误必须向上传播，不能当成测量失败后继续运行。
-            if on_result is not None:
-                on_result(name, rows, error)
-        if pause and error is None:
-            time.sleep(pause)
-
-    return all_results
+        console.rule(f"[bold blue]{name}[/bold blue]")
+        runner = RUNNERS[name]
+        calibrator = runner(
+            inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe
+        )
+        calibrator.run()
+        rows = calibrator.get_results()
+        results[name] = rows
+        if on_result is not None:
+            on_result(name, rows, None)
+    return results
 
 
 def run_all(
@@ -65,7 +63,7 @@ def run_all(
     probe=None,
     on_result=None,
 ):
-    """按注册顺序执行全部项目，并保留原有项目间稳定时间。"""
+    """按注册顺序执行全部项目。"""
     return run_items(
         inst_osc,
         inst_calibrator,
@@ -74,7 +72,6 @@ def run_all(
         profile,
         channel,
         probe,
-        [entry["name"] for entry in CALIBRATOR_ORDER],
-        on_result,
-        pause=5,
+        ITEM_ORDER,
+        on_result=on_result,
     )

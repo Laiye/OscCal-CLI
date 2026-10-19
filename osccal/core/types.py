@@ -69,6 +69,9 @@ class ProfileConfig(TypedDict, total=False):
     probe_default: int
     init_time: float
     averages: int
+    bandwidth_hz: float
+    vertical_scales: list[float]
+    horizontal_scales: list[float]
     calibration_limits: dict[str, CalibrationLimits]
     points: PointsConfig
     bandwidth: float
@@ -99,3 +102,59 @@ class CalibratorConfig(TypedDict, total=False):
     probes: dict[str, ProbeConfig]
     impedance_rules: ImpedanceRules
     actions: dict[str, ActionConfig]
+
+
+class SpecPointRule(TypedDict, total=False):
+    """校准点取点规则：策略 + 该策略下的参数。"""
+
+    strategy: str
+    screen_fraction: float
+    scales_v_per_div: list[float]
+    horizontal_scales_s_per_div: list[float]
+    ratios: list[float]
+    reference_hz: float
+    impedances: list[str]
+    samples_n: int
+    integer_cycles_n: int
+    periods_m: int
+    periods_on_screen: int
+    zero_point: bool
+    offset_nominal_divisions: int
+
+
+class SpecItem(TypedDict, total=False):
+    """单个校准项目的规范口径（来自 specs/*.json）。"""
+
+    clause: str
+    title: str
+    automatable: bool
+    method: str
+    record_table: str
+    record_fields: list[str]
+    stimulus: dict[str, object]
+    points: SpecPointRule
+    formula: dict[str, str]
+    deviations: list[str]
+    invalid_sentinel: float
+    requires_user_action: dict[str, object]
+    pending_confirm: str
+    note: str
+    notes: list[str]
+
+
+class SpecConfig(TypedDict, total=False):
+    """校准规范配置（specs/*.json）：只声明规范口径，不含硬件能力。"""
+
+    name: str
+    spec_code: str
+    title: str
+    replaces: str
+    issued: str
+    effective: str
+    recall_interval_months: int
+    description: str
+    environment: dict[str, object]
+    deviations: list[str]
+    limits_semantics: dict[str, str]
+    reference_limits: dict[str, object]
+    items: dict[str, SpecItem]
