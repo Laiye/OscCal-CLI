@@ -25,6 +25,12 @@
         "return_value_index": 1,
         "get_value": "Direct"
     },
+    "capabilities": {
+        "waveform_readback": true,
+        "waveform_commands": "DATa:SOUrce/ENCdg/WIDth/STARt/STOP + WFMOutpre? + CURVe?（编程手册 077-0510-08）",
+        "waveform_notes": "CURVe? 返回 IEEE 488.2 定长块；电压换算 V=(code-YOFf)*YMUlt+YZEro；1 字节每格 25 级、2 字节每格 6400 级；读前须停止采集且源波形处于开启状态",
+        "waveform_verified": false
+    },
     "keyword": {
         "imp_fif": "FIF",
         "imp_meg": "MEG",
@@ -335,6 +341,106 @@
                     "SEQ"
                 ]
             ]
+        },
+        "set_wave_source": {
+            "name": "set_wave_source",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                "DATa:SOUrce CH",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ]
+            ]
+        },
+        "set_wave_encoding": {
+            "name": "set_wave_encoding",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                "DATa:ENCdg ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "RIBinary",
+                    "RPBinary",
+                    "ASCii",
+                    "FAStest"
+                ]
+            ]
+        },
+        "set_wave_width": {
+            "name": "set_wave_width",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                "DATa:WIDth ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "1",
+                    "2"
+                ]
+            ]
+        },
+        "set_wave_start": {
+            "name": "set_wave_start",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                "DATa:STARt ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "set_wave_stop": {
+            "name": "set_wave_stop",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 1,
+            "commands": [
+                "DATa:STOP ",
+                "\n"
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
+        },
+        "query_wave_preamble": {
+            "name": "query_wave_preamble",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "WFMOutpre?"
+            ],
+            "args": []
+        },
+        "query_wave_data": {
+            "name": "query_wave_data",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "CURVe?"
+            ],
+            "args": []
         }
     }
 }
