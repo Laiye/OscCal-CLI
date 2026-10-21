@@ -84,9 +84,9 @@ class TestShippedSpec:
 
     def test_timebase_points(self, spec):
         scales = spec["items"]["timebase_error"]["points"]["horizontal_scales_s_per_div"]
-        assert len(scales) == 5
+        assert len(scales) == 4
         assert scales[0] == pytest.approx(10e-9)
-        assert scales[-1] == pytest.approx(100e-3)
+        assert scales[-1] == pytest.approx(10e-3)
 
     def test_random_noise_pauses_for_load(self, spec):
         action = spec["items"]["random_noise"]["requires_user_action"]

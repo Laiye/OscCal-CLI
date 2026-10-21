@@ -10,8 +10,12 @@ delta_time、旧法 bandwidth、transient）已全部删除，**不保留别名�
 from osccal.measure.dc_gain import DcGainCalibrator
 from osccal.measure.dc_offset import DcOffsetCalibrator
 from osccal.measure.delta_t import DeltaTimeCalibrator
+from osccal.measure.delta_v import DeltaVCalibrator
+from osccal.measure.enob import EnobCalibrator
 from osccal.measure.freq_response import FreqResponseCalibrator
+from osccal.measure.input_impedance import InputImpedanceCalibrator
 from osccal.measure.random_noise import RandomNoiseCalibrator
+from osccal.measure.rise_time import RiseTimeCalibrator
 from osccal.measure.timebase import TimebaseErrorCalibrator
 
 CALIBRATION_ITEMS = [
@@ -33,10 +37,14 @@ ITEM_BY_NAME = {item["name"]: item for item in CALIBRATION_ITEMS}
 
 # 项目名 -> runner。未列出的项目即"尚未实现"（calibrate 会明确报错，不静默跳过）。
 RUNNERS: dict = {
+    "input_impedance": InputImpedanceCalibrator,
     "dc_gain": DcGainCalibrator,
     "dc_offset": DcOffsetCalibrator,
     "freq_response_bandwidth": FreqResponseCalibrator,
+    "enob": EnobCalibrator,
+    "rise_time": RiseTimeCalibrator,
     "timebase_error": TimebaseErrorCalibrator,
+    "delta_v": DeltaVCalibrator,
     "delta_t": DeltaTimeCalibrator,
     "random_noise": RandomNoiseCalibrator,
 }

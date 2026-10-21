@@ -386,6 +386,16 @@
                 ]
             ]
         },
+        "query_sample_rate": {
+            "name": "query_sample_rate",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "ACQuire:SRATe?"
+            ],
+            "args": []
+        },
         "set_wave_source": {
             "name": "set_wave_source",
             "type": "write",

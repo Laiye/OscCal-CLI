@@ -105,7 +105,9 @@ class TestCalibrateFlow:
         assert metadata["status"] == "completed"
 
     def test_rejects_unimplemented_item(self, fake_env):
-        result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "enob"), input="n\n")
+        result = CliRunner().invoke(
+            cli, _args("--channel", "1", "--items", "not_an_item"), input="n\n"
+        )
         assert result.exit_code == 2
         assert "尚未实现" in result.output
 

@@ -91,6 +91,30 @@
             "commands": ["*CLS;*RST"],
             "args": []
         },
+        "set_load_func": {
+            "name": "set_load_func",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": ["CONF:"],
+            "args": [["RES", "CAP"]]
+        },
+        "query_load_func": {
+            "name": "query_load_func",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": ["CONF?"],
+            "args": []
+        },
+        "query_load": {
+            "name": "query_load",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": ["READ?"],
+            "args": []
+        },
         "set_shap": {
             "name": "set_shap",
             "type": "write",

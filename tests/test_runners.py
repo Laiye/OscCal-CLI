@@ -183,6 +183,6 @@ class TestRegistryWiring:
     def test_all_registered_items_belong_to_order(self):
         assert set(RUNNERS) <= set(ITEM_ORDER)
 
-    def test_unimplemented_items_remain_listed(self):
-        """清单是规范要求，RUNNERS 是已实现：未实现的项目仍应在清单里。"""
-        assert "enob" in ITEM_ORDER and "enob" not in RUNNERS
+    def test_all_spec_items_registered(self):
+        """清单是规范要求，RUNNERS 是已实现：M5' 之后 10 项应全部就位。"""
+        assert set(ITEM_ORDER) == set(RUNNERS)

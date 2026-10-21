@@ -38,9 +38,10 @@ def _by_name(plan: dict) -> dict[str, dict]:
 
 class TestPlanContent:
     def test_total_points(self, plan):
-        # 4 + 12 + 8 + 18 + 2 + 4 + 10 + 8 + 4 + 2 = 72
+        # 4 + 12 + 8 + 18 + 2 + 4 + 8 + 8 + 4 + 2 = 70
         # Δt 只有 2 点/通道：方波激励受 9500B 10 Hz~10 kHz 限制，快时基不可行
-        assert plan["total_points"] == 72
+        # 时基挡位按实机能力收敛到 10 ms/div（去掉 100 ms/div）
+        assert plan["total_points"] == 70
 
     @pytest.mark.parametrize(
         "name,expected",
@@ -51,7 +52,7 @@ class TestPlanContent:
             ("freq_response_bandwidth", 18),
             ("enob", 2),
             ("rise_time", 4),
-            ("timebase_error", 10),
+            ("timebase_error", 8),
             ("delta_v", 8),
             ("delta_t", 4),
             ("random_noise", 2),
@@ -109,19 +110,18 @@ class TestPlanContent:
             for p in _by_name(plan)["timebase_error"]["points"]
             if p["channel"] == "1"
         ]
-        assert scales == [1e-8, 1e-6, 1e-4, 1e-2, 1e-1]
+        assert scales == [1e-8, 1e-6, 1e-4, 1e-2]
 
     def test_delta_t_skips_fast_timebases(self, plan):
-        """Δt 用方波激励，9500B 方波只到 10 kHz，快时基与最慢时基都会被跳过。"""
+        """Δt 用方波激励，9500B 方波只到 10 kHz，最快的两个时基挡位会被跳过。"""
         item = _by_name(plan)["delta_t"]
         assert len(item["points"]) == 4
         reasons = " ".join(skip["reason"] for skip in item["skipped"])
         assert "超出输出上限" in reasons
-        assert "低于输出下限" in reasons
 
     def test_timebase_error_keeps_all_points(self, plan):
-        """时基误差用正弦激励，0.1 Hz~600 MHz 覆盖全部 5 个时基挡位。"""
-        assert len(_by_name(plan)["timebase_error"]["points"]) == 10
+        """时基误差用正弦激励，0.1 Hz~600 MHz 覆盖全部 4 个时基挡位。"""
+        assert len(_by_name(plan)["timebase_error"]["points"]) == 8
         assert _by_name(plan)["timebase_error"]["skipped"] == []
 
     def test_unknown_probe_marks_rise_time_skipped(self, configs):
@@ -136,7 +136,7 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "72" in result.output
+        assert "70" in result.output
         assert "JJF 1057-2026" in result.output
 
     def test_plan_writes_json(self, tmp_path):
@@ -144,7 +144,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 72
+        assert data["total_points"] == 70
         assert len(data["items"]) == 12
 
     def test_plan_rejects_unknown_spec(self):
@@ -158,10 +158,8 @@ class TestRunnerAvailability:
         from osccal.measure.all import pending_items
 
         assert pending_items(["dc_gain", "dc_offset"]) == []
-        assert pending_items(["enob", "dc_gain", "input_impedance"]) == [
-            "enob",
-            "input_impedance",
-        ]
+        # 未知项目也会被列为"尚未实现"，不会静默忽略
+        assert pending_items(["dc_gain", "not_an_item"]) == ["not_an_item"]
 
     def test_calibrate_help_drops_legacy_options(self):
         result = CliRunner().invoke(cli, ["calibrate", "--help"])

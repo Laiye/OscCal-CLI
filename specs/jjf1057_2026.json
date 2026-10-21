@@ -158,7 +158,7 @@
             "points": {
                 "strategy": "derived",
                 "samples_n": 1000,
-                "integer_cycles_n": 5,
+                "integer_cycles_n": 7,
                 "require_coprime": true,
                 "note": "f = N·fs/n，fs 由 :ACQuire:SRATe? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
             },
@@ -199,17 +199,17 @@
             "stimulus": { "shape": "SIN", "periods_on_screen": 3, "screen_fraction_min": 0.5, "impedance": "1M" },
             "points": {
                 "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2, 1e-1],
-                "note": "5 个时基挡位（10 ns/div ~ 100 ms/div）；所需信号频率 30 MHz / 300 kHz / 3 kHz / 30 Hz / 3 Hz，9500B 电平正弦 0.1 Hz~600 MHz 可覆盖"
+                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2],
+                "note": "4 个时基挡位（10 ns/div ~ 10 ms/div）；所需信号频率 30 MHz / 300 kHz / 3 kHz / 30 Hz，9500B 电平正弦 0.1 Hz~600 MHz 可覆盖"
             },
             "formula": {
-                "rel_error": "δT = (fs - f_read) / f_read  形式，按式 (18) 核对",
+                "rel_error": "δT = (f_std - f_read) / f_std（正值 = 时基偏慢）",
                 "method_two": "按 7.7 拟合的离散角频率换算实际采集速率，式 (19)(20)"
             },
             "pending_confirm": "式 (18)(19)(20) 的确切表达待按正文逐式核对",
             "notes": [
                 "规范 7.9.1 用示波器频率测量功能读数，不采用 V0.1.0 的时标（MARK）间隔法",
-                "慢时基（10 ms/div、100 ms/div）必须用正弦，方波受 9500B 10 Hz 下限限制"
+                "时基挡位收敛到 10 ms/div：100 ms/div 需 3 Hz 正弦，低速点对时基误差无增量价值"
             ]
         },
         "delta_v": {
@@ -238,7 +238,7 @@
             "stimulus": { "shape": "SQU", "impedance": "1M" },
             "points": {
                 "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2, 1e-1],
+                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2],
                 "periods_m": 2,
                 "screen_fraction": 0.8
             },

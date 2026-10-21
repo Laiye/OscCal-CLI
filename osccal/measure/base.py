@@ -273,6 +273,11 @@ class BaseCalibrator:
         cmd = assemble_cmd(action, *args)
         scpi_write(self.inst_calibrator, cmd, self.cal_type)
 
+    def _query_calibrator(self, action_name, *args):
+        action = self.cmd_calibrator["actions"][action_name]
+        cmd = assemble_cmd(action, *args)
+        return scpi_query(self.inst_calibrator, cmd, self.cal_type)
+
     def init_devices(self):
         self._write_osc("preset")
         self._write_calibrator("preset")
