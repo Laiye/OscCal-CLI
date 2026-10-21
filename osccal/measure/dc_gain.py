@@ -125,8 +125,11 @@ class DcGainCalibrator(BaseCalibrator):
         self._write_osc("set_vertical_scale", self.channel, scale)
         self._zero_position()
 
-        gain1, error1 = self._method_one(scale, vertical_div)
+        # 方法二放在最前：它依赖校准仪的方波状态最"干净"。实机发现若先跑直流类
+        # 方法（一/三），随后的方波幅度读数会系统性偏高 1.9%~5.0%（且正好是
+        # 0.625% 的整数倍，属量化台阶上的偏差）。
         gain2, error2 = self._method_two(std_value)
+        gain1, error1 = self._method_one(scale, vertical_div)
         gain3, intercept3 = self._method_three(scale, vertical_div)
 
         return {
