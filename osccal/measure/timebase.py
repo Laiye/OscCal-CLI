@@ -23,8 +23,10 @@ from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 #: 垂直档位与激励幅度：0.5 Vpp 在 0.1 V/div 下约占 62% 屏，满足"覆盖 50% 以上"。
 VERTICAL_SCALE = 0.1
 AMPLITUDE_VPP = 0.5
-#: 拟合采样点数（规范 7.7 要求 ≥1000，这里复用同一量级）。
-FIT_SAMPLES = 1000
+#: 拟合法需要"屏上的完整波形"：只取前 1000 点会显著短于一屏（例如 1 µs/div 下
+#: 记录 10000 点才铺满 10 格），拟合会因周期不足而完全失真。这里请求一个远大于
+#: 记录长度的点数，示波器会自动截到实际记录长度（WFMOutpre:NR_Pt 回读）。
+FIT_SAMPLES = 2_000_000
 
 
 class TimebaseErrorCalibrator(BaseCalibrator):

@@ -124,6 +124,26 @@ class TestParsePreamble:
         assert preamble.nr_pt == 0
         assert preamble.x_increment == pytest.approx(1e-9)
 
+    def test_parses_abbreviated_tek_response(self):
+        """MDO3052 实机返回的是缩写助记符，必须能正确解析（否则换算系数退化为 1）。"""
+        text = (
+            ":WFMO:BYT_N 2;BIT_N 16;ENC BIN;BN_F RI;BYT_O MSB;"
+            'WFI "Ch1, DC coupling, 100.0mV/div, 10.00ms/div, 10000 points, Sample mode";'
+            'NR_P 1000;PT_F Y;PT_OR LINEA;XUN "s";XIN 10.0000E-6;XZE -50.0000E-3;PT_O 0;'
+            'YUN "V";YMU 15.6250E-6;YOF 0.0E+0;YZE 0.0E+0;DOM TIM;WFMTYP ANALOG'
+        )
+        preamble = parse_preamble(text)
+        assert preamble.byt_nr == 2
+        assert preamble.bit_nr == 16
+        assert preamble.nr_pt == 1000
+        assert preamble.y_mult == pytest.approx(15.625e-6)
+        assert preamble.x_increment == pytest.approx(10e-6)
+        assert preamble.x_zero == pytest.approx(-50e-3)
+        assert preamble.encoding == "BIN"
+        assert preamble.byte_order == "MSB"
+        assert preamble.pt_fmt == "Y"
+        assert preamble.y_unit == "V"
+
 
 class TestBuildWaveform:
     def _preamble(self, nr_pt: int) -> WaveformPreamble:

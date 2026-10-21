@@ -99,11 +99,48 @@ def scpi_write(inst, cmd: str, comm_type: str = "pyvisa") -> str:
     return _retry_query_or_write(inst, cmd, comm_type, is_query=False)
 
 
+def _read_binary_block(inst) -> bytes:
+    """按 IEEE 488.2 块头精确读取二进制数据。
+
+    不能用 `read_raw()`：VISA 的读终止符（LF）会把二进制数据里的 0x0A 当成
+    响应结束，实机表现为"块头声明 2000 字节、实际只收到 1541 字节"。
+    这里先逐字节读到块头，再按长度字段读满剩余字节。
+    """
+    original_termination = getattr(inst, "read_termination", "\n")
+    try:
+        inst.read_termination = None
+        raw = bytearray()
+        # 1) 读到块头 '#'（响应可能带 ":CURV " 前缀）
+        while b"#" not in raw:
+            raw += inst.read_bytes(1)
+            if len(raw) > 32:
+                raise ScpiError("响应中没有找到 IEEE 488.2 块头")
+        header_index = raw.index(b"#") if isinstance(raw, bytearray) else raw.find(b"#")
+        # 2) 读长度指示位与长度字段
+        while len(raw) - header_index < 2:
+            raw += inst.read_bytes(1)
+        digits = raw[header_index + 1] - 0x30
+        if not 0 <= digits <= 9:
+            raise ScpiError(f"非法块头长度指示位: {chr(raw[header_index + 1])!r}")
+        while len(raw) - header_index < 2 + digits:
+            raw += inst.read_bytes(1)
+        if digits == 0:
+            return bytes(raw)
+        length = int(raw[header_index + 2 : header_index + 2 + digits])
+        total = header_index + 2 + digits + length
+        # 3) 读满数据部分
+        while len(raw) < total:
+            raw += inst.read_bytes(total - len(raw))
+        return bytes(raw)
+    finally:
+        inst.read_termination = original_termination
+
+
 def scpi_query_raw(inst, cmd: str, comm_type: str = "pyvisa") -> bytes:
     """读取二进制响应（波形块），返回原始字节（含 IEEE 488.2 块头）。
 
-    pyvisa 必须走 `write` + `read_raw`：`query` 会按文本解码，二进制块会被破坏。
-    socket 通道暂不支持二进制读回，直接报错而不是给出错误数据。
+    pyvisa 必须走 `write` + 按块头精确读取：`query` 会按文本解码，
+    `read_raw` 会被数据里的 0x0A 截断。socket 通道暂不支持，直接报错。
     """
     if not cmd or comm_type != "pyvisa":
         scpi_trace.record_failure()
@@ -111,7 +148,7 @@ def scpi_query_raw(inst, cmd: str, comm_type: str = "pyvisa") -> bytes:
     for attempt in range(2):
         try:
             inst.write(cmd)
-            raw = inst.read_raw()
+            raw = _read_binary_block(inst)
             if not isinstance(raw, (bytes, bytearray)):
                 raise ScpiError("仪器未返回二进制数据")
             scpi_trace.log_entry("Q", cmd, f"<{len(raw)} bytes>")

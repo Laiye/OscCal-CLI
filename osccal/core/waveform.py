@@ -49,6 +49,7 @@ class WaveformPreamble:
     encoding: str = "RIBinary"
     byte_order: str = "MSB"
     pt_fmt: str = "Y"
+    bn_fmt: str = ""
 
     @property
     def levels_per_div(self) -> int | None:
@@ -56,6 +57,12 @@ class WaveformPreamble:
 
     @property
     def signed(self) -> bool:
+        """是否按有符号解码：以 BN_Fmt（RI/RP）为准，回退看编码名。"""
+        fmt = (self.bn_fmt or "").upper()
+        if fmt.startswith("RI"):
+            return True
+        if fmt.startswith("RP"):
+            return False
         return "RI" in self.encoding.upper()
 
     @property
@@ -178,36 +185,49 @@ def build_waveform(
     )
 
 
+#: `WFMOutpre?` 的字段：泰克按**缩写助记符**返回（BYT_N / ENC / YMU / YOF / YZE …），
+#: 而手册与代码里写的是全称（BYT_Nr / ENCdg / YMUlt / YOFf / YZEro …）。
+#: 因此按"键前缀"匹配，全称与缩写都能命中。
+_PREAMBLE_FIELDS = {
+    "BYT_N": ("byt_nr", int),
+    "BIT_N": ("bit_nr", int),
+    "NR_P": ("nr_pt", int),
+    "XIN": ("x_increment", float),
+    "XZE": ("x_zero", float),
+    "YMU": ("y_mult", float),
+    "YOF": ("y_off", float),
+    "YZE": ("y_zero", float),
+    "YUN": ("y_unit", str),
+    "ENC": ("encoding", str),
+    "BYT_O": ("byte_order", str),
+    "BN_F": ("bn_fmt", str),
+    "PT_F": ("pt_fmt", str),
+}
+
+
+def _match_preamble_field(key: str) -> tuple[str, type] | None:
+    """按前缀匹配前导字段；长键优先，避免 YUN 与 YUNit 之类的歧义。"""
+    for alias in sorted(_PREAMBLE_FIELDS, key=len, reverse=True):
+        if key.startswith(alias):
+            return _PREAMBLE_FIELDS[alias]
+    return None
+
+
 def parse_preamble(text: str) -> WaveformPreamble:
-    """解析 `WFMOutpre?` 的响应（以分号分隔的 `键 值` 列表）。"""
+    """解析 `WFMOutpre?` 的响应（以分号分隔的 `键 值` 列表，键可为缩写）。"""
     preamble = WaveformPreamble()
-    numeric = {
-        "YMULT": "y_mult",
-        "YOFF": "y_off",
-        "YZERO": "y_zero",
-        "XINCR": "x_increment",
-        "XZERO": "x_zero",
-    }
-    integer = {"NR_PT": "nr_pt", "BYT_NR": "byt_nr", "BIT_NR": "bit_nr"}
-    text_fields = {
-        "YUNIT": "y_unit",
-        "ENCDG": "encoding",
-        "BYT_OR": "byte_order",
-        "PT_FMT": "pt_fmt",
-    }
     for token in text.replace("\n", " ").split(";"):
         parts = token.strip().split(None, 1)
         if len(parts) != 2:
             continue
         key = parts[0].split(":")[-1].upper()
         value = parts[1].strip().strip('"')
+        field = _match_preamble_field(key)
+        if field is None:
+            continue
+        attr, kind = field
         try:
-            if key in numeric:
-                setattr(preamble, numeric[key], float(value))
-            elif key in integer:
-                setattr(preamble, integer[key], int(float(value)))
-            elif key in text_fields:
-                setattr(preamble, text_fields[key], value)
+            setattr(preamble, attr, kind(value))
         except ValueError:
             continue
     return preamble
