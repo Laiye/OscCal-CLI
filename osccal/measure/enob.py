@@ -33,6 +33,16 @@ class EnobCalibrator(BaseCalibrator):
 
     title = "动态有效位数（7.7）"
 
+    @staticmethod
+    def _parse_scalar(raw) -> float:
+        """从 `:HOR:SAMPLER 250.0000E+6` 这类带前导助记符的响应里取出数值。"""
+        for token in reversed(str(raw).replace("\n", " ").split()):
+            try:
+                return float(token)
+            except ValueError:
+                continue
+        raise ValueError(f"无法解析数值: {raw!r}")
+
     def _measure_point(self, point: dict) -> dict:
         samples = int(point.get("samples_n") or DEFAULT_SAMPLES)
         cycles = int(point.get("integer_cycles_n") or DEFAULT_CYCLES)
@@ -43,7 +53,7 @@ class EnobCalibrator(BaseCalibrator):
         full_scale = VERTICAL_SCALE * vertical_div
         amplitude = PEAK_FRACTION * full_scale
 
-        sample_rate = float(self._query_osc("query_sample_rate"))
+        sample_rate = self._parse_scalar(self._query_osc("query_sample_rate"))
         if sample_rate <= 0:
             raise ValueError("采样率无效")
         frequency = sample_rate * cycles / samples
