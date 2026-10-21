@@ -59,7 +59,7 @@ def build(cls, configs, points, reader):
     instance = cls(osc, cal, cmd_osc, cmd_cal, profile, "1", "9530", points)
     instance.init_devices = lambda: None
     instance.setup_channel = lambda: None
-    instance.setup_measurement = lambda key: None
+    instance.setup_measurement = lambda key, trigger=True: None
     instance._read_meas = reader
     return instance, osc, cal
 
@@ -67,7 +67,7 @@ def build(cls, configs, points, reader):
 class TestDcGainMethodTwo:
     def test_gain_is_measured_over_standard(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
-        instance, _, cal = build(DcGainCalibrator, configs, points, lambda key: 0.64)
+        instance, _, cal = build(DcGainCalibrator, configs, points, lambda key, trigger=True: 0.64)
         instance.run()
 
         record = instance.results[0]
@@ -78,19 +78,21 @@ class TestDcGainMethodTwo:
 
     def test_error_sign_follows_gain(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
-        instance, _, _ = build(DcGainCalibrator, configs, points, lambda key: 0.6464)
+        instance, _, _ = build(DcGainCalibrator, configs, points, lambda key, trigger=True: 0.6464)
         instance.run()
         assert instance.results[0]["error_pct"] == pytest.approx(1.0, abs=1e-6)
 
     def test_50_ohm_point_switches_impedance(self, configs):
         points = [{"channel": "1", "scale": 0.01, "impedance": "50", "std_value_vpp": 0.064}]
-        instance, osc, cal = build(DcGainCalibrator, configs, points, lambda key: 0.064)
+        instance, osc, cal = build(
+            DcGainCalibrator, configs, points, lambda key, trigger=True: 0.064
+        )
         instance.run()
         assert any("FIF" in cmd for cmd in osc.written), "应写入示波器 50 Ω（FIFty）"
         assert any("ROUT:SIGN:IMP 50" in cmd for cmd in cal.written), "应写入校准仪 50 Ω"
 
     def test_no_points_is_reported_not_crashed(self, configs):
-        instance, _, _ = build(DcGainCalibrator, configs, [], lambda key: 0.0)
+        instance, _, _ = build(DcGainCalibrator, configs, [], lambda key, trigger=True: 0.0)
         instance.run()
         assert instance.results == []
 
@@ -99,7 +101,9 @@ class TestDcOffset:
     def test_zero_and_offset_reading(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
         readings = iter([0.0, 0.2])  # 零点读数、偏置实测（标称 2 格 = 0.2 V）
-        instance, _, _ = build(DcOffsetCalibrator, configs, points, lambda key: next(readings))
+        instance, _, _ = build(
+            DcOffsetCalibrator, configs, points, lambda key, trigger=True: next(readings)
+        )
         instance.run()
 
         record = instance.results[0]
@@ -111,7 +115,9 @@ class TestDcOffset:
     def test_offset_error_normalised_to_full_scale(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
         readings = iter([0.0, 0.208])  # 偏置偏高 8 mV，满量程 0.8 V → 1 %
-        instance, _, _ = build(DcOffsetCalibrator, configs, points, lambda key: next(readings))
+        instance, _, _ = build(
+            DcOffsetCalibrator, configs, points, lambda key, trigger=True: next(readings)
+        )
         instance.run()
         assert instance.results[0]["error_pct"] == pytest.approx(-1.0)
 
@@ -122,7 +128,7 @@ class TestFreqResponse:
     def _reader_factory(self):
         state = {"frequency": 0.0}
 
-        def reader(key):
+        def reader(key, trigger=True):
             return self.ATTENUATION[state["frequency"]]
 
         return state, reader

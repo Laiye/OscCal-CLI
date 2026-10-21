@@ -174,12 +174,30 @@ class BaseCalibrator:
             return 600e6
         return float(max_freq)
 
-    def _read_meas(self, meas_keyword):
+    def _read_meas(self, meas_keyword, trigger: bool = True):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
+        if not trigger:
+            # 直流、平直基线这类没有边沿的信号无法触发单次采集，直接自由运行取当前记录，
+            # 否则每次读数都要白等一个采集超时。
+            self._ensure_free_running()
+            return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
         # 单次采集模式下，改完激励/时基若不重新采集，MEASU:IMM:VAL 会返回**上一次**
         # 的读数（实机：30 MHz 的读数一直延续到 300 kHz 的点上）。读数前先取新数据。
         self._run_single_acquisition()
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
+
+    def _ensure_free_running(self, wait_seconds: float = 0.5) -> None:
+        """让示波器自由连续运行（无触发需求），用于直流类测量。"""
+        actions = self.cmd_osc.get("actions", {})
+        keywords = self.cmd_osc.get("keyword", {})
+        if "set_acquire_stop_after" in actions:
+            self._write_osc(
+                "set_acquire_stop_after",
+                keywords.get("acquire_stop_after_run_stop", "RUNSTop"),
+            )
+        if "set_acquire_state" in actions:
+            self._write_osc("set_acquire_state", keywords["acquire_state_run"])
+        time.sleep(wait_seconds)
 
     def _run_single_acquisition(self, wait_seconds: float = 0.3) -> None:
         """触发一次单次采集并**等它真正结束**；指令集未声明采集控制时静默跳过。
@@ -215,13 +233,17 @@ class BaseCalibrator:
                     return
                 time.sleep(0.1)
             if tokens and tokens[-1] not in {"0", "0.0"}:
-                # 采集一直没完成：多半是没触发（无信号、触发源/电平不对）。
-                # 这时再等 *OPC? 只会白等，直接给出可诊断的提示。
-                console.print(
-                    "[yellow]⚠ 采集在 "
-                    f"{ACQUIRE_TIMEOUT_SECONDS:.0f} s 内未完成（可能未触发，"
-                    "请检查信号、触发源与触发电平）[/yellow]"
-                )
+                # 采集一直没完成：多半是没触发（无信号、触发源/电平不对，或信号是
+                # 直流/平直基线这类没有边沿的波形）。改为自由连续运行，让示波器
+                # 用当前记录作答，而不是返回上一次的陈旧值或无效值。
+                console.print("[yellow]⚠ 单次采集未完成（可能无触发沿），改为自由运行采集[/yellow]")
+                if "set_acquire_stop_after" in actions:
+                    self._write_osc(
+                        "set_acquire_stop_after",
+                        keywords.get("acquire_stop_after_run_stop", "RUNSTop"),
+                    )
+                self._write_osc("set_acquire_state", keywords["acquire_state_run"])
+                time.sleep(0.6)
             return
         try:
             scpi_query(self.inst_osc, "*OPC?", self.comm_type)
