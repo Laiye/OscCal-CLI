@@ -13,6 +13,7 @@
 """
 
 import math
+import time
 
 from rich.progress import Progress
 
@@ -25,6 +26,8 @@ NOMINAL = {"1M": 1e6, "50": 50.0}
 TOLERANCE_PCT = {"1M": 0.5, "50": 1.0}
 #: 电容仅作记录，不做符合性判断。
 IMPEDANCE_LABELS = {"1M": "1 MΩ", "50": "50 Ω"}
+#: 切入测量功能后等待输出稳定再读。
+_SETTLE_SECONDS = 0.5
 
 
 class InputImpedanceCalibrator(BaseCalibrator):
@@ -47,6 +50,10 @@ class InputImpedanceCalibrator(BaseCalibrator):
 
     def _read_load(self, function: str) -> float | None:
         self._write_calibrator("set_load_func", function)
+        # 切入负载测量功能会把输出自动关掉；必须先重新打开输出，否则 READ? 只返回 2E35
+        # （实机验证：CONF:RES 后 OUTP? 变为 OFF，补 ON 后立即读到 998.2 kΩ）。
+        self._write_calibrator("set_output", "ON")
+        time.sleep(_SETTLE_SECONDS)
         return self.parse_reading(self._query_calibrator("query_load"))
 
     def _measure_point(self, point: dict) -> dict:

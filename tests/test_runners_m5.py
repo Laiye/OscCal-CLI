@@ -166,6 +166,26 @@ class TestInputImpedance:
         first_load = calls.index("set_load_func")
         assert "set_shap" in calls[:first_load], "首次进入测量功能前应先恢复波形输出"
 
+    def test_reopens_output_after_entering_measure_function(self, configs):
+        """实机约束：CONF:RES/CAP 会关掉输出，必须先重新开输出再读，否则读到 2E35。"""
+        responses = {"RES": "1.0E+06\n", "CAP": "1.0E-11\n"}
+        points = [{"channel": "1", "impedance": "1M"}]
+        instance = build(InputImpedanceCalibrator, configs, points)
+        calls: list[str] = []
+        state = {"func": None}
+
+        def write(action, *args):
+            calls.append(action)
+            if action == "set_load_func":
+                state["func"] = args[0]
+
+        instance._write_calibrator = write
+        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance.run()
+
+        load_index = calls.index("set_load_func")
+        assert calls[load_index + 1] == "set_output", "切入测量功能后应立即重新打开输出"
+
 
 class TestEnob:
     def _sine_wave(self, freq, sample_rate, samples=1000, amplitude=0.76, noise=0.0):
