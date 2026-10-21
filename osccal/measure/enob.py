@@ -23,8 +23,7 @@ from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 PEAK_FRACTION = 0.95
 #: 采集点数与整数周期数（必须互质，保证记录正好覆盖 n 个周期）。
 DEFAULT_SAMPLES = 1000
-#: 记录长度固定值：采样率由它与时基共同决定，固定才能保证结果可复现。
-RECORD_LENGTH = 10000
+#: 记录长度默认取分析点数 N（规范要求 N≥1000 且与 n 互质）；把示波器记录长度设成 N，屏上周期数才与公式里的一致。
 DEFAULT_CYCLES = 7
 #: ENOB 测量使用的垂直档位：0.2 V/div × 8 格 = 1.6 V 量程，峰值约 1.52 Vpp。
 VERTICAL_SCALE = 0.2
@@ -74,7 +73,7 @@ class EnobCalibrator(BaseCalibrator):
 
         # 规范 7.7 要求"采样速率最高"：先固定记录长度，再按
         # R ÷ f_max ÷ 水平格数 反算时基，最后回读采样率校验（不达标不照算）。
-        record_length = self._pin_record_length(RECORD_LENGTH)
+        record_length = self._pin_record_length(samples)
         timebase_used = self._set_timebase(
             self._timebase_for_max_sample_rate(record_length)
         ) or self._timebase_for_max_sample_rate(record_length)
