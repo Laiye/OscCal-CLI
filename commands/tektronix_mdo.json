@@ -216,6 +216,16 @@
                 ]
             ]
         },
+        "query_horizontal_scale": {
+            "name": "query_horizontal_scale",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "HOR:SCALE?"
+            ],
+            "args": []
+        },
         "set_horizontal_scale": {
             "name": "set_horizontal_scale",
             "type": "write",

@@ -323,15 +323,34 @@ class BaseCalibrator:
             self.inst_osc, self.cmd_osc, self.channel, self.cmd_osc["keyword"][meas_keyword]
         )
 
-    def _set_timebase(self, seconds_per_div: float) -> None:
-        """设置水平挡位。
+    def _set_timebase(self, seconds_per_div: float) -> float | None:
+        """设置水平挡位，返回**实际生效**的挡位（读不回来时返回 None）。
 
-        实机教训：`*RST` 后时基可能是 4 µs/div，1 kHz 方波在屏上只占 0.04 个周期，
-        幅度测量直接返回无效值 9.9E+37。凡是按频率给激励的项目都必须显式设时基。
+        两件事都必须做对：
+        1. 显式设时基。`*RST` 后时基可能是 4 µs/div，1 kHz 方波在屏上只占
+           0.04 个周期，幅度测量直接返回无效值 9.9E+37。
+        2. 回读校验。示波器的水平挡位是离散序列（MDO3052 为 1-2-4-8 序列，
+           **没有 1 µs/div**，写 1 µs 会静默吸附到 800 ns/div），只按设定值记录
+           会让报告里的挡位与实际不符。
         """
         if "set_horizontal_scale" not in self.cmd_osc.get("actions", {}):
-            return
+            return None
         self._write_osc("set_horizontal_scale", seconds_per_div)
+        if "query_horizontal_scale" not in self.cmd_osc.get("actions", {}):
+            return None
+        try:
+            raw = self._query_osc("query_horizontal_scale")
+        except Exception:  # noqa: BLE001 - 回读失败不影响设定本身
+            return None
+        tokens = str(raw).replace("\n", " ").split()
+        for token in reversed(tokens):
+            try:
+                value = float(token)
+            except ValueError:
+                continue
+            if value > 0:
+                return value
+        return None
 
     def print_title(self, title):
         console.print(

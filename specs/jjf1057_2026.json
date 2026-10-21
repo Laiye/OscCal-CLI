@@ -9,10 +9,19 @@
     "recall_interval_months": 12,
     "description": "本文件只声明「规范口径」：每个校准项目用哪种取点策略、屏占比、基准频率与记录字段。硬件能力（通道数、档位集合）来自 profiles/，标准器输出能力来自 calibrators/，三者由 point resolver 合成实际执行点；解析结果（含被跳过的点及原因）写入记录 results.points_plan。",
     "environment": {
-        "temperature_c": [18, 28],
+        "temperature_c": [
+            18,
+            28
+        ],
         "humidity_rh_max_pct": 80,
-        "mains_v": [209, 231],
-        "mains_hz": [49, 51],
+        "mains_v": [
+            209,
+            231
+        ],
+        "mains_hz": [
+            49,
+            51
+        ],
         "note": "按规范 6.1：温度 (23±5) ℃、相对湿度 ≤80%、电源 (220±11) V (50±1) Hz、周围无电磁干扰与机械振动"
     },
     "deviations": [
@@ -25,20 +34,63 @@
         "note": "规范表 1 注：以上技术指标仅供参考，不作为符合性判定依据。程序只做参考指标比对，不出具合格/不合格结论。"
     },
     "reference_limits": {
-        "input_impedance": { "ohm_50_pct": 1.0, "ohm_1m_pct": 0.5 },
-        "dc_gain": { "mpe_pct": 1.0 },
-        "dc_offset": { "mpe_pct_of_full_scale": 1.0 },
-        "freq_response_db": { "max_ripple_db": 3.0 },
-        "bandwidth": { "min_mhz": 1, "max_ghz": 50 },
+        "input_impedance": {
+            "ohm_50_pct": 1.0,
+            "ohm_1m_pct": 0.5
+        },
+        "dc_gain": {
+            "mpe_pct": 1.0
+        },
+        "dc_offset": {
+            "mpe_pct_of_full_scale": 1.0
+        },
+        "freq_response_db": {
+            "max_ripple_db": 3.0
+        },
+        "bandwidth": {
+            "min_mhz": 1,
+            "max_ghz": 50
+        },
         "enob_bits": 12,
-        "rise_time_ps": { "min": 10 },
-        "timebase_rel_error": { "from": 1e-6, "to": 5e-9 },
-        "square_cal_freq": { "mpe_pct": 0.01, "range_hz": [1000, 10000000] },
-        "square_cal_amp": { "mpe_pct": 1.0, "range_v": [0.02, 2] },
-        "dc_cal_amp": { "mpe_pct": 0.1, "range_v": [0.02, 2] },
-        "delta_v": { "mpe_pct_of_reading": 1.0, "extra_lsb": 1 },
-        "delta_t": { "mpe_pct_of_reading": 0.2, "extra_lsb": 1 },
-        "random_noise": { "mpe_pct_of_full_scale": 0.1 }
+        "rise_time_ps": {
+            "min": 10
+        },
+        "timebase_rel_error": {
+            "from": 1e-06,
+            "to": 5e-09
+        },
+        "square_cal_freq": {
+            "mpe_pct": 0.01,
+            "range_hz": [
+                1000,
+                10000000
+            ]
+        },
+        "square_cal_amp": {
+            "mpe_pct": 1.0,
+            "range_v": [
+                0.02,
+                2
+            ]
+        },
+        "dc_cal_amp": {
+            "mpe_pct": 0.1,
+            "range_v": [
+                0.02,
+                2
+            ]
+        },
+        "delta_v": {
+            "mpe_pct_of_reading": 1.0,
+            "extra_lsb": 1
+        },
+        "delta_t": {
+            "mpe_pct_of_reading": 0.2,
+            "extra_lsb": 1
+        },
+        "random_noise": {
+            "mpe_pct_of_full_scale": 0.1
+        }
     },
     "items": {
         "visual_check": {
@@ -61,18 +113,34 @@
             "automatable": true,
             "method": "calibrator_load_measure",
             "record_table": "A.2",
-            "record_fields": ["通道", "输入电阻", "输入电容", "不确定度"],
+            "record_fields": [
+                "通道",
+                "输入电阻",
+                "输入电容",
+                "不确定度"
+            ],
             "points": {
                 "strategy": "channel_x_impedance",
-                "impedances": ["1M", "50"],
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
                 "note": "每通道×每阻抗状态各一点；测前把校准仪通道阻抗设成与被测通道一致"
             },
             "instrument_actions": {
-                "select_resistance": ["set_load_func", "RES"],
-                "select_capacitance": ["set_load_func", "CAP"],
-                "read": ["query_load"]
+                "select_resistance": [
+                    "set_load_func",
+                    "RES"
+                ],
+                "select_capacitance": [
+                    "set_load_func",
+                    "CAP"
+                ],
+                "read": [
+                    "query_load"
+                ]
             },
-            "invalid_sentinel": 2e35,
+            "invalid_sentinel": 2e+35,
             "note": "9500B 通过有源头测量，CONF:RES / CONF:CAP 切换功能、READ? 取值；未接示波器或未选中时返回 2E35，须判为无效测量。"
         },
         "dc_gain": {
@@ -81,13 +149,30 @@
             "automatable": true,
             "method": "square_amplitude",
             "record_table": "A.3",
-            "record_fields": ["通道", "量程", "直流增益实测值", "不确定度"],
-            "stimulus": { "shape": "SQU", "freq_hz": 1000, "polarity": "SYMM" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "直流增益实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SQU",
+                "freq_hz": 1000,
+                "polarity": "SYMM"
+            },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [0.01, 0.1, 1.0, 10.0],
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
                 "screen_fraction": 0.8,
-                "impedances": ["1M", "50"],
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
                 "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 挡位由 calibrators 的 SQU 输出上限自动过滤（上限 5 Vpp）"
             },
             "formula": {
@@ -107,12 +192,27 @@
             "automatable": true,
             "method": "offset_zero_and_gain",
             "record_table": "A.4",
-            "record_fields": ["通道", "量程", "直流偏置标称值", "直流偏置实测值", "不确定度"],
-            "stimulus": { "shape": "DC" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "直流偏置标称值",
+                "直流偏置实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "DC"
+            },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [0.01, 0.1, 1.0, 10.0],
-                "impedances": ["1M"],
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
+                "impedances": [
+                    "1M"
+                ],
                 "zero_point": true,
                 "offset_nominal_divisions": 2,
                 "note": "零点：偏置 0、激励 0，读电压平均值为零点偏置误差；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
@@ -129,13 +229,37 @@
             "automatable": true,
             "method": "sine_sweep_and_half_power",
             "record_table": "A.5",
-            "record_fields": ["通道", "量程", "频率值", "频率响应实测值", "频带宽度", "不确定度"],
-            "stimulus": { "shape": "SIN", "screen_fraction": 0.8, "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "频率值",
+                "频率响应实测值",
+                "频带宽度",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "screen_fraction": 0.8,
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "bw_ratio",
                 "reference_hz": 50000,
-                "ratios": [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0],
-                "bandwidth_search": { "start_ratio": 1.0, "target_ratio": 0.707, "direction": "down" },
+                "ratios": [
+                    0.05,
+                    0.1,
+                    0.2,
+                    0.3,
+                    0.5,
+                    0.7,
+                    0.9,
+                    1.0
+                ],
+                "bandwidth_search": {
+                    "start_ratio": 1.0,
+                    "target_ratio": 0.707,
+                    "direction": "down"
+                },
                 "note": "频点 = ratio × profile.bandwidth_hz；MDO3052（500 MHz）为 25/50/100/150/250/350/450/500 MHz，另加 50 kHz 基准，共 9 点/通道"
             },
             "formula": {
@@ -153,8 +277,22 @@
             "automatable": true,
             "method": "sine_lsq_fit",
             "record_table": "A.6",
-            "record_fields": ["通道", "量程", "信号幅度", "信号频率", "动态有效位数", "不确定度"],
-            "stimulus": { "shape": "SIN", "peak_fraction_of_range": [0.90, 1.00], "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "信号幅度",
+                "信号频率",
+                "动态有效位数",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "peak_fraction_of_range": [
+                    0.9,
+                    1.0
+                ],
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "derived",
                 "samples_n": 1000,
@@ -176,8 +314,21 @@
             "automatable": true,
             "method": "fast_edge",
             "record_table": "A.7",
-            "record_fields": ["通道", "量程", "参数", "实测值", "不确定度"],
-            "stimulus": { "shape": "EDGE", "screen_fraction": [0.60, 0.80], "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "参数",
+                "实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "EDGE",
+                "screen_fraction": [
+                    0.6,
+                    0.8
+                ],
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "channel_x_edge_speed",
                 "edge_speeds_s": "calibrator.probes[head].edge_rise_times",
@@ -187,7 +338,9 @@
                 "rise_time": "10%~90% 上升时间实测值",
                 "overshoot": "Sb = (顶部最大值 - 阶跃幅度) / 阶跃幅度 × 100%"
             },
-            "notes": ["MDO3052 @500 MHz 理论上升时间约 700 ps，150 ps 快沿可分辨"]
+            "notes": [
+                "MDO3052 @500 MHz 理论上升时间约 700 ps，150 ps 快沿可分辨"
+            ]
         },
         "timebase_error": {
             "clause": "7.9.1",
@@ -195,12 +348,27 @@
             "automatable": true,
             "method": "frequency_readout",
             "record_table": "A.8",
-            "record_fields": ["通道", "时基挡位", "时基相对误差实测值", "不确定度"],
-            "stimulus": { "shape": "SIN", "periods_on_screen": 3, "screen_fraction_min": 0.5, "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "时基挡位",
+                "时基相对误差实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "periods_on_screen": 3,
+                "screen_fraction_min": 0.5,
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2],
-                "note": "4 个时基挡位（10 ns/div ~ 10 ms/div）；所需信号频率 30 MHz / 300 kHz / 3 kHz / 30 Hz，9500B 电平正弦 0.1 Hz~600 MHz 可覆盖"
+                "horizontal_scales_s_per_div": [
+                    1e-08,
+                    8e-07,
+                    0.0001,
+                    0.01
+                ],
+                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
             },
             "formula": {
                 "rel_error": "δT = (f_std - f_read) / f_std（正值 = 时基偏慢）",
@@ -218,15 +386,32 @@
             "automatable": true,
             "method": "auto_amplitude",
             "record_table": "A.10",
-            "record_fields": ["通道", "量程", "标称值", "实测值", "不确定度"],
-            "stimulus": { "shape": "SQU", "freq_hz": 1000, "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "标称值",
+                "实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SQU",
+                "freq_hz": 1000,
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [0.01, 0.1, 1.0, 10.0],
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
                 "screen_fraction": 0.8
             },
             "deviation": "按已确认的偏离，用自动测量读数代替光标读数",
-            "notes": ["垂直方向覆盖 80% 屏幕，两个以上周期居中显示"]
+            "notes": [
+                "垂直方向覆盖 80% 屏幕，两个以上周期居中显示"
+            ]
         },
         "delta_t": {
             "clause": "7.12",
@@ -234,16 +419,33 @@
             "automatable": true,
             "method": "auto_period",
             "record_table": "A.11",
-            "record_fields": ["通道", "量程", "标称值", "实测值", "不确定度"],
-            "stimulus": { "shape": "SQU", "impedance": "1M" },
+            "record_fields": [
+                "通道",
+                "量程",
+                "标称值",
+                "实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "SQU",
+                "impedance": "1M"
+            },
             "points": {
                 "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [1e-8, 1e-6, 1e-4, 1e-2],
+                "horizontal_scales_s_per_div": [
+                    1e-08,
+                    8e-07,
+                    0.0001,
+                    0.01
+                ],
                 "periods_m": 2,
-                "screen_fraction": 0.8
+                "screen_fraction": 0.8,
+                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
             },
             "deviation": "按已确认的偏离，用自动测量读数代替光标读数",
-            "notes": ["M ≥ 2 个完整周期，水平方向覆盖 80% 屏幕"]
+            "notes": [
+                "M ≥ 2 个完整周期，水平方向覆盖 80% 屏幕"
+            ]
         },
         "random_noise": {
             "clause": "7.13",
@@ -251,8 +453,17 @@
             "automatable": true,
             "method": "rms_readout_then_stddev",
             "record_table": "A.12",
-            "record_fields": ["通道", "量程", "实测值", "不确定度"],
-            "stimulus": { "shape": "NONE", "coupling": "DC", "offset_zero": true },
+            "record_fields": [
+                "通道",
+                "量程",
+                "实测值",
+                "不确定度"
+            ],
+            "stimulus": {
+                "shape": "NONE",
+                "coupling": "DC",
+                "offset_zero": true
+            },
             "points": {
                 "strategy": "fixed",
                 "vertical_scale": "min(profile.vertical_scales)",

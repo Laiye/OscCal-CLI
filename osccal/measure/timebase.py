@@ -66,7 +66,13 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         scale = float(point["timebase_s_per_div"])
         freq_std = float(point["signal_freq_hz"])
 
-        self._write_osc("set_horizontal_scale", scale)
+        actual_scale = self._set_timebase(scale)
+        scale_used = actual_scale if actual_scale else scale
+        if actual_scale and abs(actual_scale / scale - 1.0) > 0.01:
+            console.print(
+                f"[yellow]⚠ 水平挡位 {self._format_time(scale)}/div 被吸附到 "
+                f"{self._format_time(actual_scale)}/div（该机型没有前者）[/yellow]"
+            )
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
         if "set_vertical_position" in self.cmd_osc["actions"]:
@@ -111,7 +117,8 @@ class TimebaseErrorCalibrator(BaseCalibrator):
 
         return {
             "channel": self.channel,
-            "timebase_s_per_div": scale,
+            "timebase_s_per_div": scale_used,
+            "timebase_requested_s_per_div": scale,
             "signal_freq_hz": freq_std,
             "measured_freq_hz": freq_read,
             "rel_error": rel_error,

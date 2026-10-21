@@ -110,7 +110,8 @@ class TestPlanContent:
             for p in _by_name(plan)["timebase_error"]["points"]
             if p["channel"] == "1"
         ]
-        assert scales == [1e-8, 1e-6, 1e-4, 1e-2]
+        # 1 µs/div 在 MDO3052 上不存在（1-2-4-8 序列），用 800 ns/div
+        assert scales == [1e-8, 8e-7, 1e-4, 1e-2]
 
     def test_delta_t_skips_fast_timebases(self, plan):
         """Δt 用方波激励，9500B 方波只到 10 kHz，最快的两个时基挡位会被跳过。"""

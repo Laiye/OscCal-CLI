@@ -29,7 +29,8 @@ class DeltaTimeCalibrator(BaseCalibrator):
         period_std = float(point["period_on_screen_s"])
         freq_std = float(point["signal_freq_hz"])
 
-        self._write_osc("set_horizontal_scale", scale)
+        actual_scale = self._set_timebase(scale)
+        scale_used = actual_scale if actual_scale else scale
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
         if "set_vertical_position" in self.cmd_osc["actions"]:
@@ -53,7 +54,8 @@ class DeltaTimeCalibrator(BaseCalibrator):
         )
         return {
             "channel": self.channel,
-            "timebase_s_per_div": scale,
+            "timebase_s_per_div": scale_used,
+            "timebase_requested_s_per_div": scale,
             "periods_m": PERIODS_M,
             "period_standard_s": period_std,
             "period_measured_s": period_measured,
