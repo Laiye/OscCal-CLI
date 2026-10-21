@@ -27,6 +27,8 @@ AMPLITUDE_VPP = 0.5
 #: 记录 10000 点才铺满 10 格），拟合会因周期不足而完全失真。这里请求一个远大于
 #: 记录长度的点数，示波器会自动截到实际记录长度（WFMOutpre:NR_Pt 回读）。
 FIT_SAMPLES = 2_000_000
+#: 拟合频率与示波器频率读数允许的最大相对偏差；超过即判定采集时间轴不可信。
+CONSISTENCY_TOLERANCE = 0.05
 
 
 class TimebaseErrorCalibrator(BaseCalibrator):
@@ -36,6 +38,29 @@ class TimebaseErrorCalibrator(BaseCalibrator):
 
     def _has_waveform(self) -> bool:
         return "query_wave_data" in self.cmd_osc.get("actions", {})
+
+    @staticmethod
+    def implied_frequency(wave) -> float | None:
+        """用去均值后的过零次数估计波形频率（依赖前导信息的 XINcr 时间轴）。
+
+        这是对**采集数据自身时间轴**的检验：快速时基下部分示波器返回的是抽点后的
+        记录，而 XINcr 仍按屏幕标称给出（MDO3052 在 800 ns/div 实测差 8.5 倍），
+        此时拟合会得到离谱的频率，必须先识别出来。
+        """
+        if len(wave.volts) < 3 or wave.preamble.x_increment <= 0:
+            return None
+        mean = sum(wave.volts) / len(wave.volts)
+        crossings = 0
+        previous = wave.volts[0] - mean
+        for value in wave.volts[1:]:
+            current = value - mean
+            if (previous < 0 <= current) or (previous > 0 >= current):
+                crossings += 1
+            previous = current
+        span = (len(wave.volts) - 1) * wave.preamble.x_increment
+        if span <= 0 or crossings < 2:
+            return None
+        return crossings / 2.0 / span
 
     def _measure_point(self, point: dict) -> dict:
         scale = float(point["timebase_s_per_div"])
@@ -59,15 +84,30 @@ class TimebaseErrorCalibrator(BaseCalibrator):
 
         fit_frequency = None
         rel_error_fit = None
+        fit_implied = None
+        fit_note = None
         if self._has_waveform():
             try:
                 wave = self._read_waveform(FIT_SAMPLES)
+                fit_implied = self.implied_frequency(wave)
                 fit = fit_sine(wave.seconds, wave.volts)
-                if fit.frequency > 0:
+                if fit.frequency <= 0:
+                    fit_note = "拟合频率无效"
+                elif freq_read <= 0:
+                    fit_note = "示波器频率读数无效，无法校验时间轴"
+                elif abs(fit.frequency / freq_read - 1.0) > CONSISTENCY_TOLERANCE:
+                    fit_note = (
+                        f"采集时间轴与读数不一致（拟合 {fit.frequency:.4g} Hz / "
+                        f"读数 {freq_read:.4g} Hz），拟合法不适用"
+                    )
+                else:
                     fit_frequency = fit.frequency
                     rel_error_fit = freq_std / fit.frequency - 1.0
             except (FitError, ValueError) as exc:
-                console.print(f"[yellow]⚠ 波形拟合法核对跳过: {exc}[/yellow]")
+                fit_note = f"波形拟合法失败: {exc}"
+
+        if fit_note:
+            console.print(f"[yellow]⚠ {self._format_time(scale)}/div：{fit_note}[/yellow]")
 
         return {
             "channel": self.channel,
@@ -79,6 +119,8 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             "fit_frequency_hz": fit_frequency,
             "rel_error_fit": rel_error_fit,
             "fit_ppm": None if rel_error_fit is None else rel_error_fit * 1e6,
+            "fit_implied_freq_hz": fit_implied,
+            "fit_note": fit_note,
         }
 
     @ensure_output_off
@@ -113,7 +155,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                 fit_text = (
                     f"{record['rel_error_fit'] * 1e6:.2f}"
                     if record["rel_error_fit"] is not None
-                    else "—"
+                    else ("不适用" if record["fit_note"] else "—")
                 )
                 self.add_result_row(
                     table,

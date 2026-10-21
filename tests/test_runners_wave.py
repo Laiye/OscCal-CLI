@@ -78,6 +78,52 @@ def sine_wave(freq_hz, x_increment, samples=300, amplitude=0.5, true_increment=N
     )
 
 
+class TestTimebaseConsistency:
+    """采集时间轴自检：数据推算频率与示波器读数不一致时，拟合法必须判为不适用。"""
+
+    def _point(self):
+        return [
+            {
+                "channel": "1",
+                "timebase_s_per_div": 8e-7,
+                "period_on_screen_s": 3.33e-4,
+                "signal_freq_hz": 300e3,
+            }
+        ]
+
+    def test_implied_frequency_uses_declared_time_axis(self):
+        wave = sine_wave(300e3, 0.8e-9, samples=4000)
+        implied = TimebaseErrorCalibrator.implied_frequency(wave)
+        # 过零计数受量化影响，只做粗估；精确判定由拟合频率与读数比对完成
+        assert implied == pytest.approx(300e3, rel=0.05)
+
+    def test_inconsistent_axis_marks_fit_not_applicable(self, configs):
+        # 实机现象：实际采样间隔约为标称的 8.5 倍（抽点后仍按屏幕标称给 XINcr）
+        instance = build(TimebaseErrorCalibrator, configs, self._point())
+        instance._read_meas = lambda key: 300e3
+        instance._read_waveform = lambda samples: sine_wave(
+            300e3, 0.8e-9, samples=4000, true_increment=6.8e-9
+        )
+        instance.run()
+
+        record = instance.results[0]
+        assert record["fit_note"] is not None
+        assert "不一致" in record["fit_note"]
+        assert record["rel_error_fit"] is None
+        assert record["fit_ppm"] is None
+        assert record["fit_implied_freq_hz"] is not None
+
+    def test_consistent_axis_still_produces_fit(self, configs):
+        instance = build(TimebaseErrorCalibrator, configs, self._point())
+        instance._read_meas = lambda key: 300e3
+        instance._read_waveform = lambda samples: sine_wave(300e3, 0.8e-9, samples=4000)
+        instance.run()
+
+        record = instance.results[0]
+        assert record["fit_note"] is None
+        assert record["rel_error_fit"] is not None
+
+
 class TestTimebaseError:
     def test_frequency_method_sign_and_scale(self, configs):
         points = [

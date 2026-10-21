@@ -171,7 +171,24 @@ class BaseCalibrator:
 
     def _read_meas(self, meas_keyword):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
+        # 单次采集模式下，改完激励/时基若不重新采集，MEASU:IMM:VAL 会返回**上一次**
+        # 的读数（实机：30 MHz 的读数一直延续到 300 kHz 的点上）。读数前先取新数据。
+        self._run_single_acquisition()
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
+
+    def _run_single_acquisition(self, wait_seconds: float = 0.3) -> None:
+        """触发一次单次采集并等待完成；指令集未声明采集控制时静默跳过。"""
+        actions = self.cmd_osc.get("actions", {})
+        if "set_acquire_stop_after" not in actions or "set_acquire_state" not in actions:
+            return
+        keywords = self.cmd_osc.get("keyword", {})
+        self._write_osc("set_acquire_stop_after", keywords["acquire_stop_after_single"])
+        self._write_osc("set_acquire_state", keywords["acquire_state_run"])
+        time.sleep(wait_seconds)
+        try:
+            scpi_query(self.inst_osc, "*OPC?", self.comm_type)
+        except Exception:  # noqa: BLE001 - 个别机型不支持 *OPC?，退回固定等待
+            time.sleep(wait_seconds)
 
     def _read_waveform(self, samples: int):
         """读回当前通道波形（二进制块），返回 core.waveform.Waveform。
@@ -193,6 +210,9 @@ class BaseCalibrator:
         if missing:
             raise ValueError(f"指令集未声明波形读回能力，缺少 action: {missing}")
 
+        # 先取一次全新采集：改完时基/激励后若示波器处于停止或单次状态，
+        # CURVe? 会返回上一次的陈旧记录（实机表现为拟合频率与读数差一个量级）。
+        self._run_single_acquisition()
         self._write_osc("set_wave_source", self.channel)
         self._write_osc("set_wave_encoding", "RIBinary")
         self._write_osc("set_wave_width", "2")
