@@ -193,6 +193,10 @@ class BaseCalibrator:
             return
         keywords = self.cmd_osc.get("keyword", {})
         self._write_osc("set_acquire_stop_after", keywords["acquire_stop_after_single"])
+        # 先显式 STOP 再 RUN 重新布防：连续两次单次采集时，若直接写 RUN，示波器
+        # 会给出与时间轴不匹配的记录（实测拟合频率偏离 3~5 倍）。
+        self._write_osc("set_acquire_state", keywords.get("acquire_state_stop", "STOP"))
+        time.sleep(0.05)
         self._write_osc("set_acquire_state", keywords["acquire_state_run"])
         # 先给示波器足够的重新布防时间：实测 0.3 s 太短，状态查询会在采集真正开始
         # 前就返回"已停止"，取回的是半填的记录（幅度只有正常值的一小部分）。
@@ -214,10 +218,12 @@ class BaseCalibrator:
         except Exception:  # noqa: BLE001 - 个别机型不支持 *OPC?，退回固定等待
             time.sleep(wait_seconds)
 
-    def _read_waveform(self, samples: int):
+    def _read_waveform(self, samples: int, fresh: bool = True):
         """读回当前通道波形（二进制块），返回 core.waveform.Waveform。
 
-        指令集必须声明波形 action（set_wave_* / query_wave_*），否则明确报错。
+        `fresh=False` 表示复用刚刚那次采集（调用方已通过 _read_meas 触发过）：
+        示波器在"连续两次单次采集"时会返回与时间轴不匹配的记录，复用同一次
+        采集既避免该问题，也保证测量值与波形来自同一份数据。
         """
         from osccal.core.waveform import build_waveform, parse_block, parse_preamble
 
@@ -236,7 +242,8 @@ class BaseCalibrator:
 
         # 先取一次全新采集：改完时基/激励后若示波器处于停止或单次状态，
         # CURVe? 会返回上一次的陈旧记录（实机表现为拟合频率与读数差一个量级）。
-        self._run_single_acquisition()
+        if fresh:
+            self._run_single_acquisition()
         self._write_osc("set_wave_source", self.channel)
         self._write_osc("set_wave_encoding", "RIBinary")
         self._write_osc("set_wave_width", "2")

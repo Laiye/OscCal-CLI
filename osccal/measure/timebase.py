@@ -94,7 +94,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         fit_note = None
         if self._has_waveform():
             try:
-                wave = self._read_waveform(FIT_SAMPLES)
+                wave = self._read_waveform(FIT_SAMPLES, fresh=False)
                 fit_implied = self.implied_frequency(wave)
                 fit = fit_sine(wave.seconds, wave.volts)
                 if fit.frequency <= 0:
