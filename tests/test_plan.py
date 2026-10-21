@@ -38,8 +38,9 @@ def _by_name(plan: dict) -> dict[str, dict]:
 
 class TestPlanContent:
     def test_total_points(self, plan):
-        # 4 + 12 + 8 + 18 + 2 + 4 + 10 + 8 + 10 + 2 = 78
-        assert plan["total_points"] == 78
+        # 4 + 12 + 8 + 18 + 2 + 4 + 10 + 8 + 4 + 2 = 72
+        # Δt 只有 2 点/通道：方波激励受 9500B 10 Hz~10 kHz 限制，快时基不可行
+        assert plan["total_points"] == 72
 
     @pytest.mark.parametrize(
         "name,expected",
@@ -52,7 +53,7 @@ class TestPlanContent:
             ("rise_time", 4),
             ("timebase_error", 10),
             ("delta_v", 8),
-            ("delta_t", 10),
+            ("delta_t", 4),
             ("random_noise", 2),
         ],
     )
@@ -110,6 +111,19 @@ class TestPlanContent:
         ]
         assert scales == [1e-8, 1e-6, 1e-4, 1e-2, 1e-1]
 
+    def test_delta_t_skips_fast_timebases(self, plan):
+        """Δt 用方波激励，9500B 方波只到 10 kHz，快时基与最慢时基都会被跳过。"""
+        item = _by_name(plan)["delta_t"]
+        assert len(item["points"]) == 4
+        reasons = " ".join(skip["reason"] for skip in item["skipped"])
+        assert "超出输出上限" in reasons
+        assert "低于输出下限" in reasons
+
+    def test_timebase_error_keeps_all_points(self, plan):
+        """时基误差用正弦激励，0.1 Hz~600 MHz 覆盖全部 5 个时基挡位。"""
+        assert len(_by_name(plan)["timebase_error"]["points"]) == 10
+        assert _by_name(plan)["timebase_error"]["skipped"] == []
+
     def test_unknown_probe_marks_rise_time_skipped(self, configs):
         spec, profile, calibrator = configs
         plan = build_plan(spec, profile, calibrator, "9999", ["1"])
@@ -122,7 +136,7 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "78" in result.output
+        assert "72" in result.output
         assert "JJF 1057-2026" in result.output
 
     def test_plan_writes_json(self, tmp_path):
@@ -130,7 +144,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 78
+        assert data["total_points"] == 72
         assert len(data["items"]) == 12
 
     def test_plan_rejects_unknown_spec(self):

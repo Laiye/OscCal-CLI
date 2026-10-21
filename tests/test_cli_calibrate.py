@@ -133,3 +133,10 @@ class TestCalibrateFlow:
         assert result.exit_code == 0, result.output
         json.dumps(fake_env["metadata"], ensure_ascii=False)
         json.dumps(fake_env["results"], ensure_ascii=False)
+
+    def test_runs_waveform_free_item(self, fake_env):
+        """Δt 只用标量周期测量，走通即可（方波激励限幅已在点表里体现）。"""
+        result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "delta_t"), input="n\n")
+        assert result.exit_code == 0, result.output
+        assert fake_env["metadata"]["points_plan"]["1"]["delta_t"] == 2
+        assert len(fake_env["results"]["delta_t"]) == 2

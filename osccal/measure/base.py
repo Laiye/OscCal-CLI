@@ -8,6 +8,7 @@ from rich.table import Table
 from osccal.core.comm import (
     read_measurement,
     scpi_query,
+    scpi_query_raw,
     scpi_setup_measurement,
     scpi_write,
     set_write_delay,
@@ -171,6 +172,36 @@ class BaseCalibrator:
     def _read_meas(self, meas_keyword):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
+
+    def _read_waveform(self, samples: int):
+        """读回当前通道波形（二进制块），返回 core.waveform.Waveform。
+
+        指令集必须声明波形 action（set_wave_* / query_wave_*），否则明确报错。
+        """
+        from osccal.core.waveform import build_waveform, parse_block, parse_preamble
+
+        required = (
+            "set_wave_source",
+            "set_wave_encoding",
+            "set_wave_width",
+            "set_wave_start",
+            "set_wave_stop",
+            "query_wave_preamble",
+            "query_wave_data",
+        )
+        missing = [name for name in required if name not in self.cmd_osc.get("actions", {})]
+        if missing:
+            raise ValueError(f"指令集未声明波形读回能力，缺少 action: {missing}")
+
+        self._write_osc("set_wave_source", self.channel)
+        self._write_osc("set_wave_encoding", "RIBinary")
+        self._write_osc("set_wave_width", "2")
+        self._write_osc("set_wave_start", 1)
+        self._write_osc("set_wave_stop", samples)
+        preamble = parse_preamble(self._query_osc("query_wave_preamble"))
+        action = self.cmd_osc["actions"]["query_wave_data"]
+        raw = scpi_query_raw(self.inst_osc, assemble_cmd(action), self.comm_type)
+        return build_waveform(parse_block(raw), preamble)
 
     def _adjust_vertical_position(self, scale):
         if self.profile.get("skip_vertical_adjust", False):

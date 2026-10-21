@@ -99,6 +99,34 @@ def scpi_write(inst, cmd: str, comm_type: str = "pyvisa") -> str:
     return _retry_query_or_write(inst, cmd, comm_type, is_query=False)
 
 
+def scpi_query_raw(inst, cmd: str, comm_type: str = "pyvisa") -> bytes:
+    """读取二进制响应（波形块），返回原始字节（含 IEEE 488.2 块头）。
+
+    pyvisa 必须走 `write` + `read_raw`：`query` 会按文本解码，二进制块会被破坏。
+    socket 通道暂不支持二进制读回，直接报错而不是给出错误数据。
+    """
+    if not cmd or comm_type != "pyvisa":
+        scpi_trace.record_failure()
+        raise ScpiError(f"波形读回暂只支持 pyvisa 通道（当前: {comm_type}）")
+    for attempt in range(2):
+        try:
+            inst.write(cmd)
+            raw = inst.read_raw()
+            if not isinstance(raw, (bytes, bytearray)):
+                raise ScpiError("仪器未返回二进制数据")
+            scpi_trace.log_entry("Q", cmd, f"<{len(raw)} bytes>")
+            return bytes(raw)
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(0.5)
+                continue
+            console.print(f"[red]✗[/red] SCPI 二进制读取失败 ({cmd}): {e}")
+            scpi_trace.record_failure()
+            scpi_trace.log_entry("Q", cmd, "ERROR")
+            raise ScpiError(f"波形读回失败: {cmd}") from e
+    raise AssertionError("通信重试未返回结果")
+
+
 def scpi_setup_measurement(inst, cmd_osc: dict, channel: str, meas_keyword: str):
     feature = cmd_osc.get("feature", {})
     meas_mode = feature.get("meas", "split")

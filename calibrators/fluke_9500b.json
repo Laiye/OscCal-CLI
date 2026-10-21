@@ -54,8 +54,8 @@
             "50": { "min_v": 0.001, "max_v": 5 }
         },
         "SQU": {
-            "1M": { "min_vpp": 4e-05, "max_vpp": 200, "max_freq_hz": 10000 },
-            "50": { "min_vpp": 4e-05, "max_vpp": 5, "max_freq_hz": 10000 }
+            "1M": { "min_vpp": 4e-05, "max_vpp": 200, "min_freq_hz": 10, "max_freq_hz": 10000 },
+            "50": { "min_vpp": 4e-05, "max_vpp": 5, "min_freq_hz": 10, "max_freq_hz": 10000 }
         },
         "SIN": {
             "1M": { "min_freq_hz": 0.1, "max_freq_hz": 600000000 },

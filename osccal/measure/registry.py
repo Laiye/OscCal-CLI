@@ -9,7 +9,10 @@ delta_time、旧法 bandwidth、transient）已全部删除，**不保留别名�
 
 from osccal.measure.dc_gain import DcGainCalibrator
 from osccal.measure.dc_offset import DcOffsetCalibrator
+from osccal.measure.delta_t import DeltaTimeCalibrator
 from osccal.measure.freq_response import FreqResponseCalibrator
+from osccal.measure.random_noise import RandomNoiseCalibrator
+from osccal.measure.timebase import TimebaseErrorCalibrator
 
 CALIBRATION_ITEMS = [
     {"name": "input_impedance", "clause": "7.3", "title": "输入阻抗"},
@@ -33,4 +36,7 @@ RUNNERS: dict = {
     "dc_gain": DcGainCalibrator,
     "dc_offset": DcOffsetCalibrator,
     "freq_response_bandwidth": FreqResponseCalibrator,
+    "timebase_error": TimebaseErrorCalibrator,
+    "delta_t": DeltaTimeCalibrator,
+    "random_noise": RandomNoiseCalibrator,
 }

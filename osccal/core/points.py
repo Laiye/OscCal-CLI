@@ -157,7 +157,14 @@ def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: l
                     points.append(_point(values))
     elif horizontal_scales is not None:
         available = set(_num(v) for v in profile.get("horizontal_scales", []))
-        periods = _num(rule.get("periods_on_screen", 3))
+        # 两种水平取点口径：多周期测量（periods_m，按屏占比铺满）与
+        # 时基误差（periods_on_screen，屏上显示 N 个周期）。
+        if "periods_m" in rule:
+            periods = _num(rule.get("periods_m", 2))
+            coverage = _num(rule.get("screen_fraction", 1.0))
+        else:
+            periods = _num(rule.get("periods_on_screen", 3))
+            coverage = 1.0
         for channel in channels:
             for scale in horizontal_scales:
                 scale = _num(scale)
@@ -166,9 +173,9 @@ def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: l
                         {"channel": channel, "scale_s_per_div": scale, "reason": "机型无此水平档位"}
                     )
                     continue
-                period = scale * horizontal_div / periods
+                period = coverage * horizontal_div * scale / periods
                 freq = 1.0 / period if period > 0 else 0.0
-                reason = _check_frequency(freq, calibrator, "1M", "SIN")
+                reason = _check_frequency(freq, calibrator, "1M", shape)
                 if reason:
                     skipped.append({"channel": channel, "scale_s_per_div": scale, "reason": reason})
                     continue
