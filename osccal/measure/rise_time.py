@@ -43,7 +43,7 @@ class RiseTimeCalibrator(BaseCalibrator):
         if "set_offset" in self.cmd_osc.get("actions", {}):
             self._write_osc("set_offset", self.channel, -AMPLITUDE_VPP / 2.0)
         if "set_trigger_slope" in self.cmd_osc.get("actions", {}):
-            self._write_osc("set_trigger_slope", "FALL")
+            self._write_osc("set_trigger_slope", "RIS")
         # 触发电平放在过渡区中点（−0.5 V），否则会落在 0 V 或 −1 V 的平台上
         if "set_trigger_level" in self.cmd_osc.get("actions", {}):
             action = self.cmd_osc["actions"]["set_trigger_level"]
@@ -58,8 +58,8 @@ class RiseTimeCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
 
-        # 下沿脉冲的 10%~90% 过渡时间在示波器上对应 FALL 测量项
-        keyword = "meas_falltime" if "meas_falltime" in self.cmd_osc["keyword"] else "meas_risetime"
+        # 校准对象是**上升沿**（−1 V → 0 V 的过渡），用 RIS 测量项
+        keyword = "meas_risetime"
         transition = self._read_meas(keyword)
         overshoot = None
         if "meas_pos_overshoot" in self.cmd_osc.get("keyword", {}):
@@ -80,8 +80,7 @@ class RiseTimeCalibrator(BaseCalibrator):
         self.print_title(self.title)
         self.init_devices()
         self.setup_channel()
-        keyword = "meas_falltime" if "meas_falltime" in self.cmd_osc["keyword"] else "meas_risetime"
-        self.setup_measurement(keyword)
+        self.setup_measurement("meas_risetime")
 
         if not self.points:
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")

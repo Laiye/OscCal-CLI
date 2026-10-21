@@ -276,7 +276,7 @@ class TestRiseTime:
         points = [{"channel": "1", "edge_rise_time_s": 150e-12}]
         instance = build(RiseTimeCalibrator, configs, points)
         # 9500B 输出下沿脉冲，示波器侧对应 FALL 测量项
-        readings = {"meas_falltime": 700e-12, "meas_pos_overshoot": 2.5}
+        readings = {"meas_risetime": 700e-12, "meas_pos_overshoot": 2.5}
         instance._read_meas = lambda key: readings[key]
         instance.run()
         record = instance.results[0]
