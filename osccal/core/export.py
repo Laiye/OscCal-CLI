@@ -1,10 +1,25 @@
+"""Excel 报告导出：按 JJF 1057-2026 附录 A/B 的项目名称组织工作表。
+
+- 每个校准项目一张工作表，标题用附录 A 的编号与名称（如「A.3 直流增益」）；
+- 单元格按显示精度整理，与终端 `osccal show` 一致；
+- **不再做合格/超差判定**：表 1 指标仅供参考，工作表末尾给出参考指标与免责说明；
+- 校准信息表补充依据规范、实施日期、配置文件与逐条偏离声明。
+"""
+
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from rich.console import Console
 
 from osccal.core.storage import STATUS_LABELS
-from osccal.core.table_configs import EXCEL_ITEM_CONFIGS as item_configs
+from osccal.core.table_configs import (
+    EXCEL_ITEM_CONFIGS as item_configs,
+)
+from osccal.core.table_configs import (
+    LIMITS_DISCLAIMER,
+    row_values,
+    select_rows,
+)
 from osccal.core.utils import prepare_excel_value
 
 console = Console()
@@ -15,7 +30,6 @@ def export_to_excel(data: dict, output_path: str) -> str:
 
     metadata = data.get("metadata", {})
     results = data.get("results", {})
-    limits_map = metadata.get("limits", {}) or {}
 
     _create_info_sheet(wb, metadata)
 
@@ -29,8 +43,12 @@ def export_to_excel(data: dict, output_path: str) -> str:
 
     for base_name, rows in grouped.items():
         config = item_configs.get(base_name)
-        if config:
-            _create_data_sheet(wb, base_name, config, rows, limits_map, config["title"])
+        if not config:
+            console.print(f"[yellow]⚠ 未知校准项目，跳过导出: {base_name}[/yellow]")
+            continue
+        data_rows = select_rows(config, rows)
+        if data_rows:
+            _create_data_sheet(wb, config, data_rows)
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -60,6 +78,18 @@ def _create_info_sheet(wb, metadata):
         ("通道", f"CH{metadata.get('channel', '')}"),
         ("探头", metadata.get("probe", "")),
     ]
+
+    spec = metadata.get("spec") or {}
+    if spec:
+        info_items.extend(
+            [
+                ("依据规范", spec.get("name", "")),
+                ("规范代号", spec.get("spec_code", "")),
+                ("规范文件", spec.get("file", "")),
+                ("规范摘要(sha256)", spec.get("sha256", "")),
+            ]
+        )
+
     for name, failure in metadata.get("failures", {}).items():
         info_items.append((f"失败项目 {name}", failure.get("message", "")))
 
@@ -81,6 +111,10 @@ def _create_info_sheet(wb, metadata):
         ]
     )
 
+    deviations = spec.get("deviations", []) if spec else []
+    for index, deviation in enumerate(deviations, start=1):
+        info_items.append((f"偏离声明 {index}", deviation))
+
     for label, value in info_items:
         ws.cell(row=row, column=1, value=label).font = label_font
         ws.cell(row=row, column=2, value=value).font = normal_font
@@ -88,20 +122,15 @@ def _create_info_sheet(wb, metadata):
         ws.cell(row=row, column=2).border = border
         row += 1
 
-    ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 40
+    ws.cell(row=row + 1, column=1, value=LIMITS_DISCLAIMER).font = Font(italic=True, size=10)
+    ws.merge_cells(start_row=row + 1, start_column=1, end_row=row + 1, end_column=4)
+
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 60
 
 
-def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title=None):
-    title = sheet_title or config["title"]
-    ws = wb.create_sheet(title=title)
-
-    limits_map = limits_map or {}
-    base_name = item_name.split("_ch")[0]
-    item_limits = limits_map.get(base_name, {}) or {}
-    lower = item_limits.get("lower", -2.0)
-    upper = item_limits.get("upper", 2.0)
-    min_mhz = item_limits.get("min_mhz")
+def _create_data_sheet(wb, config, rows):
+    ws = wb.create_sheet(title=config["title"])
 
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -113,25 +142,20 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
         bottom=Side(style="thin"),
     )
 
-    for col_idx, header in enumerate(config["headers"], 1):
+    headers = config["headers"]
+    for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = center_align
         cell.border = thin_border
 
-    red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
-    red_font = Font(color="FFFFFF", bold=True)
-
     precision_specs = config.get("precision") or []
-    error_col = config.get("error_col")
-    min_col = config.get("min_col")
-
-    for row_idx, row_data in enumerate(rows, 2):
-        values = list(row_data.values()) if isinstance(row_data, dict) else row_data
-
+    row_idx = 2
+    for row_data in rows:
+        values = row_values(config, row_data)
         for col_idx, val in enumerate(values, 1):
-            # 单元格按显示精度整理：数值与终端表格位数一致，仍是数值单元格
+            # 单元格按显示精度整理：与终端表格位数一致，仍是数值单元格
             spec = precision_specs[col_idx - 1] if col_idx <= len(precision_specs) else None
             cell_value, number_format = prepare_excel_value(val, spec)
             cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
@@ -139,30 +163,17 @@ def _create_data_sheet(wb, item_name, config, rows, limits_map=None, sheet_title
                 cell.number_format = number_format
             cell.alignment = center_align
             cell.border = thin_border
+        row_idx += 1
 
-            # 超差判定始终用未舍入的原始值，避免舍入掩盖越界（如 2.004% 显示为 2.00%）
-            if error_col is not None and col_idx == error_col + 1:
-                cell.number_format = "0.00"
-                try:
-                    if float(val) < lower or float(val) > upper:
-                        cell.fill = red_fill
-                        cell.font = red_font
-                except (ValueError, TypeError):
-                    pass
+    # 表尾：参考指标 + 免责说明（不做合格判定）
+    note_row = row_idx + 1
+    ws.cell(row=note_row, column=1, value="参考指标").font = Font(bold=True, size=10)
+    ws.cell(row=note_row, column=2, value=config["reference"]).font = Font(size=10)
+    ws.merge_cells(start_row=note_row, start_column=2, end_row=note_row, end_column=len(headers))
+    ws.cell(row=note_row + 1, column=1, value=LIMITS_DISCLAIMER).font = Font(italic=True, size=10)
+    ws.merge_cells(
+        start_row=note_row + 1, start_column=1, end_row=note_row + 1, end_column=len(headers)
+    )
 
-            is_bound = isinstance(row_data, dict) and row_data.get("status", "").startswith("下界")
-            if (
-                min_col is not None
-                and col_idx == min_col + 1
-                and min_mhz is not None
-                and not is_bound
-            ):
-                try:
-                    if float(val) < min_mhz:
-                        cell.fill = red_fill
-                        cell.font = red_font
-                except (ValueError, TypeError):
-                    pass
-
-    for col_idx in range(1, len(config["headers"]) + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 18
+    for col_idx in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 20

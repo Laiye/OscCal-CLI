@@ -949,10 +949,13 @@ def _display_calibration_data(data: dict):
 
     console.print(info_table)
 
-    from osccal.core.table_configs import ITEM_CONFIGS
+    from osccal.core.table_configs import (
+        ITEM_CONFIGS,
+        LIMITS_DISCLAIMER,
+        row_values,
+        select_rows,
+    )
     from osccal.core.utils import format_display_value
-
-    limits_map = metadata.get("limits", {}) or {}
 
     # 按校准项目分组：同一项目的所有通道数据合并到同一个表格
     grouped: dict[str, list] = {}
@@ -963,56 +966,42 @@ def _display_calibration_data(data: dict):
         grouped.setdefault(base_name, []).extend(rows)
 
     for base_name, rows in grouped.items():
-        config = ITEM_CONFIGS.get(base_name, {"title": base_name, "columns": [], "error_col": None})
-        item_limits = limits_map.get(base_name, {}) or {}
-        lower = item_limits.get("lower", -2.0)
-        upper = item_limits.get("upper", 2.0)
-        min_mhz = item_limits.get("min_mhz")
+        config = ITEM_CONFIGS.get(base_name)
+        if config is None:
+            console.print(f"[yellow]⚠ 未知校准项目，跳过显示: {base_name}[/yellow]")
+            continue
+        data_rows = select_rows(config, rows)
+        if not data_rows:
+            continue
 
         table = Table(title=config["title"], show_lines=True)
-
         for col in config["columns"]:
             table.add_column(col, justify="right")
 
-        # 与 Excel 导出共用同一精度规格，避免回看时打印读数原始位数
         precision_specs = config.get("precision") or []
-
-        for row in rows:
-            values = list(row.values()) if isinstance(row, dict) else row
-
+        for row in data_rows:
+            values = row_values(config, row)
             str_values = [
                 format_display_value(v, precision_specs[i] if i < len(precision_specs) else None)
                 for i, v in enumerate(values)
             ]
-
-            error_col = config.get("error_col")
-            if error_col is not None and error_col < len(str_values):
-                try:
-                    error_val = float(str_values[error_col])
-                    str_values[error_col] = f"{error_val:.2f}"
-                    if error_val < lower or error_val > upper:
-                        str_values[error_col] = f"[red bold]{str_values[error_col]}[/red bold]"
-                except (ValueError, IndexError):
-                    pass
-
-            min_col = config.get("min_col")
-            is_bound = isinstance(row, dict) and row.get("status", "").startswith("下界")
-            if (
-                min_col is not None
-                and min_col < len(str_values)
-                and min_mhz is not None
-                and not is_bound
-            ):
-                try:
-                    if float(str_values[min_col]) < min_mhz:
-                        str_values[min_col] = f"[red bold]{str_values[min_col]}[/red bold]"
-                except (ValueError, IndexError):
-                    pass
-
             table.add_row(*str_values)
 
         console.print()
         console.print(table)
+        console.print(f"[dim]参考指标：{config['reference']}[/dim]")
+
+    if grouped:
+        console.print(f"\n[dim]{LIMITS_DISCLAIMER}[/dim]")
+
+    spec = metadata.get("spec") or {}
+    if spec:
+        console.print(
+            f"[dim]依据规范：{spec.get('name', '')}（{spec.get('spec_code', '')}），"
+            f"配置文件 {spec.get('file', '')}[/dim]"
+        )
+        for deviation in spec.get("deviations", []):
+            console.print(f"[dim]偏离声明：{deviation}[/dim]")
 
 
 def main() -> None:

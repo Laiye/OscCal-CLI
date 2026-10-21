@@ -121,6 +121,7 @@ class FreqResponseCalibrator(BaseCalibrator):
                         "frequency_hz": frequency_hz,
                         "amplitude_vpp": measured,
                         "response": response,
+                        "note": note,
                         "vertical_scale": scale,
                         "test_amplitude_vpp": AMPLITUDE_VPP,
                     }

@@ -76,6 +76,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             "rel_ppm": rel_error * 1e6,
             "fit_frequency_hz": fit_frequency,
             "rel_error_fit": rel_error_fit,
+            "fit_ppm": None if rel_error_fit is None else rel_error_fit * 1e6,
         }
 
     @ensure_output_off
