@@ -23,10 +23,10 @@ from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 #: 垂直档位与激励幅度：0.5 Vpp 在 0.1 V/div 下约占 62% 屏，满足"覆盖 50% 以上"。
 VERTICAL_SCALE = 0.1
 AMPLITUDE_VPP = 0.5
-#: 拟合法需要"屏上的完整波形"：只取前 1000 点会显著短于一屏（例如 1 µs/div 下
-#: 记录 10000 点才铺满 10 格），拟合会因周期不足而完全失真。这里请求一个远大于
-#: 记录长度的点数，示波器会自动截到实际记录长度（WFMOutpre:NR_Pt 回读）。
-FIT_SAMPLES = 2_000_000
+#: 拟合用的记录长度，必须与示波器实际记录长度一致。实机验证（100 µs/div、3 kHz）：
+#: 记录 1000 点 → 拟合 3000.6 Hz（正确）；记录 10000 点 → 拟合 14522 Hz（偏 4.8 倍）。
+#: 即该机型在大记录长度下返回的数据与 WFMOutpre 的 XINcr 不匹配。
+FIT_SAMPLES = 1000
 #: 拟合频率与示波器频率读数允许的最大相对偏差；超过即判定采集时间轴不可信。
 CONSISTENCY_TOLERANCE = 0.05
 
@@ -94,6 +94,9 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         fit_note = None
         if self._has_waveform():
             try:
+                # 记录长度与分析点数必须一致，否则该机型返回的数据与 XINcr 不匹配
+                if "set_record_length" in self.cmd_osc.get("actions", {}):
+                    self._write_osc("set_record_length", FIT_SAMPLES)
                 wave = self._read_waveform(FIT_SAMPLES, fresh=False)
                 fit_implied = self.implied_frequency(wave)
                 fit = fit_sine(wave.seconds, wave.volts)
