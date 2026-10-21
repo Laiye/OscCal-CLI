@@ -260,7 +260,7 @@ class TestRandomNoise:
         )
         points = [{"channel": "1", "vertical_scale": 0.001}]
         instance = build(RandomNoiseCalibrator, configs, points)
-        instance._read_waveform = lambda samples: Waveform(
+        instance._read_waveform = lambda samples, fresh=True: Waveform(
             codes=[], volts=[0.001, -0.001, 0.001, -0.001], seconds=[], preamble=WaveformPreamble()
         )
         instance.run()
@@ -271,7 +271,7 @@ class TestRandomNoise:
         monkeypatch.setattr(rn_module.click, "prompt", lambda *a, **k: "")
         points = [{"channel": "1", "vertical_scale": 0.001}]
         instance = build(RandomNoiseCalibrator, configs, points)
-        instance._read_waveform = lambda samples: Waveform(
+        instance._read_waveform = lambda samples, fresh=True: Waveform(
             codes=[],
             volts=[0.001, -0.001] * 500,
             seconds=[],
@@ -289,7 +289,7 @@ class TestRandomNoise:
         monkeypatch.setattr(rn_module.click, "prompt", lambda *a, **k: "")
         points = [{"channel": "1", "vertical_scale": 0.001}]
         instance = build(RandomNoiseCalibrator, configs, points)
-        instance._read_waveform = lambda samples: Waveform(
+        instance._read_waveform = lambda samples, fresh=True: Waveform(
             codes=[], volts=[0.0, 0.001], seconds=[], preamble=WaveformPreamble()
         )
         instance.run()
