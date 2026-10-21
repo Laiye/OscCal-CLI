@@ -51,6 +51,8 @@ class EnobCalibrator(BaseCalibrator):
         self._apply_impedance("1M")
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
+        # 先定一个能覆盖多个周期的时基，再读采样率；f 由 f_s×n/N 现场推导
+        self._set_timebase(10e-6)
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
         self._nudge_trigger_level(VERTICAL_SCALE)

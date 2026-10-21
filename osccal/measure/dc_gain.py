@@ -23,6 +23,8 @@ class DcGainCalibrator(BaseCalibrator):
     def _zero_position(self) -> None:
         """规范 7.4 前置：直流耦合、直流偏置调零。"""
         self._write_osc("set_coupling", self.channel, "DC")
+        # 1 kHz 方波：200 µs/div → 屏上 2 个周期，保证幅度测量有效
+        self._set_timebase(200e-6)
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
 
@@ -37,6 +39,9 @@ class DcGainCalibrator(BaseCalibrator):
         self._nudge_trigger_level(scale)
 
         self._write_calibrator("set_shap", "SQU")
+        # 必须是双极性对称波：单极性（0~V）时波形顶部会超出屏幕被削顶，
+        # 实机表现为测得的峰峰值恒为 0.508/0.64 ≈ 0.79 倍。
+        self._write_calibrator("set_squ_polarity", "SYMM")
         self._write_calibrator("set_freq", 1000.0)
         self._write_calibrator("set_volt", std_value)
         self._write_calibrator("set_output", "ON")

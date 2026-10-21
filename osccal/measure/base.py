@@ -303,6 +303,16 @@ class BaseCalibrator:
             self.inst_osc, self.cmd_osc, self.channel, self.cmd_osc["keyword"][meas_keyword]
         )
 
+    def _set_timebase(self, seconds_per_div: float) -> None:
+        """设置水平挡位。
+
+        实机教训：`*RST` 后时基可能是 4 µs/div，1 kHz 方波在屏上只占 0.04 个周期，
+        幅度测量直接返回无效值 9.9E+37。凡是按频率给激励的项目都必须显式设时基。
+        """
+        if "set_horizontal_scale" not in self.cmd_osc.get("actions", {}):
+            return
+        self._write_osc("set_horizontal_scale", seconds_per_div)
+
     def print_title(self, title):
         console.print(
             Panel(f"[bold blue]{title}[/bold blue]  通道: CH{self.channel}", expand=False)

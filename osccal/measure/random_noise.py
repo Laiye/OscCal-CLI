@@ -52,6 +52,9 @@ class RandomNoiseCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "OFF")
         self._write_osc("set_vertical_scale", self.channel, scale)
         self._write_osc("set_coupling", self.channel, "DC")
+        # 规范要求"采样速率最高"：压到机型最快的水平档位
+        scales = self.profile.get("horizontal_scales") or [1e-9]
+        self._set_timebase(min(scales))
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
         if "set_acquisition_mode" in self.cmd_osc["actions"]:

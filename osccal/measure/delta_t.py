@@ -37,6 +37,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
         self._nudge_trigger_level(VERTICAL_SCALE)
 
         self._write_calibrator("set_shap", "SQU")
+        self._write_calibrator("set_squ_polarity", "SYMM")
         self._write_calibrator("set_freq", freq_std)
         self._write_calibrator("set_volt", AMPLITUDE_VPP)
         self._write_calibrator("set_output", "ON")

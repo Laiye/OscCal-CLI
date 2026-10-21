@@ -37,7 +37,14 @@ class FreqResponseCalibrator(BaseCalibrator):
         want = AMPLITUDE_VPP / (TARGET_SCREEN_FRACTION * vertical_div)
         return min(scales, key=lambda scale: abs(scale - want))
 
+    def _timebase_for(self, frequency_hz: float) -> float:
+        """让屏上至少显示约 2 个周期；不够就压到机型最低水平档位。"""
+        scales = self.profile.get("horizontal_scales") or [1e-9]
+        target = 0.2 / frequency_hz if frequency_hz > 0 else 1e-3
+        return max(min(scales), min(max(scales), target))
+
     def _measure_amplitude(self, frequency_hz: float) -> float:
+        self._set_timebase(self._timebase_for(frequency_hz))
         self._write_calibrator("set_freq", frequency_hz)
         time.sleep(0.5)
         return self._read_meas("meas_amp") * self._get_meas_amp_scale()

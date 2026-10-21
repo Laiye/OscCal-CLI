@@ -30,6 +30,8 @@ class RiseTimeCalibrator(BaseCalibrator):
         self._apply_impedance("1M")
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
+        # 快沿脉冲重复频率约 1 kHz：200 µs/div 保证屏上有完整脉冲
+        self._set_timebase(200e-6)
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
         self._nudge_trigger_level(VERTICAL_SCALE)
@@ -39,6 +41,11 @@ class RiseTimeCalibrator(BaseCalibrator):
         self._write_calibrator("set_volt", AMPLITUDE_VPP)
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
+        # 快沿脉冲是单极性（0~Vpp），把屏幕偏置抬到半幅度处让脉冲居中，
+        # 满足规范"底值与顶值之间居中覆盖 60%~80% 屏幕"。
+        if "set_offset" in self.cmd_osc.get("actions", {}):
+            self._write_osc("set_offset", self.channel, AMPLITUDE_VPP / 2.0)
+        time.sleep(0.5)
 
         rise_time = self._read_meas("meas_risetime")
         overshoot = None

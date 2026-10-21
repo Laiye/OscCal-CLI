@@ -31,6 +31,7 @@ class DcOffsetCalibrator(BaseCalibrator):
         self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, scale)
         self._write_osc("set_coupling", self.channel, "DC")
+        self._set_timebase(1e-3)
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
 

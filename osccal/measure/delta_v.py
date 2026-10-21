@@ -28,11 +28,15 @@ class DeltaVCalibrator(BaseCalibrator):
         self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, scale)
         self._write_osc("set_coupling", self.channel, "DC")
+        # 1 kHz 方波：200 µs/div → 屏上约 2 个周期，幅度测量才有效
+        self._set_timebase(200e-6)
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
         self._nudge_trigger_level(scale)
 
         self._write_calibrator("set_shap", "SQU")
+        # 双极性对称波，避免单极性方波顶部超出屏幕被削顶
+        self._write_calibrator("set_squ_polarity", "SYMM")
         self._write_calibrator("set_freq", 1000.0)
         self._write_calibrator("set_volt", std_value)
         self._write_calibrator("set_output", "ON")
