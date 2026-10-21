@@ -381,6 +381,16 @@
                 ]
             ]
         },
+        "query_acquire_state": {
+            "name": "query_acquire_state",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "ACQ:STATE?"
+            ],
+            "args": []
+        },
         "set_acquire_stop_after": {
             "name": "set_acquire_stop_after",
             "type": "write",

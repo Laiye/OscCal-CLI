@@ -17,6 +17,11 @@ from osccal.core.command import assemble_cmd
 
 console = Console()
 
+#: 等待单次采集结束的最长时间（秒）。
+ACQUIRE_TIMEOUT_SECONDS = 5.0
+#: 触发单次采集后先静置的时间（秒）：过短会读到半填记录。
+ACQUIRE_SETTLE_SECONDS = 0.6
+
 
 class OutputShutdownError(RuntimeError):
     """无法确认关闭输出，必须终止会话。"""
@@ -177,14 +182,33 @@ class BaseCalibrator:
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
 
     def _run_single_acquisition(self, wait_seconds: float = 0.3) -> None:
-        """触发一次单次采集并等待完成；指令集未声明采集控制时静默跳过。"""
+        """触发一次单次采集并**等它真正结束**；指令集未声明采集控制时静默跳过。
+
+        只靠 `*OPC?` 不够稳：实机出现过采集尚未开始时 `*OPC?` 就返回，取回的是刚
+        清空/半填的记录（幅度只有正常的 1/64，拟合于是锁定到噪声上）。改为轮询
+        `ACQuire:STATE?`，等它从 RUN(1) 回到 STOP(0) 再返回。
+        """
         actions = self.cmd_osc.get("actions", {})
         if "set_acquire_stop_after" not in actions or "set_acquire_state" not in actions:
             return
         keywords = self.cmd_osc.get("keyword", {})
         self._write_osc("set_acquire_stop_after", keywords["acquire_stop_after_single"])
         self._write_osc("set_acquire_state", keywords["acquire_state_run"])
-        time.sleep(wait_seconds)
+        # 先给示波器足够的重新布防时间：实测 0.3 s 太短，状态查询会在采集真正开始
+        # 前就返回"已停止"，取回的是半填的记录（幅度只有正常值的一小部分）。
+        time.sleep(max(wait_seconds, ACQUIRE_SETTLE_SECONDS))
+
+        if "query_acquire_state" in actions:
+            deadline = time.monotonic() + ACQUIRE_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                try:
+                    raw = str(self._query_osc("query_acquire_state"))
+                except Exception:  # noqa: BLE001 - 查询失败退回固定等待
+                    break
+                tokens = [token for token in raw.replace("\n", " ").split() if token]
+                if tokens and tokens[-1] in {"0", "0.0"}:
+                    return
+                time.sleep(0.1)
         try:
             scpi_query(self.inst_osc, "*OPC?", self.comm_type)
         except Exception:  # noqa: BLE001 - 个别机型不支持 *OPC?，退回固定等待
