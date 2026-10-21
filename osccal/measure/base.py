@@ -204,6 +204,7 @@ class BaseCalibrator:
 
         if "query_acquire_state" in actions:
             deadline = time.monotonic() + ACQUIRE_TIMEOUT_SECONDS
+            tokens: list[str] = []
             while time.monotonic() < deadline:
                 try:
                     raw = str(self._query_osc("query_acquire_state"))
@@ -213,6 +214,15 @@ class BaseCalibrator:
                 if tokens and tokens[-1] in {"0", "0.0"}:
                     return
                 time.sleep(0.1)
+            if tokens and tokens[-1] not in {"0", "0.0"}:
+                # 采集一直没完成：多半是没触发（无信号、触发源/电平不对）。
+                # 这时再等 *OPC? 只会白等，直接给出可诊断的提示。
+                console.print(
+                    "[yellow]⚠ 采集在 "
+                    f"{ACQUIRE_TIMEOUT_SECONDS:.0f} s 内未完成（可能未触发，"
+                    "请检查信号、触发源与触发电平）[/yellow]"
+                )
+            return
         try:
             scpi_query(self.inst_osc, "*OPC?", self.comm_type)
         except Exception:  # noqa: BLE001 - 个别机型不支持 *OPC?，退回固定等待
