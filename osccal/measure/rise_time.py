@@ -39,10 +39,18 @@ class RiseTimeCalibrator(BaseCalibrator):
         self._write_osc("set_coupling", self.channel, "DC")
         self._set_timebase(TIMEBASE_S_PER_DIV)
         # 单极性下沿脉冲：把高低电平中点抬到屏幕中心
+        # 脉冲高电平 0 V、低电平 −1 V：中点是 −0.5 V，用它做屏幕中心
         if "set_offset" in self.cmd_osc.get("actions", {}):
-            self._write_osc("set_offset", self.channel, AMPLITUDE_VPP / 2.0)
-        # 触发沿/电平保持操作者现场的设置：EDGE 脉冲的触发点与测量项无关，
-        # 强行改写触发沿反而可能把示波器调到不触发的状态。
+            self._write_osc("set_offset", self.channel, -AMPLITUDE_VPP / 2.0)
+        if "set_trigger_slope" in self.cmd_osc.get("actions", {}):
+            self._write_osc("set_trigger_slope", "FALL")
+        # 触发电平放在过渡区中点（−0.5 V），否则会落在 0 V 或 −1 V 的平台上
+        if "set_trigger_level" in self.cmd_osc.get("actions", {}):
+            action = self.cmd_osc["actions"]["set_trigger_level"]
+            if action.get("args_num", 0) >= 2:
+                self._write_osc("set_trigger_level", self.channel, -AMPLITUDE_VPP / 2.0)
+            else:
+                self._write_osc("set_trigger_level", -AMPLITUDE_VPP / 2.0)
 
         self._write_calibrator("set_shap", "EDGE")
         self._write_calibrator("set_edge_speed", edge_speed)
