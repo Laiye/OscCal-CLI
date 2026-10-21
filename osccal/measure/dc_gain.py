@@ -45,8 +45,13 @@ class DcGainCalibrator(BaseCalibrator):
         return voltage
 
     def _set_dc(self, volts: float) -> None:
+        """输出带符号的直流电平。
+
+        实机教训：早前用 abs() 取绝对值导致负电平被当作正电平输出，方法一/三的
+        读数不随输入变化（G≈0、截距≈恒定值）。
+        """
         self._write_calibrator("set_shap", "DC")
-        self._write_calibrator("set_volt", abs(volts))
+        self._write_calibrator("set_volt", volts)
         self._write_calibrator("set_output", "ON")
         time.sleep(0.8)
 
