@@ -275,13 +275,15 @@ class TestRiseTime:
 
         points = [{"channel": "1", "edge_rise_time_s": 150e-12}]
         instance = build(RiseTimeCalibrator, configs, points)
-        readings = {"meas_risetime": 700e-12, "meas_pos_overshoot": 2.5}
+        # 9500B 输出下沿脉冲，示波器侧对应 FALL 测量项
+        readings = {"meas_falltime": 700e-12, "meas_pos_overshoot": 2.5}
         instance._read_meas = lambda key: readings[key]
         instance.run()
         record = instance.results[0]
         assert record["rise_time_s"] == pytest.approx(700e-12)
         assert record["overshoot_pct"] == pytest.approx(2.5)
         assert record["edge_rise_time_s"] == pytest.approx(150e-12)
+        assert record["impedance"] == "50", "快沿必须 50 Ω 端接"
 
     def test_uses_fast_edge_and_declared_speed(self, configs):
         from osccal.measure.rise_time import RiseTimeCalibrator
@@ -293,6 +295,8 @@ class TestRiseTime:
         written = instance.inst_calibrator.written
         assert any("SHAP EDGE" in cmd for cmd in written)
         assert any("EDGE:SPE" in cmd and "5e-10" in cmd for cmd in written)
+        # 50 Ω 端接 + 下降沿触发
+        assert any("IMP 50" in cmd for cmd in written)
 
 
 class TestRegistryM5:
