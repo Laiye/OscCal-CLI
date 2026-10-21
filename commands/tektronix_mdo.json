@@ -564,6 +564,20 @@
                     "FALL"
                 ]
             ]
+        },
+        "set_record_length": {
+            "name": "set_record_length",
+            "type": "write",
+            "commands_num": 1,
+            "args_num": 1,
+            "commands": [
+                "HOR:RECORDLENGTH "
+            ],
+            "args": [
+                [
+                    "<int>"
+                ]
+            ]
         }
     }
 }
