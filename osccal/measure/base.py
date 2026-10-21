@@ -248,11 +248,34 @@ class BaseCalibrator:
         self._write_osc("set_wave_encoding", "RIBinary")
         self._write_osc("set_wave_width", "2")
         self._write_osc("set_wave_start", 1)
-        self._write_osc("set_wave_stop", samples)
+        self._write_osc("set_wave_stop", self._waveform_stop(samples))
         preamble = parse_preamble(self._query_osc("query_wave_preamble"))
         action = self.cmd_osc["actions"]["query_wave_data"]
         raw = scpi_query_raw(self.inst_osc, assemble_cmd(action), self.comm_type)
         return build_waveform(parse_block(raw), preamble)
+
+    def _waveform_stop(self, samples: int) -> int:
+        """取点数上限：不得超过示波器的实际记录长度。
+
+        实机教训（MDO3052）：把 `DATa:STOP` 写成远超记录长度的值（如 2000000），
+        示波器会把**整条记录抽点**成 10000 点返回，而 `WFMOutpre:XINcr` 仍按原始
+        记录给出。结果是 8 ms 的数据被标成 1 ms，3 kHz 正弦看上去有 8 倍频率。
+        因此先读实际记录长度，再取两者的较小值。
+        """
+        if "query_record_length" not in self.cmd_osc.get("actions", {}):
+            return samples
+        try:
+            raw = str(self._query_osc("query_record_length"))
+        except Exception:  # noqa: BLE001 - 读不到就退回调用方的值
+            return samples
+        for token in reversed(raw.replace("\n", " ").split()):
+            try:
+                length = int(float(token))
+            except ValueError:
+                continue
+            if length > 0:
+                return min(samples, length)
+        return samples
 
     def _adjust_vertical_position(self, scale):
         if self.profile.get("skip_vertical_adjust", False):

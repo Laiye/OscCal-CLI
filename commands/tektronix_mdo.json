@@ -381,6 +381,16 @@
                 ]
             ]
         },
+        "query_record_length": {
+            "name": "query_record_length",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "HOR:RECORDLENGTH?"
+            ],
+            "args": []
+        },
         "query_acquire_state": {
             "name": "query_acquire_state",
             "type": "query",
