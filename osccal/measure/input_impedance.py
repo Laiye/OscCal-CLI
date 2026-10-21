@@ -53,11 +53,16 @@ class InputImpedanceCalibrator(BaseCalibrator):
         impedance = point.get("impedance", "1M")
         nominal = NOMINAL[impedance]
 
+        # 必须先退出负载测量功能再改阻抗：在测量功能下写 ROUT:SIGN:IMP 会被判
+        # "settings conflict" 而静默不生效（实机表现：后续点仍按 1 MΩ 测量）。
+        self._write_calibrator("set_shap", "DC")
         self._apply_impedance(impedance)
         self._write_osc("set_coupling", self.channel, "DC")
 
         resistance = self._read_load("RES")
         capacitance = self._read_load("CAP")
+        # 本点结束即退出测量功能，避免影响下一个点的阻抗切换。
+        self._write_calibrator("set_shap", "DC")
 
         error_pct = 100.0 * (resistance - nominal) / nominal if resistance is not None else None
         return {

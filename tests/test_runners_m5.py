@@ -146,6 +146,26 @@ class TestInputImpedance:
         instance.run()
         assert "set_shap" in calls, "测量后必须退出负载测量功能、恢复波形输出"
 
+    def test_exits_measure_function_before_changing_impedance(self, configs):
+        """实机约束：在负载测量功能下改 ROUT:SIGN:IMP 会被拒绝，必须先 set_shap 退出。"""
+        responses = {"RES": "1.0E+06\n", "CAP": "1.0E-11\n"}
+        points = [{"channel": "1", "impedance": "1M"}]
+        instance = build(InputImpedanceCalibrator, configs, points)
+        calls: list[str] = []
+        state = {"func": None}
+
+        def write(action, *args):
+            calls.append(action)
+            if action == "set_load_func":
+                state["func"] = args[0]
+
+        instance._write_calibrator = write
+        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance.run()
+
+        first_load = calls.index("set_load_func")
+        assert "set_shap" in calls[:first_load], "首次进入测量功能前应先恢复波形输出"
+
 
 class TestEnob:
     def _sine_wave(self, freq, sample_rate, samples=1000, amplitude=0.76, noise=0.0):
