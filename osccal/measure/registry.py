@@ -3,9 +3,13 @@
 v0.2.0 起按 JJF 1057-2026 第 7 章重建项目集，旧项目（amp、旧法 dc_gain、
 delta_time、旧法 bandwidth、transient）已全部删除，**不保留别名与回退路径**。
 
-本模块只描述元数据与顺序，不 import 具体实现：各项目实现完成后把类注册进
-`RUNNERS`（M3'~M5' 逐个填充），避免重建期出现循环导入。
+``RUNNERS`` 与项目清单分开：清单是"规范要求什么"，RUNNERS 是"程序实现了什么"。
+--spec 解析出的每个项目都能出现在计划里；只有 RUNNERS 里的项目能被真正执行。
 """
+
+from osccal.measure.dc_gain import DcGainCalibrator
+from osccal.measure.dc_offset import DcOffsetCalibrator
+from osccal.measure.freq_response import FreqResponseCalibrator
 
 CALIBRATION_ITEMS = [
     {"name": "input_impedance", "clause": "7.3", "title": "输入阻抗"},
@@ -24,5 +28,9 @@ ITEM_ORDER = [item["name"] for item in CALIBRATION_ITEMS]
 
 ITEM_BY_NAME = {item["name"]: item for item in CALIBRATION_ITEMS}
 
-# 项目名 -> runner（可调用对象）。重建期为空，随 M3'~M5' 填充。
-RUNNERS: dict = {}
+# 项目名 -> runner。未列出的项目即"尚未实现"（calibrate 会明确报错，不静默跳过）。
+RUNNERS: dict = {
+    "dc_gain": DcGainCalibrator,
+    "dc_offset": DcOffsetCalibrator,
+    "freq_response_bandwidth": FreqResponseCalibrator,
+}

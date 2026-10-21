@@ -139,8 +139,21 @@ class TestPlanCommand:
         assert "找不到规范配置文件" in result.output
 
 
-class TestCalibrateGuard:
-    def test_calibrate_refuses_until_runners_exist(self):
-        result = CliRunner().invoke(cli, ["calibrate"])
-        assert result.exit_code == 2
-        assert "重建中" in result.output
+class TestRunnerAvailability:
+    def test_pending_items_reports_unimplemented(self):
+        from osccal.measure.all import pending_items
+
+        assert pending_items(["dc_gain", "dc_offset"]) == []
+        assert pending_items(["enob", "dc_gain", "input_impedance"]) == [
+            "enob",
+            "input_impedance",
+        ]
+
+    def test_calibrate_help_drops_legacy_options(self):
+        result = CliRunner().invoke(cli, ["calibrate", "--help"])
+        assert result.exit_code == 0
+        # 标称带宽与扫描步进改由 Profile 的 bandwidth_hz 与规范比值决定
+        assert "--bandwidth" not in result.output
+        assert "--bd-step" not in result.output
+        assert "--items" in result.output
+        assert "--spec" in result.output

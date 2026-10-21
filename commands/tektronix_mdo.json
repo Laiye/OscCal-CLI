@@ -134,6 +134,50 @@
                 ]
             ]
         },
+        "set_coupling": {
+            "name": "set_coupling",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":COUPling "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "DC",
+                    "AC",
+                    "GND"
+                ]
+            ]
+        },
+        "set_offset": {
+            "name": "set_offset",
+            "type": "write",
+            "commands_num": 2,
+            "args_num": 2,
+            "commands": [
+                "CH",
+                ":OFFSet "
+            ],
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ],
+                [
+                    "<float>"
+                ]
+            ]
+        },
         "set_trigger_source": {
             "name": "set_trigger_source",
             "type": "write",

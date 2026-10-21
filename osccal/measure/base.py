@@ -40,7 +40,15 @@ def ensure_output_off(run):
 
 class BaseCalibrator:
     def __init__(
-        self, inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe=None
+        self,
+        inst_osc,
+        inst_calibrator,
+        cmd_osc,
+        cmd_calibrator,
+        profile,
+        channel,
+        probe=None,
+        points=None,
     ):
         self.inst_osc = inst_osc
         self.inst_calibrator = inst_calibrator
@@ -49,6 +57,8 @@ class BaseCalibrator:
         self.profile = profile
         self.channel = str(channel)
         self.probe = probe
+        # 本轮该项目的校准点（由 core/points.py 按规范解析得到），不再是 Profile 里的点表。
+        self.points = list(points or [])
         self.comm_type = cmd_osc.get("type", "pyvisa")
         self.cal_type = cmd_calibrator.get("type", "pyvisa")
         self.results = []
@@ -95,10 +105,20 @@ class BaseCalibrator:
             self._write_osc("set_trigger_level", level)
 
     def _get_limits(self, item_name):
-        limits = self.profile.get("calibration_limits", {}).get(item_name, None)
-        if limits:
-            return (limits.get("lower", -2.0), limits.get("upper", 2.0))
+        """参考指标来自规范（specs/*.json），Profile 不再持有判据。"""
         return None
+
+    def _apply_impedance(self, label: str) -> None:
+        """把示波器与校准仪的输入阻抗同时切到 1 MΩ 或 50 Ω。
+
+        切换前先关输出，避免在校准仪输出有效电平时改变负载。
+        """
+        key = "imp_fif" if label == "50" else "imp_meg"
+        if label == "50" and not self.profile.get("imp_has_50", False):
+            raise ValueError("该机型不支持 50 Ω 输入阻抗")
+        self._write_calibrator("set_output", "OFF")
+        self.setup_impedance(key)
+        self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][key])
 
     def _setup_signal_impedance(self, shape, preferred_osc_impedance="1M"):
         rules = self.cmd_calibrator.get("impedance_rules", {})

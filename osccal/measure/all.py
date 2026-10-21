@@ -31,19 +31,31 @@ def run_items(
     channel,
     probe,
     items,
+    points_by_item=None,
     on_result=None,
 ):
-    """依次执行项目；存在未实现项目时直接报错，避免产出半套结果。"""
+    """依次执行项目；存在未实现项目时直接报错，避免产出半套结果。
+
+    `points_by_item` 是 {项目名: 校准点列表}，由 core/points.py 按规范解析得到。
+    """
     pending = pending_items(list(items))
     if pending:
         raise ItemNotImplementedError(f"项目尚未实现: {', '.join(pending)}")
 
+    planned = points_by_item or {}
     results: dict = {}
     for name in items:
         console.rule(f"[bold blue]{name}[/bold blue]")
         runner = RUNNERS[name]
         calibrator = runner(
-            inst_osc, inst_calibrator, cmd_osc, cmd_calibrator, profile, channel, probe
+            inst_osc,
+            inst_calibrator,
+            cmd_osc,
+            cmd_calibrator,
+            profile,
+            channel,
+            probe,
+            planned.get(name, []),
         )
         calibrator.run()
         rows = calibrator.get_results()
@@ -61,9 +73,10 @@ def run_all(
     profile,
     channel,
     probe=None,
+    points_by_item=None,
     on_result=None,
 ):
-    """按注册顺序执行全部项目。"""
+    """按注册顺序执行全部已实现项目。"""
     return run_items(
         inst_osc,
         inst_calibrator,
@@ -72,6 +85,7 @@ def run_all(
         profile,
         channel,
         probe,
-        ITEM_ORDER,
+        [name for name in ITEM_ORDER if name in RUNNERS],
+        points_by_item,
         on_result=on_result,
     )

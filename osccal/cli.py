@@ -316,8 +316,6 @@ def cli():
 @click.option("--resource-osc", type=click.STRING, help="示波器 VISA 资源地址")
 @click.option("--resource-cal", type=click.STRING, help="校准仪 VISA 资源地址")
 @click.option("--socket-osc", type=click.STRING, help="示波器 Socket 地址 (host:port)")
-@click.option("--bandwidth", type=click.FLOAT, default=None, help="示波器标称带宽 (MHz)")
-@click.option("--bd-step", type=click.FLOAT, default=None, help="带宽扫描步进 (MHz)")
 @click.option("--auto", is_flag=True, help="自动扫描 VISA 资源，根据 *IDN? 识别设备并匹配配置")
 @click.option("--log-scpi", is_flag=True, help="打印完整 SCPI 指令日志与失败统计")
 def calibrate(
@@ -331,14 +329,12 @@ def calibrate(
     resource_osc,
     resource_cal,
     socket_osc,
-    bandwidth,
-    bd_step,
     auto,
     log_scpi,
 ):
     """执行示波器校准流程"""
     from osccal.core import scpi_trace
-    from osccal.core.config_validation import validate_device_identity, validate_selection
+    from osccal.core.config_validation import validate_device_identity
     from osccal.core.storage import CalibrationRecording, configuration_snapshot, spec_record
 
     scpi_trace.reset()
@@ -541,49 +537,35 @@ def calibrate(
             if inst_osc is None:
                 raise click.ClickException("✗ 示波器连接失败")
 
-        from osccal.measure.all import run_all, run_items
+        from osccal.core.points import build_plan
+        from osccal.measure.all import run_items
+        from osccal.measure.registry import ITEM_ORDER, RUNNERS
 
         round_start_errors = 0
         while True:
             # 通道选择
             if channel is None:
-                channel = _select_channel(profile_data.get("channels", 4))
-            channel_list = [c.strip() for c in channel.split(",")]
+                channel = _select_channel(profile_data.get("channels", 2))
+            channel_list = [c.strip() for c in channel.split(",") if c.strip()]
 
             # 项目选择
             if items is None:
                 items = _select_items()
-            item_list = [i.strip() for i in items.split(",")]
+            item_list = [i.strip() for i in items.split(",") if i.strip()]
+            if "all" in item_list:
+                item_list = [name for name in ITEM_ORDER if name in RUNNERS]
+            if not item_list:
+                available = "、".join(sorted(RUNNERS)) or "无"
+                raise click.UsageError(f"没有可执行的项目（当前已实现: {available}）")
 
-            # 带宽参数（仅首次询问）
-            needs_bw = "all" in item_list or "bandwidth" in item_list
-            if needs_bw:
-                if bandwidth is None:
-                    console.print("\n[bold]示波器标称带宽:[/bold]")
-                    bandwidth = click.prompt("请输入 (MHz)", type=float, default=100.0)
-                if bd_step is None:
-                    console.print("\n[bold]带宽扫描步进:[/bold]")
-                    bd_step = click.prompt("请输入 (MHz)", type=float, default=5.0)
-            else:
-                if bandwidth is None:
-                    bandwidth = 100.0
-                if bd_step is None:
-                    bd_step = 5.0
+            unimplemented = [name for name in item_list if name not in RUNNERS]
+            if unimplemented:
+                available = "、".join(sorted(RUNNERS)) or "无"
+                raise click.UsageError(
+                    "以下项目尚未实现: " + "、".join(unimplemented) + f"\n当前已实现: {available}"
+                )
 
-            profile_data["bandwidth"] = bandwidth * 1e6
-            profile_data["bd_step"] = bd_step * 1e6
-
-            errors = validate_selection(
-                cmd_osc,
-                profile_data,
-                cmd_calibrator,
-                channel_list,
-                item_list,
-                probe,
-                bandwidth * 1e6,
-                bd_step * 1e6,
-            )
-            errors.extend(validate_device_identity(cmd_osc, idn_osc, "示波器指令集"))
+            errors = validate_device_identity(cmd_osc, idn_osc, "示波器指令集")
             errors.extend(validate_device_identity(profile_data, idn_osc, "示波器 Profile"))
             errors.extend(validate_device_identity(cmd_calibrator, idn_cal, "校准仪"))
             if inst_osc is inst_calibrator or (
@@ -592,6 +574,22 @@ def calibrate(
                 errors.append("示波器和校准仪不能使用同一设备资源")
             if errors:
                 raise click.UsageError("执行前检查失败：\n" + "\n".join(errors))
+
+            # 按规范解析本轮实际要跑的点（每个通道一份），并提示被跳过的点。
+            points_by_channel: dict[str, dict[str, list]] = {}
+            skipped_notes: list[dict] = []
+            for ch in channel_list:
+                plan = build_plan(spec_data, profile_data, cmd_calibrator, probe, [ch])
+                points_by_channel[ch] = {item["name"]: item["points"] for item in plan["items"]}
+                for item in plan["items"]:
+                    if item["name"] not in item_list:
+                        continue
+                    for skip in item["skipped"]:
+                        skipped_notes.append(
+                            {"item": item["title"], "reason": skip.get("reason", "")}
+                        )
+            for note in skipped_notes:
+                console.print(f"[yellow]·[/yellow] {note['item']} 跳过：{note['reason']}")
 
             metadata = {
                 "timestamp": datetime.now().isoformat(),
@@ -605,6 +603,12 @@ def calibrate(
                 "simulated": False,
                 "limits": spec_data.get("reference_limits", {}) if spec_data else {},
                 "spec": spec_record(spec_data, spec_filepath) if spec_data else {},
+                "bandwidth_hz": profile_data.get("bandwidth_hz", 0),
+                "points_plan": {
+                    ch: {name: len(points) for name, points in items_map.items()}
+                    for ch, items_map in points_by_channel.items()
+                },
+                "skipped_points": skipped_notes,
                 "status": "in_progress",
                 "requested_items": item_list,
                 "item_status": {},
@@ -630,29 +634,18 @@ def calibrate(
                         )
                         click.prompt("  按回车继续", default="", show_default=False)
 
-                    if "all" in item_list:
-                        run_all(
-                            inst_osc,
-                            inst_calibrator,
-                            cmd_osc,
-                            cmd_calibrator,
-                            profile_data,
-                            ch,
-                            probe,
-                            on_result=record_result,
-                        )
-                    else:
-                        run_items(
-                            inst_osc,
-                            inst_calibrator,
-                            cmd_osc,
-                            cmd_calibrator,
-                            profile_data,
-                            ch,
-                            probe,
-                            item_list,
-                            on_result=record_result,
-                        )
+                    run_items(
+                        inst_osc,
+                        inst_calibrator,
+                        cmd_osc,
+                        cmd_calibrator,
+                        profile_data,
+                        ch,
+                        probe,
+                        item_list,
+                        points_by_channel.get(ch, {}),
+                        on_result=record_result,
+                    )
                 metadata["status"] = (
                     "completed_with_errors" if metadata["failures"] else "completed"
                 )
