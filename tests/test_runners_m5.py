@@ -53,7 +53,7 @@ def build(cls, configs, points):
     )
     instance.init_devices = lambda: None
     instance.setup_channel = lambda: None
-    instance.setup_measurement = lambda key: None
+    instance.setup_measurement = lambda key, trigger=True: None
     return instance
 
 
@@ -253,7 +253,7 @@ class TestDeltaV:
 
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
         instance = build(DeltaVCalibrator, configs, points)
-        instance._read_meas = lambda key: 0.6464
+        instance._read_meas = lambda key, trigger=True: 0.6464
         instance.run()
         record = instance.results[0]
         assert record["error_pct"] == pytest.approx(1.0, abs=1e-6)
@@ -264,7 +264,7 @@ class TestDeltaV:
 
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
         instance = build(DeltaVCalibrator, configs, points)
-        instance._read_meas = lambda key: 0.64
+        instance._read_meas = lambda key, trigger=True: 0.64
         instance.run()
         assert any("SHAP SQU" in cmd for cmd in instance.inst_calibrator.written)
 
@@ -277,7 +277,7 @@ class TestRiseTime:
         instance = build(RiseTimeCalibrator, configs, points)
         # 9500B 输出下沿脉冲，示波器侧对应 FALL 测量项
         readings = {"meas_risetime": 700e-12, "meas_pos_overshoot": 2.5}
-        instance._read_meas = lambda key: readings[key]
+        instance._read_meas = lambda key, trigger=True: readings[key]
         instance.run()
         record = instance.results[0]
         assert record["rise_time_s"] == pytest.approx(700e-12)
@@ -290,7 +290,7 @@ class TestRiseTime:
 
         points = [{"channel": "1", "edge_rise_time_s": 500e-12}]
         instance = build(RiseTimeCalibrator, configs, points)
-        instance._read_meas = lambda key: 1e-9
+        instance._read_meas = lambda key, trigger=True: 1e-9
         instance.run()
         written = instance.inst_calibrator.written
         assert any("SHAP EDGE" in cmd for cmd in written)

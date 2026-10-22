@@ -44,7 +44,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
 
-        period_measured = self._read_meas("meas_period")
+        period_measured = self._read_meas_value("meas_period")
         time_measured = PERIODS_M * period_measured
         time_standard = PERIODS_M * period_std
         error_pct = (

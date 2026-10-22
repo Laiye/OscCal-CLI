@@ -47,7 +47,7 @@ class FreqResponseCalibrator(BaseCalibrator):
         self._set_timebase(self._timebase_for(frequency_hz))
         self._write_calibrator("set_freq", frequency_hz)
         time.sleep(0.5)
-        return self._read_meas("meas_amp") * self._get_meas_amp_scale()
+        return self._read_meas_value("meas_amp") * self._get_meas_amp_scale()
 
     @staticmethod
     def bandwidth_from_response(

@@ -59,7 +59,7 @@ def build(cls, configs, points):
     )
     instance.init_devices = lambda: None
     instance.setup_channel = lambda: None
-    instance.setup_measurement = lambda key: None
+    instance.setup_measurement = lambda key, trigger=True: None
     return instance
 
 
@@ -100,7 +100,7 @@ class TestTimebaseConsistency:
     def test_inconsistent_axis_marks_fit_not_applicable(self, configs):
         # 实机现象：实际采样间隔约为标称的 8.5 倍（抽点后仍按屏幕标称给 XINcr）
         instance = build(TimebaseErrorCalibrator, configs, self._point())
-        instance._read_meas = lambda key: 300e3
+        instance._read_meas = lambda key, trigger=True: 300e3
         instance._read_waveform = lambda samples, fresh=True: sine_wave(
             300e3, 0.8e-9, samples=4000, true_increment=6.8e-9
         )
@@ -115,7 +115,7 @@ class TestTimebaseConsistency:
 
     def test_consistent_axis_still_produces_fit(self, configs):
         instance = build(TimebaseErrorCalibrator, configs, self._point())
-        instance._read_meas = lambda key: 300e3
+        instance._read_meas = lambda key, trigger=True: 300e3
         instance._read_waveform = lambda samples, fresh=True: sine_wave(300e3, 0.8e-9, samples=4000)
         instance.run()
 
@@ -135,7 +135,7 @@ class TestTimebaseError:
             }
         ]
         instance = build(TimebaseErrorCalibrator, configs, points)
-        instance._read_meas = lambda key: 3000.0 * (1 - 2e-6)  # 时基偏慢 2 ppm
+        instance._read_meas = lambda key, trigger=True: 3000.0 * (1 - 2e-6)  # 时基偏慢 2 ppm
         instance._read_waveform = lambda samples, fresh=True: sine_wave(3000.0, 1e-6)
         instance.run()
 
@@ -153,7 +153,7 @@ class TestTimebaseError:
             }
         ]
         instance = build(TimebaseErrorCalibrator, configs, points)
-        instance._read_meas = lambda key: 3000.0
+        instance._read_meas = lambda key, trigger=True: 3000.0
         # 实际采样间隔比标称快 0.1% → 拟合频率偏高 → δT ≈ −1e-3
         instance._read_waveform = lambda samples, fresh=True: sine_wave(
             3000.0, 1e-6, true_increment=1.001e-6
@@ -168,7 +168,7 @@ class TestTimebaseError:
     def test_both_methods_always_recorded_when_waveform_available(self, configs):
         points = [{"channel": "1", "timebase_s_per_div": 1e-4, "signal_freq_hz": 3000.0}]
         instance = build(TimebaseErrorCalibrator, configs, points)
-        instance._read_meas = lambda key: 3000.0
+        instance._read_meas = lambda key, trigger=True: 3000.0
         instance._read_waveform = lambda samples, fresh=True: sine_wave(3000.0, 1e-6)
         instance.run()
         record = instance.results[0]
@@ -195,8 +195,8 @@ class TestTimebaseError:
         )
         instance.init_devices = lambda: None
         instance.setup_channel = lambda: None
-        instance.setup_measurement = lambda key: None
-        instance._read_meas = lambda key: 3000.0
+        instance.setup_measurement = lambda key, trigger=True: None
+        instance._read_meas = lambda key, trigger=True: 3000.0
         instance.run()
         assert instance.results[0]["fit_frequency_hz"] is None
 
@@ -212,7 +212,7 @@ class TestDeltaTime:
             }
         ]
         instance = build(DeltaTimeCalibrator, configs, points)
-        instance._read_meas = lambda key: 3.96e-4  # 单周期读数偏低 1%
+        instance._read_meas = lambda key, trigger=True: 3.96e-4  # 单周期读数偏低 1%
         instance.run()
 
         record = instance.results[0]
@@ -231,7 +231,7 @@ class TestDeltaTime:
             }
         ]
         instance = build(DeltaTimeCalibrator, configs, points)
-        instance._read_meas = lambda key: 4e-4
+        instance._read_meas = lambda key, trigger=True: 4e-4
         instance.run()
         cal = instance.inst_calibrator
         assert any("SHAP SQU" in cmd for cmd in cal.written)

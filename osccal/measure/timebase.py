@@ -85,7 +85,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
 
-        freq_read = self._read_meas("meas_freq")
+        freq_read = self._read_meas_value("meas_freq")
         rel_error = (freq_std - freq_read) / freq_std
 
         fit_frequency = None

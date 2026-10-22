@@ -42,7 +42,7 @@ class DeltaVCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
 
-        measured = self._read_meas("meas_amp") * self._get_meas_amp_scale()
+        measured = self._read_meas_value("meas_amp") * self._get_meas_amp_scale()
         error_pct = 100.0 * (measured - std_value) / std_value if std_value else float("nan")
         return {
             "channel": self.channel,

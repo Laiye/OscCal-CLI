@@ -215,6 +215,13 @@ class BaseCalibrator:
                 return value, spread, waited
         return value, spread, waited
 
+    def _read_meas_value(self, meas_keyword, trigger: bool = True) -> float:
+        """读数并等待其收敛，返回收敛后的数值。
+
+        用于对"标准源建立时间"敏感的测量（幅度、时延、频率等标量读数）。
+        """
+        return self._read_meas_stable(meas_keyword, trigger=trigger)[0]
+
     def _ensure_free_running(self, wait_seconds: float = 0.5) -> None:
         """让示波器自由连续运行（无触发需求），用于直流类测量。"""
         actions = self.cmd_osc.get("actions", {})
