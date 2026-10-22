@@ -1,10 +1,18 @@
-"""直流偏置（JJF 1057-2026 7.5.1 方法一）。
+"""直流偏置（JJF 1057-2026 7.5.2 方法二）。
 
-规范方法：设定直流偏置为 0、激励为 0，读电压平均值为**零点偏置误差**；
-再设偏置 d₀、激励 v₀，读 d_r，则偏置误差 δd = d₀ − d_r，
-偏置增益 G_d = d_r / d₀。参考指标：δd 不超过满量程的 ±1%。
+实机结论：示波器的"电压平均值"测量**已对偏置做过补偿**，直接用 MEAN 读数无法
+反映偏置误差（实测偏置 0 V 与 0.2 V 时拟合截距都是约 3 mV）。规范 7.5.2 要求
+"按 7.4.3 操作"——取的是**直流波形采样数据** y_ij，即未经偏置补偿的原始码值：
 
-取点策略为按垂直档位逐档扫描（1 MΩ），d₀ 取 2 格对应的电压。
+    v_raw = (码值 − YOFf) × YMUlt        （不叠加 YZEro，它是示波器的补偿项）
+
+于是 v_raw ≈ E − d₀ − ε，线性拟合截距 b = −(d₀ + ε)，从而
+
+    d_c = −b = d₀ + ε         偏置示值
+    Δd  = d_c − d₀ = ε        偏置误差（式 9）
+    G_d = d_c / d₀            偏置增益（式 10，d₀ ≠ 0 时）
+
+本实现：先在 d₀ = 0 下扫一遍得到零点误差，再在 d₀ = 2 格下扫一遍得到偏置示值。
 """
 
 import time
@@ -13,45 +21,91 @@ from rich.progress import Progress
 
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
-#: 偏置标称值取 2 格（规范未固定具体值，按屏格的固定比例便于复现）。
-OFFSET_DIVISIONS = 2.0
+#: 偏置设定值：2 格。
+OFFSET_DIV = 2.0
+#: 扫描范围：±2 格，保证 d₀ 与 E 叠加后仍在屏内。
+SWEEP_HALF_DIV = 2.0
+#: 扫描点数（规范取 m = 16）。
+SWEEP_POINTS = 16
+#: 每个电平的采集点数（规范要求 n ≥ 1000）。
+SWEEP_SAMPLES = 1000
+#: 每个电平的建立时间。
+SETTLE_SECONDS = 0.6
 
 
 class DcOffsetCalibrator(BaseCalibrator):
-    """直流偏置：零点误差 + 偏置增益。"""
+    """直流偏置：按 7.5.2（原始采样值 + 线性拟合）评定零点与偏置误差。"""
 
-    title = "直流偏置（7.5.1 方法一）"
+    title = "直流偏置（7.5.2 方法二）"
+
+    def _set_offset(self, volts: float) -> None:
+        if "set_offset" in self.cmd_osc.get("actions", {}):
+            self._write_osc("set_offset", self.channel, volts)
+            time.sleep(0.3)
+
+    def _raw_mean(self) -> float:
+        """读回波形并求原始码值的均值（不叠加偏置补偿项 YZEro）。"""
+        # 直流信号没有边沿，不能走"单次采集等触发"（每次会白等 5 s 超时）
+        self._ensure_free_running(0.3)
+        wave = self._read_waveform(SWEEP_SAMPLES, fresh=False)
+        preamble = wave.preamble
+        values = [(code - preamble.y_off) * preamble.y_mult for code in wave.codes]
+        return sum(values) / len(values)
+
+    def _sweep(self, scale: float) -> tuple[float, float]:
+        """在给定量程内扫 16 个直流电平，返回 (斜率 G, 截距 b)。"""
+        half = SWEEP_HALF_DIV * scale
+        step = 2.0 * half / SWEEP_POINTS
+        self.setup_measurement("meas_mean")
+
+        inputs: list[float] = []
+        readings: list[float] = []
+        for index in range(SWEEP_POINTS):
+            level = -half + (index + 0.5) * step
+            self._write_calibrator("set_shap", "DC")
+            self._write_calibrator("set_volt", level)
+            self._write_calibrator("set_output", "ON")
+            time.sleep(SETTLE_SECONDS)
+            inputs.append(level)
+            readings.append(self._raw_mean())
+
+        count = len(inputs)
+        mean_x = sum(inputs) / count
+        mean_y = sum(readings) / count
+        numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(inputs, readings, strict=True))
+        denominator = sum((x - mean_x) ** 2 for x in inputs)
+        gain = numerator / denominator if denominator else float("nan")
+        intercept = mean_y - gain * mean_x
+        return gain, intercept
 
     def _measure_point(self, point: dict) -> dict:
         scale = float(point["scale"])
         impedance = point.get("impedance", "1M")
         vertical_div = float(self.profile.get("vertical_div", 8))
         full_scale = scale * vertical_div
+        offset_nominal = OFFSET_DIV * scale
 
         self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, scale)
         self._write_osc("set_coupling", self.channel, "DC")
         self._set_timebase(1e-3)
-        if "set_vertical_position" in self.cmd_osc["actions"]:
+        if "set_vertical_position" in self.cmd_osc.get("actions", {}):
             self._write_osc("set_vertical_position", self.channel, 0.0)
+        if "set_record_length" in self.cmd_osc.get("actions", {}):
+            self._write_osc("set_record_length", SWEEP_SAMPLES)
 
-        # ① 零点：偏置 0、激励 0
-        self._write_osc("set_offset", self.channel, 0.0)
-        self._write_calibrator("set_shap", "DC")
-        self._write_calibrator("set_volt", 0.0)
-        self._write_calibrator("set_output", "ON")
-        time.sleep(1.0)
-        zero_reading = self._read_meas("meas_mean")
+        # 零点：d₀ = 0 时原始码值拟合出的截距即零点误差
+        self._set_offset(0.0)
+        gain_zero, intercept_zero = self._sweep(scale)
+        zero_reading = -intercept_zero
 
-        # ② 偏移点：偏置 d₀、激励 0，读 d_r
-        offset_nominal = OFFSET_DIVISIONS * scale
-        self._write_osc("set_offset", self.channel, offset_nominal)
-        self._nudge_trigger_level(scale)
-        time.sleep(1.0)
-        offset_measured = self._read_meas("meas_mean")
+        # 偏置：d₀ ≠ 0 时截距 = −(d₀ + ε)
+        self._set_offset(offset_nominal)
+        gain_offset, intercept_offset = self._sweep(scale)
+        offset_measured = -intercept_offset
+        offset_error = offset_measured - offset_nominal
+        gain_d = offset_measured / offset_nominal if offset_nominal else float("nan")
 
-        offset_error = offset_nominal - offset_measured
-        gain = offset_measured / offset_nominal if offset_nominal else float("nan")
         return {
             "channel": self.channel,
             "impedance": impedance,
@@ -62,7 +116,9 @@ class DcOffsetCalibrator(BaseCalibrator):
             "offset_measured_v": offset_measured,
             "offset_error_v": offset_error,
             "error_pct": 100.0 * offset_error / full_scale if full_scale else float("nan"),
-            "gain": gain,
+            "gain": gain_d,
+            "dc_gain_zero": gain_zero,
+            "dc_gain_offset": gain_offset,
         }
 
     @ensure_output_off
@@ -81,14 +137,13 @@ class DcOffsetCalibrator(BaseCalibrator):
             [
                 {"name": "序号"},
                 {"name": "通道", "justify": "center"},
+                {"name": "阻抗", "justify": "center"},
                 {"name": "挡位(V/div)"},
-                {"name": "满量程(V)"},
-                {"name": "零点读数(V)"},
+                {"name": "零点读数(mV)"},
                 {"name": "偏置标称(V)"},
                 {"name": "偏置实测(V)"},
-                {"name": "偏置误差(V)"},
-                {"name": "误差(%FS)"},
-                {"name": "偏置增益 G"},
+                {"name": "偏置误差(mV)"},
+                {"name": "偏置增益"},
             ],
         )
 
@@ -102,14 +157,13 @@ class DcOffsetCalibrator(BaseCalibrator):
                     [
                         index,
                         f"CH{self.channel}",
+                        "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                         f"{record['scale']:g}",
-                        f"{record['full_scale_v']:.6g}",
-                        f"{record['zero_reading_v']:.6g}",
-                        f"{record['offset_nominal_v']:.6g}",
-                        f"{record['offset_measured_v']:.6g}",
-                        f"{record['offset_error_v']:.6g}",
-                        f"{record['error_pct']:.3f}",
-                        f"{record['gain']:.6f}",
+                        f"{record['zero_reading_v'] * 1e3:+.2f}",
+                        f"{record['offset_nominal_v']:.4g}",
+                        f"{record['offset_measured_v']:.4f}",
+                        f"{record['offset_error_v'] * 1e3:+.2f}",
+                        f"{record['gain']:.4f}",
                     ],
                 )
                 progress.update(task, advance=1)

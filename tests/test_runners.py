@@ -100,26 +100,27 @@ class TestDcGainMethodTwo:
 class TestDcOffset:
     def test_zero_and_offset_reading(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
-        readings = iter([0.0, 0.2])  # 零点读数、偏置实测（标称 2 格 = 0.2 V）
-        instance, _, _ = build(
-            DcOffsetCalibrator, configs, points, lambda key, trigger=True: next(readings)
-        )
+        instance, _, _ = build(DcOffsetCalibrator, configs, points, lambda key, trigger=True: 0.0)
+        # 第一次扫描 d₀=0（截距 0 → 零点读数 0），第二次 d₀=0.2 V（截距 −0.2 → 示值 0.2）
+        sweeps = iter([(1.0, 0.0), (1.0, -0.2)])
+        instance._sweep = lambda scale: next(sweeps)
         instance.run()
 
         record = instance.results[0]
         assert record["offset_nominal_v"] == pytest.approx(0.2)
-        assert record["offset_error_v"] == pytest.approx(0.0)
+        assert record["offset_measured_v"] == pytest.approx(0.2)
+        assert record["offset_error_v"] == pytest.approx(0.0, abs=1e-12)
         assert record["gain"] == pytest.approx(1.0)
         assert record["full_scale_v"] == pytest.approx(0.8)
 
     def test_offset_error_normalised_to_full_scale(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
-        readings = iter([0.0, 0.208])  # 偏置偏高 8 mV，满量程 0.8 V → 1 %
-        instance, _, _ = build(
-            DcOffsetCalibrator, configs, points, lambda key, trigger=True: next(readings)
-        )
+        instance, _, _ = build(DcOffsetCalibrator, configs, points, lambda key, trigger=True: 0.0)
+        # 偏置实测 0.208 V，标称 0.2 V → 误差 +8 mV，满量程 0.8 V → +1%
+        sweeps = iter([(1.0, 0.0), (1.0, -0.208)])
+        instance._sweep = lambda scale: next(sweeps)
         instance.run()
-        assert instance.results[0]["error_pct"] == pytest.approx(-1.0)
+        assert instance.results[0]["error_pct"] == pytest.approx(1.0)
 
 
 class TestFreqResponse:

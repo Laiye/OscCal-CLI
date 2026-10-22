@@ -121,14 +121,14 @@ class TestCalibrateFlow:
     def test_two_items_share_one_round(self, fake_env):
         result = CliRunner().invoke(
             cli,
-            _args("--channel", "1", "--items", "dc_gain,dc_offset"),
+            _args("--channel", "1", "--items", "dc_gain,delta_v"),
             input="n\n",
         )
         assert result.exit_code == 0, result.output
-        assert set(fake_env["results"]) == {"dc_gain", "dc_offset"}
+        assert set(fake_env["results"]) == {"dc_gain", "delta_v"}
         plan = fake_env["metadata"]["points_plan"]["1"]
         assert plan["dc_gain"] == 6
-        assert plan["dc_offset"] == 4
+        assert plan["delta_v"] == 4
 
     def test_json_record_is_serialisable(self, fake_env):
         result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "dc_gain"), input="n\n")
