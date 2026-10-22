@@ -158,8 +158,31 @@ class BaseCalibrator:
             )
 
         self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][imp_key])
-
+        self._verify_impedance(actual_osc_imp)
         return imp_key
+
+    def _verify_impedance(self, label: str) -> None:
+        """回读两端阻抗，发现不匹配立即告警。
+
+        实机依据：50 Ω 输出接 1 MΩ 输入会把幅度读数放大到 2 倍（0.5 Vpp 读成
+        1.0040 V），1 MΩ 输出接 50 Ω 输入则读成 0.66 倍。这类状态错误不会产生
+        SCPI 错误码，必须主动核对。
+        """
+        expected_meg = label != "50"
+        want = "1 MΩ" if expected_meg else "50 Ω"
+        if "query_impedance" in self.cmd_osc.get("actions", {}):
+            raw = str(self._query_osc("query_impedance")).upper()
+            if ("MEG" in raw) != expected_meg:
+                console.print(f"[red]⚠ 示波器阻抗与设定不符（应 {want}）：{raw.strip()}[/red]")
+        if "query_impedance" in self.cmd_calibrator.get("actions", {}):
+            raw = str(self._query_calibrator("query_impedance")).strip()
+            tokens = raw.replace("\n", " ").split()
+            try:
+                value = float(tokens[-1])
+            except (ValueError, IndexError):
+                return
+            if (value > 55) != expected_meg:
+                console.print(f"[red]⚠ 校准仪阻抗与设定不符（应 {want}）：{raw}[/red]")
 
     def _get_probe_edge_rise_times(self):
         probe = self.probe or "9550"

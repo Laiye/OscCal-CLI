@@ -32,6 +32,7 @@ class DeltaTimeCalibrator(BaseCalibrator):
         actual_scale = self._set_timebase(scale)
         scale_used = actual_scale if actual_scale else scale
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
+        self._apply_impedance("1M")
         self._write_osc("set_coupling", self.channel, "DC")
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)

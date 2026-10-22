@@ -91,6 +91,7 @@ class RandomNoiseCalibrator(BaseCalibrator):
 
         self._write_calibrator("set_output", "OFF")
         self._write_osc("set_vertical_scale", self.channel, scale)
+        self._apply_impedance("1M")
         self._write_osc("set_coupling", self.channel, "DC")
         # 规范 7.13 要求"采样速率最高"。不能简单压到最快时基：记录长度固定时，
         # 时基太快会让记录只覆盖极短时间、示波器仍按较低速率采样。正确做法是按

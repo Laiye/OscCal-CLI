@@ -74,6 +74,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                 f"{self._format_time(actual_scale)}/div（该机型没有前者）[/yellow]"
             )
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
+        self._apply_impedance("1M")
         self._write_osc("set_coupling", self.channel, "DC")
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)

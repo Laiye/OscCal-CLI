@@ -2,8 +2,13 @@
     "name": "9500B",
     "description": "Fluke 9500B Oscilloscope Calibrator with active probe heads",
     "type": "pyvisa",
-    "series": ["9500B"],
-    "models": ["9500", "9500B"],
+    "series": [
+        "9500B"
+    ],
+    "models": [
+        "9500",
+        "9500B"
+    ],
     "keyword": {
         "imp_fif": "50",
         "imp_meg": "10000"
@@ -13,57 +18,121 @@
             "name": "9560",
             "max_frequency": "6.4 GHz",
             "max_frequency_hz": 6400000000,
-            "edge_rise_times": [70E-12]
+            "edge_rise_times": [
+                7e-11
+            ]
         },
         "9550": {
             "name": "9550",
             "description": "Fast Edge Head",
             "max_frequency_hz": 0,
-            "edge_rise_times": [25E-12]
+            "edge_rise_times": [
+                2.5e-11
+            ]
         },
         "9530": {
             "name": "9530",
             "max_frequency": "600 MHz",
             "max_frequency_hz": 600000000,
-            "edge_rise_times": [150E-12, 500E-12]
+            "edge_rise_times": [
+                1.5e-10,
+                5e-10
+            ]
         }
     },
     "impedance_rules": {
         "9560": {
-            "DC": ["1M", "50"],
-            "SQU": ["1M", "50"],
-            "MARK": ["50"],
-            "SIN": ["50"],
-            "EDGE": ["50"]
+            "DC": [
+                "1M",
+                "50"
+            ],
+            "SQU": [
+                "1M",
+                "50"
+            ],
+            "MARK": [
+                "50"
+            ],
+            "SIN": [
+                "50"
+            ],
+            "EDGE": [
+                "50"
+            ]
         },
         "9550": {
-            "EDGE": ["50"]
+            "EDGE": [
+                "50"
+            ]
         },
         "9530": {
-            "DC": ["1M", "50"],
-            "SQU": ["1M", "50"],
-            "MARK": ["1M", "50"],
-            "SIN": ["1M", "50"],
-            "EDGE": ["1M", "50"]
+            "DC": [
+                "1M",
+                "50"
+            ],
+            "SQU": [
+                "1M",
+                "50"
+            ],
+            "MARK": [
+                "1M",
+                "50"
+            ],
+            "SIN": [
+                "1M",
+                "50"
+            ],
+            "EDGE": [
+                "1M",
+                "50"
+            ]
         }
     },
     "output_limits": {
         "description": "各波形下的输出能力上限，供 point resolver 过滤不可实现的校准点；数值取自 9500B 规格表",
         "DC": {
-            "1M": { "min_v": 0.001, "max_v": 200 },
-            "50": { "min_v": 0.001, "max_v": 5 }
+            "1M": {
+                "min_v": 0.001,
+                "max_v": 200
+            },
+            "50": {
+                "min_v": 0.001,
+                "max_v": 5
+            }
         },
         "SQU": {
-            "1M": { "min_vpp": 4e-05, "max_vpp": 200, "min_freq_hz": 10, "max_freq_hz": 10000 },
-            "50": { "min_vpp": 4e-05, "max_vpp": 5, "min_freq_hz": 10, "max_freq_hz": 10000 }
+            "1M": {
+                "min_vpp": 4e-05,
+                "max_vpp": 200,
+                "min_freq_hz": 10,
+                "max_freq_hz": 10000
+            },
+            "50": {
+                "min_vpp": 4e-05,
+                "max_vpp": 5,
+                "min_freq_hz": 10,
+                "max_freq_hz": 10000
+            }
         },
         "SIN": {
-            "1M": { "min_freq_hz": 0.1, "max_freq_hz": 600000000 },
-            "50": { "min_freq_hz": 0.1, "max_freq_hz": 600000000 }
+            "1M": {
+                "min_freq_hz": 0.1,
+                "max_freq_hz": 600000000
+            },
+            "50": {
+                "min_freq_hz": 0.1,
+                "max_freq_hz": 600000000
+            }
         },
         "EDGE": {
-            "1M": { "min_vpp": 0.005, "max_vpp": 3 },
-            "50": { "min_vpp": 0.005, "max_vpp": 3 }
+            "1M": {
+                "min_vpp": 0.005,
+                "max_vpp": 3
+            },
+            "50": {
+                "min_vpp": 0.005,
+                "max_vpp": 3
+            }
         },
         "amplitude_accuracy": {
             "DC_1M": "±(0.025% + 25 μV)",
@@ -80,7 +149,9 @@
             "type": "write",
             "commands_num": 1,
             "args_num": 0,
-            "commands": ["*RST"],
+            "commands": [
+                "*RST"
+            ],
             "args": []
         },
         "initialize": {
@@ -88,7 +159,9 @@
             "type": "write",
             "commands_num": 1,
             "args_num": 0,
-            "commands": ["*CLS;*RST"],
+            "commands": [
+                "*CLS;*RST"
+            ],
             "args": []
         },
         "set_load_func": {
@@ -96,15 +169,24 @@
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["CONF:"],
-            "args": [["RES", "CAP"]]
+            "commands": [
+                "CONF:"
+            ],
+            "args": [
+                [
+                    "RES",
+                    "CAP"
+                ]
+            ]
         },
         "query_load_func": {
             "name": "query_load_func",
             "type": "query",
             "commands_num": 1,
             "args_num": 0,
-            "commands": ["CONF?"],
+            "commands": [
+                "CONF?"
+            ],
             "args": []
         },
         "query_load": {
@@ -112,7 +194,9 @@
             "type": "query",
             "commands_num": 1,
             "args_num": 0,
-            "commands": ["READ?"],
+            "commands": [
+                "READ?"
+            ],
             "args": []
         },
         "set_shap": {
@@ -120,71 +204,138 @@
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:SCOP:SHAP "],
-            "args": [["SIN", "SQU", "MARK", "DC"]]
+            "commands": [
+                "SOUR:SCOP:SHAP "
+            ],
+            "args": [
+                [
+                    "SIN",
+                    "SQU",
+                    "MARK",
+                    "DC"
+                ]
+            ]
         },
         "set_freq": {
             "name": "set_freq",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:FREQ "],
-            "args": [["<float>"]]
+            "commands": [
+                "SOUR:FREQ "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
         },
         "set_volt": {
             "name": "set_volt",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:VOLT "],
-            "args": [["<float>"]]
+            "commands": [
+                "SOUR:VOLT "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
         },
         "set_output": {
             "name": "set_output",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["OUTP "],
-            "args": [["ON", "OFF"]]
+            "commands": [
+                "OUTP "
+            ],
+            "args": [
+                [
+                    "ON",
+                    "OFF"
+                ]
+            ]
         },
         "set_impedance": {
             "name": "set_impedance",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["ROUT:SIGN:IMP "],
-            "args": [["50", "10000"]]
+            "commands": [
+                "ROUT:SIGN:IMP "
+            ],
+            "args": [
+                [
+                    "50",
+                    "10000"
+                ]
+            ]
         },
         "set_squ_polarity": {
             "name": "set_squ_polarity",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:PAR:SQU:POL "],
-            "args": [["POS", "NEG", "SYMM"]]
+            "commands": [
+                "SOUR:PAR:SQU:POL "
+            ],
+            "args": [
+                [
+                    "POS",
+                    "NEG",
+                    "SYMM"
+                ]
+            ]
         },
         "set_mark_period": {
             "name": "set_mark_period",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:PER "],
-            "args": [["<float>"]]
+            "commands": [
+                "SOUR:PER "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
         },
         "set_edge_speed": {
             "name": "set_edge_speed",
             "type": "write",
             "commands_num": 1,
             "args_num": 1,
-            "commands": ["SOUR:PAR:EDGE:SPE "],
-            "args": [["<float>"]]
+            "commands": [
+                "SOUR:PAR:EDGE:SPE "
+            ],
+            "args": [
+                [
+                    "<float>"
+                ]
+            ]
         },
         "query_head_type": {
             "name": "query_head_type",
             "type": "query",
             "commands_num": 1,
             "args_num": 0,
-            "commands": ["ROUT:FITT? CH1"],
+            "commands": [
+                "ROUT:FITT? CH1"
+            ],
+            "args": []
+        },
+        "query_impedance": {
+            "name": "query_impedance",
+            "type": "query",
+            "commands_num": 1,
+            "args_num": 0,
+            "commands": [
+                "ROUT:SIGN:IMP?"
+            ],
             "args": []
         }
     }
