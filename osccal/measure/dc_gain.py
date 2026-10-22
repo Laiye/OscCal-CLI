@@ -72,8 +72,12 @@ class DcGainCalibrator(BaseCalibrator):
         gain = (read_high - read_low) / (level_high - level_low)
         return gain, 100.0 * (gain - 1.0)
 
-    def _method_two(self, std_value: float) -> tuple[float, float]:
-        """方法二：方波幅度法（沿用已验证实现）。"""
+    def _method_two(self, std_value: float) -> tuple[float, float, float, float]:
+        """方法二：方波幅度法。
+
+        切换函数后幅度需要秒级建立，这里用"读数收敛"代替固定延时：
+        返回 (增益, 误差%, 已等待秒数, 两次读数相对差%)。
+        """
         self.setup_measurement("meas_amp")
         self._write_calibrator("set_shap", "SQU")
         # 必须是双极性对称波：单极性（0~V）时波形顶部会超出屏幕被削顶
@@ -81,10 +85,10 @@ class DcGainCalibrator(BaseCalibrator):
         self._write_calibrator("set_freq", 1000.0)
         self._write_calibrator("set_volt", std_value)
         self._write_calibrator("set_output", "ON")
-        time.sleep(1.0)
-        measured = self._read_meas("meas_amp") * self._get_meas_amp_scale()
+        measured, spread_pct, waited = self._read_meas_stable("meas_amp")
+        measured *= self._get_meas_amp_scale()
         gain = measured / std_value if std_value else float("nan")
-        return gain, 100.0 * (gain - 1.0)
+        return gain, 100.0 * (gain - 1.0), waited, spread_pct
 
     def _method_three(self, scale: float, vertical_div: float) -> tuple[float | None, float | None]:
         """方法三：量程内 m 点最小二乘，返回 (G, 截距 d)。"""
@@ -128,7 +132,7 @@ class DcGainCalibrator(BaseCalibrator):
         # 方法二放在最前：它依赖校准仪的方波状态最"干净"。实机发现若先跑直流类
         # 方法（一/三），随后的方波幅度读数会系统性偏高 1.9%~5.0%（且正好是
         # 0.625% 的整数倍，属量化台阶上的偏差）。
-        gain2, error2 = self._method_two(std_value)
+        gain2, error2, settle_s, spread2 = self._method_two(std_value)
         gain1, error1 = self._method_one(scale, vertical_div)
         gain3, intercept3 = self._method_three(scale, vertical_div)
 
@@ -145,6 +149,8 @@ class DcGainCalibrator(BaseCalibrator):
             "gain_m3": gain3,
             "error_m3_pct": None if gain3 is None else 100.0 * (gain3 - 1.0),
             "intercept_m3_v": intercept3,
+            "settle_s_m2": settle_s,
+            "read_spread_m2_pct": spread2,
         }
 
     @ensure_output_off

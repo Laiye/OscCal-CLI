@@ -186,6 +186,35 @@ class BaseCalibrator:
         self._run_single_acquisition()
         return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
 
+    def _read_meas_stable(
+        self,
+        meas_keyword,
+        *,
+        tolerance: float = 0.001,
+        interval: float = 0.5,
+        max_wait: float = 6.0,
+        trigger: bool = True,
+    ) -> tuple[float, float, float]:
+        """连读两次，直到相对变化小于 tolerance 才接受读数。
+
+        实机依据：标准源改变输出函数后，幅度需要约 2 s 才建立（0.5 s 时只测到
+        预期幅度的 3%、1.0 s 时 49%、2.0 s 才稳定）。固定延时既不保险也不通用，
+        改用"读数收敛"作判据：返回 (读数, 两次读数相对差百分比, 已等待秒数)。
+        """
+        value = self._read_meas(meas_keyword, trigger=trigger)
+        waited = 0.0
+        spread = float("nan")
+        while waited < max_wait:
+            time.sleep(interval)
+            waited += interval
+            latest = self._read_meas(meas_keyword, trigger=trigger)
+            denominator = max(abs(latest), 1e-12)
+            spread = abs(latest - value) / denominator * 100.0
+            value = latest
+            if spread <= tolerance * 100.0 and abs(latest) > 0:
+                return value, spread, waited
+        return value, spread, waited
+
     def _ensure_free_running(self, wait_seconds: float = 0.5) -> None:
         """让示波器自由连续运行（无触发需求），用于直流类测量。"""
         actions = self.cmd_osc.get("actions", {})
