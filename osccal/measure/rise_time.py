@@ -13,6 +13,7 @@
 意义，留待后续补充（当前只记录过渡时间与过冲，不虚报未测量的量）。
 """
 
+import statistics
 import time
 
 from rich.progress import Progress
@@ -22,6 +23,8 @@ from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 #: 脉冲幅度与垂直档位：1 Vpp 在 0.2 V/div、8 格下占 62.5% 屏。
 AMPLITUDE_VPP = 1.0
 VERTICAL_SCALE = 0.2
+#: 每个点的独立采集次数（单次重复性约 ±60 ps，取平均把标准误降到约 19 ps）。
+REPEATS = 10
 #: 快沿很陡，水平挡位取最快档才能看清过渡过程。
 TIMEBASE_S_PER_DIV = 1e-9
 
@@ -58,9 +61,14 @@ class RiseTimeCalibrator(BaseCalibrator):
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
 
-        # 校准对象是**上升沿**（−1 V → 0 V 的过渡），用 RIS 测量项
+        # 校准对象是**上升沿**（−1 V → 0 V 的过渡），用 RIS 测量项。
+        # 单次读数重复性约 ±60 ps（相对 7%~8%），而待分辨的两种边沿只差约 100 ps，
+        # 因此按 N 次独立采集取平均：N=10 时标准误约 19 ps，差异可达 4σ。
         keyword = "meas_risetime"
-        transition = self._read_meas_value(keyword)
+        self._read_meas_stable(keyword)  # 先等读数进入稳定区
+        samples = [self._read_meas(keyword) for _ in range(REPEATS)]
+        transition = sum(samples) / len(samples)
+        spread = statistics.pstdev(samples) if len(samples) > 1 else 0.0
         overshoot = None
         if "meas_pos_overshoot" in self.cmd_osc.get("keyword", {}):
             overshoot = self._read_meas_value("meas_pos_overshoot")
@@ -72,6 +80,8 @@ class RiseTimeCalibrator(BaseCalibrator):
             "vertical_scale": VERTICAL_SCALE,
             "amplitude_vpp": AMPLITUDE_VPP,
             "rise_time_s": transition,
+            "rise_time_std_s": spread,
+            "repeats": REPEATS,
             "overshoot_pct": overshoot,
         }
 
