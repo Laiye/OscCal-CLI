@@ -31,6 +31,8 @@ SWEEP_POINTS = 16
 SWEEP_SAMPLES = 1000
 #: 每个电平的建立时间。
 SETTLE_SECONDS = 0.6
+#: 零点插值用的小电平（校准仪 1 MΩ 下的最小有效幅度约 1 mV）。
+ZERO_PROBE_V = 0.001
 
 
 class DcOffsetCalibrator(BaseCalibrator):
@@ -61,12 +63,16 @@ class DcOffsetCalibrator(BaseCalibrator):
         self.setup_measurement("meas_mean")
         self._write_calibrator("set_shap", "DC")
 
-        # 零点：偏置 0、激励 0
+        # 零点：偏置 0。校准仪输出不了 0 V（实测设 0 V 与 0.5 mV 都被静默丢弃、
+        # 保持原值），因此用 ±ZERO_PROBE_V 两点插值到 0 V 处。
         self._set_offset(0.0)
-        self._write_calibrator("set_volt", 0.0)
         self._write_calibrator("set_output", "ON")
-        time.sleep(SETTLE_SECONDS)
-        zero_reading = self._read_mean()
+        readings = []
+        for level in (ZERO_PROBE_V, -ZERO_PROBE_V):
+            self._write_calibrator("set_volt", level)
+            time.sleep(SETTLE_SECONDS)
+            readings.append(self._read_mean())
+        zero_reading = (readings[0] + readings[1]) / 2.0
 
         # 偏置 d₀ + 同号激励 d₀ → 波形居中，读数为偏置示值
         self._set_offset(offset_nominal)
@@ -157,6 +163,8 @@ class DcOffsetCalibrator(BaseCalibrator):
             "dc_gain_zero": gain_zero,
             "dc_gain_offset": gain_offset,
             "zero_reading_v_m1": zero_m1,
+            "offset_nominal_v_m1": OFFSET_DIV * scale,
+            "offset_measured_v_m1_raw": measured_m1,
             "offset_measured_v_m1": measured_m1,
             "offset_error_v_m1": error_m1,
             "error_m1_pct": 100.0 * error_m1 / full_scale if full_scale else float("nan"),
@@ -183,8 +191,11 @@ class DcOffsetCalibrator(BaseCalibrator):
                 {"name": "阻抗", "justify": "center"},
                 {"name": "挡位(V/div)"},
                 {"name": "零点(mV)"},
+                {"name": "d₀(V)"},
+                {"name": "d_r(V)"},
                 {"name": "方法一 Δd(mV)"},
                 {"name": "方法一 G"},
+                {"name": "d_c(V)"},
                 {"name": "方法二 Δd(mV)"},
                 {"name": "方法二 G"},
             ],
@@ -203,8 +214,11 @@ class DcOffsetCalibrator(BaseCalibrator):
                         "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                         f"{record['scale']:g}",
                         f"{record['zero_reading_v_m1'] * 1e3:+.2f}",
+                        f"{record['offset_nominal_v_m1']:.4g}",
+                        f"{record['offset_measured_v_m1_raw']:.5f}",
                         f"{record['offset_error_v_m1'] * 1e3:+.2f}",
                         f"{record['gain_m1']:.4f}",
+                        f"{record['offset_measured_v']:.5f}",
                         f"{record['offset_error_v'] * 1e3:+.2f}",
                         f"{record['gain']:.4f}",
                     ],
