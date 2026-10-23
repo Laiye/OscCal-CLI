@@ -31,9 +31,20 @@
 
 - 入口 `osccal/cli.py:main`（`pyproject.toml` 的 `[project.scripts]`）。`osccal/core/` 为通信/配置/存储/导出/取点解析，`osccal/measure/` 存放校准项目实现（v0.2.0 重建期为空），`registry.py` 定义项目清单与执行顺序。
 - 配置驱动，新增示波器**只加 JSON 不改代码**：`commands/`（SCPI 命令模板与能力声明）、`profiles/`（硬件事实：通道数、格线、档位集合、标称带宽，**不再含校准点与限值**）、`calibrators/`（校准仪输出能力与探头）。`--auto` 按 `manufacturer`/`models` 精确匹配，回退 `series`、文件名前缀。
-- v0.2.0 起 `profiles/` 只保留 MDO3052 一份；其余机型待实机验证后按新契约重建，不提供历史 Profile。
+- v0.2.0 起 `profiles/` 提供 `tektronix_mdo3052.json`（500 MHz）与 `tektronix_mdo3032.json`（350 MHz）两份，其余机型待实机验证后按新契约重建，不提供历史 Profile。
 - `specs/`（v0.2.0 新增）声明**校准规范口径**：条款号、取点策略 `points.strategy`、屏占比/比值等参数、原始记录表号、偏离声明、参考指标。它只写"规范要求什么"，硬件能力仍取 `profiles/`、标准器输出能力取 `calibrators/output_limits`。校验实现在 `config_validation.validate_spec`，CLI 用 `--spec` 指定，记录写入 `metadata.spec`（含 sha256、deviations）。**v0.2.0 起规范是唯一口径，不保留"只记录不生效"的兼容状态。**
-- **v0.2.0 重建中（不兼容 V0.1.0）**：`osccal/measure/registry.py` 是唯一项目清单（JJF 1057-2026 的 10 项，旧项目已删除、无别名），`RUNNERS` 在 M3'~M5' 逐个填充；`osccal/core/points.py` 是唯一取点实现（8 种策略，超出标准器能力的点写入 `skipped` 并说明原因，**禁止静默降级**）；`osccal plan` 是离线核对入口，不连接仪器。`RUNNERS` 为空期间 `osccal calibrate` 直接拒绝执行。
+- **v0.2.0（不兼容 V0.1.0）**：`osccal/measure/registry.py` 是唯一项目清单（JJF 1057-2026 的 10 项，旧项目已删除、无别名），`RUNNERS` **已全部落地**；`osccal/core/points.py` 是唯一取点实现（8 种策略，超出标准器能力的点写入 `skipped` 并说明原因，**禁止静默降级**）；`osccal plan` 是离线核对入口，不连接仪器。实机验证结论见 `verification/jjf1057_2026.json`（状态：verified / verified_with_caveat / deviation）。
+- **实机教训（M7' 硬件验证得出，改测量代码前先看这一节）**：
+  - **读数前必须重新采集**：单次采集完成后示波器停止，改完激励/时基若不再采集，`MEASU:IMM:VAL?` 返回上一点的读数。`base._read_meas` 已统一先触发一次单次采集并用 `ACQuire:STATE?` 轮询确认结束。
+  - **直流/无沿信号不要走单次采集**：等不到触发会白等 5 s 超时。用 `_read_meas(trigger=False)` / `_ensure_free_running()`。
+  - **读数要等收敛**：标准源换函数后幅度约需 2 s 建立（0.5 s 只到 3%、1.0 s 到 49%）。统一用 `_read_meas_stable()`（间隔 0.5 s 连读、相对差 ≤0.1%、最长 6 s），并把等待与残差写入记录。
+  - **记录长度必须等于分析点数**：实测 100 µs/div 下记录 1000 点拟合正确（3000.6 Hz），记录 10000 点则偏差 4.8 倍（数据与 `WFMOutpre:XINcr` 不匹配）。ENOB 与拟合法都显式设 `HOR:RECORDLENGTH` 为 N。
+  - **水平挡位序列随记录长度变化**：记录 10000 点时 800 ns/div 可用、1 µs 不可用；记录 1000 点时相反。挡位表不能写死，`_set_timebase` 已回读实际值并写入记录。
+  - **阻抗必须两端一起设并回读校验**：50 Ω 输出接 1 MΩ 输入会让读数翻倍（0.5 Vpp 读成 1.004 V），1 MΩ 接 50 Ω 则降为 0.66 倍。`_apply_impedance` 已含 `_verify_impedance`，这类错误不产生 SCPI 错误码。
+  - **测量顺序会影响结果**：先跑直流类方法再测方波幅度，方波法会系统性偏高 1.9%~5.0%（量化台阶整数倍）。直流增益把方波方法排在最前面。
+  - **示波器平均测量带偏置补偿**：直流偏置不能用 MEAN 读数，必须取**原始码值** `(码值 − YOFf) × YMUlt`（不叠加 YZEro），否则拟合截距恒接近 0。
+  - **9500B 的 DC 输出不能设 0 V**：`SOUR:VOLT 0` 与 0.5 mV 都被静默丢弃、保持原值（最小可设约 1 mV）。零点改用 ±1 mV 两点插值。
+  - **快沿/脉冲测量要多次采集平均**：单次重复性约 ±52 ps，10 次平均降到约 ±17 ps。
 - 版本号只有一处来源：`osccal/__init__.py:__version__`。`pyproject.toml` 用 `dynamic = ["version"]` + `[tool.setuptools.dynamic]` 指向它，CLI 用 `@click.version_option(version=__version__)`。**不要在任何地方再写死版本字符串**（`tests/test_specs.py` 守护）。
 - 配置文件一律 JSON，不引入 YAML：各类配置共用同一套校验与 `configuration_snapshot` 追溯链（快照基于 `json.dumps`，换 YAML 会破坏 sha256 语义）。
 - 配置结构校验只有一份实现 `osccal/core/config_validation.py`，运行时加载和 `tests/test_all_configs.py` 共用；改 JSON 契约时同步这里，不要另写校验。`REQUIRED_KEYWORDS` 之外的测量 keyword 可省略，表示机型没有该能力（旧 `transient.py` 已删除，新项目按需检查 `cmd_osc["keyword"]` 是否存在对应键，不要用"缺少 action"让整项失败）。
