@@ -42,7 +42,9 @@ addopts = "-v --tb=short -p no:cacheprovider"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-exclude = ["osccal.egg-info"]
+# docs/ 是论文素材与作图脚本，不属于交付代码，不纳入 lint
+# .ref_jjf1057/ 是规范 PDF 的提取与临时诊断脚本，同样不纳入
+exclude = ["osccal.egg-info", "docs", ".ref_jjf1057"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

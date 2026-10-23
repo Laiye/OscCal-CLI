@@ -43,6 +43,41 @@ class DcOffsetCalibrator(BaseCalibrator):
             self._write_osc("set_offset", self.channel, volts)
             time.sleep(0.3)
 
+    def _read_mean(self) -> float:
+        """自由运行下读电压平均值（直流信号没有触发沿）。"""
+        self._ensure_free_running(0.3)
+        # 读数必须等收敛：从上一个偏置电平切回 0 V 时若立即读数，会读到尚未建立的
+        # 残留（实测零点读数恒为满量程的约 23%，即上一点 d0=2 格的残留）。
+        return self._read_meas_stable("meas_mean", trigger=False)[0]
+
+    def _method_one(self, scale: float) -> tuple[float, float, float, float]:
+        """7.5.1 方法一：零点读数 + 偏置示值（同号激励）。
+
+        规范原文写"激励电压幅度为 −d₀"，但示波器的偏置是抵消输入用的：输入 +d₀、
+        偏置 d₀ 时波形才居中；用 −d₀ 会把波形推出约两倍偏置量，无法读数。
+        故按实机的正确做法取**同号**激励，并在记录中写明该偏离。
+        """
+        offset_nominal = OFFSET_DIV * scale
+        self.setup_measurement("meas_mean")
+        self._write_calibrator("set_shap", "DC")
+
+        # 零点：偏置 0、激励 0
+        self._set_offset(0.0)
+        self._write_calibrator("set_volt", 0.0)
+        self._write_calibrator("set_output", "ON")
+        time.sleep(SETTLE_SECONDS)
+        zero_reading = self._read_mean()
+
+        # 偏置 d₀ + 同号激励 d₀ → 波形居中，读数为偏置示值
+        self._set_offset(offset_nominal)
+        self._write_calibrator("set_volt", offset_nominal)
+        time.sleep(SETTLE_SECONDS)
+        offset_reading = self._read_mean()
+
+        error = offset_reading - offset_nominal
+        gain = offset_reading / offset_nominal if offset_nominal else float("nan")
+        return zero_reading, offset_reading, error, gain
+
     def _raw_mean(self) -> float:
         """读回波形并求原始码值的均值（不叠加偏置补偿项 YZEro）。"""
         # 直流信号没有边沿，不能走"单次采集等触发"（每次会白等 5 s 超时）
@@ -106,6 +141,8 @@ class DcOffsetCalibrator(BaseCalibrator):
         offset_error = offset_measured - offset_nominal
         gain_d = offset_measured / offset_nominal if offset_nominal else float("nan")
 
+        zero_m1, measured_m1, error_m1, gain_m1 = self._method_one(scale)
+
         return {
             "channel": self.channel,
             "impedance": impedance,
@@ -119,6 +156,12 @@ class DcOffsetCalibrator(BaseCalibrator):
             "gain": gain_d,
             "dc_gain_zero": gain_zero,
             "dc_gain_offset": gain_offset,
+            "zero_reading_v_m1": zero_m1,
+            "offset_measured_v_m1": measured_m1,
+            "offset_error_v_m1": error_m1,
+            "error_m1_pct": 100.0 * error_m1 / full_scale if full_scale else float("nan"),
+            "gain_m1": gain_m1,
+            "method1_note": "激励取同号 d0（规范原文为 -d0，实际会把波形推出屏幕）",
         }
 
     @ensure_output_off
@@ -139,11 +182,11 @@ class DcOffsetCalibrator(BaseCalibrator):
                 {"name": "通道", "justify": "center"},
                 {"name": "阻抗", "justify": "center"},
                 {"name": "挡位(V/div)"},
-                {"name": "零点读数(mV)"},
-                {"name": "偏置标称(V)"},
-                {"name": "偏置实测(V)"},
-                {"name": "偏置误差(mV)"},
-                {"name": "偏置增益"},
+                {"name": "零点(mV)"},
+                {"name": "方法一 Δd(mV)"},
+                {"name": "方法一 G"},
+                {"name": "方法二 Δd(mV)"},
+                {"name": "方法二 G"},
             ],
         )
 
@@ -159,9 +202,9 @@ class DcOffsetCalibrator(BaseCalibrator):
                         f"CH{self.channel}",
                         "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                         f"{record['scale']:g}",
-                        f"{record['zero_reading_v'] * 1e3:+.2f}",
-                        f"{record['offset_nominal_v']:.4g}",
-                        f"{record['offset_measured_v']:.4f}",
+                        f"{record['zero_reading_v_m1'] * 1e3:+.2f}",
+                        f"{record['offset_error_v_m1'] * 1e3:+.2f}",
+                        f"{record['gain_m1']:.4f}",
                         f"{record['offset_error_v'] * 1e3:+.2f}",
                         f"{record['gain']:.4f}",
                     ],
