@@ -1,966 +1,480 @@
 # OscCal-CLI
 
-示波器自动校准命令行工具。通过 SCPI 指令控制 FLUKE 9500B 校准仪和示波器，自动完成示波器各项校准项目，生成校准结果和报告。
+数字示波器自动校准命令行工具。通过 SCPI 同时控制 **FLUKE 9500B 校准仪**与被校示波器，
+按 **JJF 1057-2026《数字示波器校准规范》** 第 7 章逐项取点、测量并记录结果，
+输出可追溯的 JSON 原始记录与 Excel 报告。
 
-> **v0.2.0（不兼容 V0.1.0）**
->
-> 项目按 **JJF 1057-2026《数字示波器校准规范》** 重建完成：校准项目集为规范第 7 章的 10 项；
-> `profiles/` 只声明硬件事实（现有 MDO3052 与 MDO3032 两份）；旧项目（amp、delta_time 等）已删除，
-> **不保留别名或回退路径**。`osccal calibrate` 已可执行全部 10 个项目，
-> `osccal plan` 可离线查看解析出的校准点表。需要旧行为请检出标签 `V0.1.0`。
+| 项 | 当前状态 |
+|---|---|
+| 版本 | **v0.2.0**（相对 V0.1.0 完全重写，无兼容层） |
+| 依据规范 | JJF 1057-2026，2027-02-21 实施，复校间隔 12 个月 |
+| 实机验证过的硬件 | Tektronix MDO3052 + Fluke 9500B（9530 头） |
+| 实机验证 | 2026-10-23，10/10 项有实测数据；结论见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
+| 结论口径 | 规范表 1 明确"技术指标仅供参考，不作为符合性判定依据"，程序**不出具合格/不合格结论** |
 
-## 功能特性
+## 目录
 
-- **10 项校准项目**（JJF 1057-2026 第 7 章）：输入阻抗、直流增益（方法一/二/三并列）、直流偏置（方法一/二并列）、频率响应与频带宽度、动态有效位数 ENOB、上升时间、时基（采集速率）误差（频率法 + 拟合法）、ΔV（幅度）、Δt（时间）、随机噪声
-- **按规范驱动**：取点、屏占比、激励形态、参考指标全部来自 `specs/`，换规范只改 JSON
-- **实机验证结论可追溯**：见 `verification/jjf1057_2026.json`（每项的实测数据、状态、偏离与限制）
-- **多品牌示波器**：泰克、普源、鼎阳、优利德、周立功，覆盖 10+ 系列（v0.2.0 只对 MDO3052 / MDO3032 完成实机验证）
-- **FLUKE 9500B 校准仪**：支持 9560、9550、9530 三种有源探头，自动匹配阻抗
-- **一键自动识别**：`--auto` 模式扫描 VISA 资源，自动匹配设备、指令集、特征配置、探头型号
-- **智能阻抗管理**：根据探头型号和信号模式自动设置校准仪输出阻抗，不匹配时自动切换并警告
-- **多种连接方式**：USB（VISA）、网线（TCPIP/Socket）、GPIB、串口（ASRL）
-- **多通道校准**：支持多通道顺序校准，切换通道时等待用户确认接线
-- **循环校准**：一次校准完成后可选择继续测量，重新选择通道和项目
-- **自适应垂直位置**：小电压挡位自动调整示波器垂直位置，确保波形完整显示
-- **配置驱动扩展**：新增示波器只需添加 JSON 文件，无需修改代码。支持 `manufacturer` / `models` 精确匹配
-- **美观终端输出**：Rich 表格、进度条、超差红色高亮
-- **Excel 报告导出**：数据表格 + 超差红色高亮，有效位数与终端表格一致
-- **SCPI 通信重试**：瞬态错误自动重试（0.5s 间隔），避免偶发通信失败
-- **单元测试**：pytest 测试套件覆盖指令集结构、Profile 校验、全量配置结构、模拟集成、CLI 流程（用例数随功能增长，以 CI 为准）
-- **本地模拟运行**：内置模拟仪器脚本，无需真实设备即可跑通完整校准流程
+1. [支持范围](#1-支持范围)
+2. [安装](#2-安装)
+3. [快速开始](#3-快速开始)
+4. [命令参考](#4-命令参考)
+5. [校准项目与实现口径](#5-校准项目与实现口径)
+6. [硬件验证状态](#6-硬件验证状态)
+7. [记录、报告与追溯](#7-记录报告与追溯)
+8. [架构与配置契约](#8-架构与配置契约)
+9. [开发与测试](#9-开发与测试)
+10. [已知限制](#10-已知限制)
+11. [版本与兼容性](#11-版本与兼容性)
 
-## 环境要求
+## 1. 支持范围
 
-- Python >= 3.10
-- VISA 运行时（如 [NI-VISA](https://www.ni.com/zh-cn/support/downloads/drivers/download.ni-visa.html)），用于 USB/GPIB/串口连接
-- 网线连接无需 VISA 运行时
+### 1.1 硬件
 
-## 安装
+| 角色 | 型号 | 说明 |
+|---|---|---|
+| 被校示波器 | Tektronix **MDO3052**（500 MHz，2 通道） | 已实机验证 |
+| 被校示波器 | Tektronix **MDO3032**（350 MHz，2 通道） | 同系列 350 MHz 机型，仅补了 profile，**验证台账未覆盖** |
+| 标准器 | Fluke **9500B**（GPIB/USB） | 已实机验证 |
+| 有源探头 | **9530**（600 MHz，边沿 150 ps / 500 ps） | 已实机验证，10 项全部使用 |
+| 有源探头 | 9550（25 ps）、9560（6.4 GHz，70 ps） | 配置已声明，**未实机验证** |
 
-推荐在**虚拟环境**中安装。本项目依赖 click / rich / PyVISA / pyvisa-py / openpyxl，这些库的版本要求可能与机器上其他项目冲突（例如其他项目锁定旧版 PyVISA），使用虚拟环境可完全隔离，避免版本冲突导致的 `ImportError`、依赖被降级等问题。
+> `profiles/` 目前只有 MDO3052 / MDO3032 两份。`commands/` 下保留的其他品牌指令集
+> （Rigol、Siglent、UNI-T、ZLG、Tektronix 老系列）属于 V0.1.0 遗留，**没有对应的
+> v0.2.0 profile，`--auto` 无法匹配、也不能执行**；补齐 profile 并完成实机验证后才算支持。
 
-### 1. 获取代码
+### 1.2 校准项目
+
+JJF 1057-2026 第 7 章的 10 个项目全部实现，项目键与条款如下（命令 `--items` 使用的就是这些键）：
+
+| 项目键 | 条款 | 项目 | 取点策略 | MDO3052 单通道点数 |
+|---|---|---|---|---|
+| `input_impedance` | 7.3.1 | 输入阻抗 | 每通道 × 每阻抗状态 | 2 |
+| `dc_gain` | 7.4.1 / 7.4.2 / 7.4.3 | 直流增益（三法并列） | 垂直档位列表 | 6 |
+| `dc_offset` | 7.5.1 / 7.5.2 | 直流偏置（两法并列） | 垂直档位列表 | 4 |
+| `freq_response_bandwidth` | 7.6 | 频率响应、频带宽度 | 相对标称带宽的比值频点 | 9 |
+| `enob` | 7.7 | 动态有效位数 | 现场按公式反推 | 1 |
+| `rise_time` | 7.8 | 上升时间 | 每通道 × 每边沿速度档 | 2 |
+| `timebase_error` | 7.9.1 / 7.9.2 | 时基（采集速率）误差 | 水平档位列表 | 4 |
+| `delta_v` | 7.11 | ΔV（幅度）测量 | 垂直档位列表 | 4 |
+| `delta_t` | 7.12 | Δt（时间）测量 | 水平档位列表 | 2 |
+| `random_noise` | 7.13 | 随机噪声 | 固定条件（最小量程） | 1 |
+
+合计 **35 点/通道**（MDO3052 + 9500B/9530），另有 6 处按规范不可执行或超出标准器能力而跳过
+（2 项规范定为人工、2 个 50 Ω 档位超 5 Vpp 上限、2 个快时基超出方波 10 kHz 上限），
+逐条原因见 `osccal plan` 输出与记录中的 `skipped_points`。
+
+### 1.3 程序不做的事
+
+- 不做合格判定，不输出"超差/合格"字样；只给出实测值与参考指标。
+- 不评定测量不确定度（按规范偏离声明，由实验室依 JJF 1059.1 另行评定）。
+- 不自动接匹配负载（随机噪声项暂停并提示人工确认）。
+- 不实现 7.2 外观检查、7.10 自校准信号（规范要求人工/需要频率计与数字电压表）。
+
+## 2. 安装
+
+### 2.1 环境要求
+
+- Python ≥ 3.10（CI 覆盖 3.10–3.13）
+- 与仪器通信的 VISA 运行时（如 NI-VISA）用于 USB / GPIB；网线 Socket 连接不需要 VISA
+- 依赖：click、rich、PyVISA、PyVISA-py、openpyxl
+
+### 2.2 创建虚拟环境并安装
 
 ```bash
-git clone <repository-url>
-cd OscCal-CLI
-```
-
-### 2. 创建并激活虚拟环境
-
-```bash
-# 创建虚拟环境（用 .venv 作为目录名，已加入 .gitignore）
 python -m venv .venv
-```
 
-> 机器上有多个 Python 时，请用满足版本要求的解释器创建（虚拟环境版本 = 创建时使用的解释器版本）：
-> `py -3.11 -m venv .venv`（Windows）或 `python3.11 -m venv .venv`（Linux/macOS）。
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+# Linux / macOS
+source .venv/bin/activate
 
-按所用终端选择激活命令：
-
-| 终端 | 激活命令 |
-|------|---------|
-| Windows PowerShell | `.\.venv\Scripts\Activate.ps1` |
-| Windows CMD | `.venv\Scripts\activate.bat` |
-| Windows Git Bash | `source .venv/Scripts/activate` |
-| Linux / macOS | `source .venv/bin/activate` |
-
-> PowerShell 若提示"禁止运行脚本/无法加载文件"，先执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` 再激活（仅对当前终端窗口生效）。
-
-激活成功后提示符前会出现 `(.venv)`，此时 `python` 与 `pip` 都指向该虚拟环境。
-
-### 3. 在虚拟环境中安装
-
-```bash
-# 先升级虚拟环境内的 pip，避免旧版 pip 解析依赖失败
 python -m pip install --upgrade pip
-
-# 安装本项目（可编辑安装，源码改动立即生效）
-pip install -e .
-
-# 需要测试与代码检查工具（pytest / ruff / mypy）时一并安装
-pip install -e ".[dev]"
+pip install -e ".[dev]"     # 含 pytest / ruff / mypy
 ```
 
-### 4. 验证安装
+PowerShell 提示"禁止运行脚本"时，先执行
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`（仅当前窗口生效）。
+
+### 2.3 验证安装
 
 ```bash
-# 1. 确认包装在当前虚拟环境（Location 应为 ...\.venv\Lib\site-packages）
-pip show osccal
-
-# 2. 确认 osccal 命令来自当前虚拟环境（应首先列出 .venv\Scripts\osccal.exe）
-where.exe osccal        # Windows
-which osccal            # Linux / macOS
-
-# 3. 命令可用
-osccal --version        # 应输出 osccal, version 0.2.0
+pip show osccal                 # Editable project location 应指向本仓库
+where.exe osccal                # Windows；Linux/macOS 用 which
+osccal --version                # osccal, version 0.2.0
 ```
 
-> **不要只用 `osccal --version` 判断是否装好**：激活虚拟环境只是在 PATH **最前面插入** `.venv\Scripts`，并不会移除系统 Python 的 `Scripts` 目录。若虚拟环境里尚未安装本项目，系统里已有的那份 `osccal` 仍会被找到并执行（Windows 的 `osccal.exe` 内嵌了安装它时的解释器路径，所以实际运行的是系统 Python 与系统里的依赖）。判定依据用 `pip list`（是否列出 `osccal` 与依赖）、`pip show osccal`、`where/which osccal` 三者之一。
->
-> 同理，在**项目根目录**执行 `python -c "import osccal"` 会因当前目录在 `sys.path` 中而"看似成功"，也不能作为安装验证；换到项目外目录执行才会报 `ModuleNotFoundError`。
+> 仅看 `osccal --version` 不足以证明装对：激活虚拟环境只是把 `.venv\Scripts` 插到 PATH 最前，
+> 系统里若已装过 `osccal` 仍可能被执行。以 `pip show osccal` 的 Editable 路径为准。
 
-安装完成后即可使用 `osccal` 命令。退出虚拟环境执行 `deactivate`。
+### 2.4 输出编码
 
-### 未激活时直接调用（脚本 / CI）
+程序启动时把 stdout/stderr 切到 UTF-8，重定向到文件或管道不会再因 GBK 无法表示
+`✓`/`Δ`/表格边框而报 `UnicodeEncodeError`。如需覆盖，设置环境变量 `PYTHONIOENCODING`（如 `gbk`）。
 
-脚本中也可以不激活，直接使用虚拟环境内的可执行文件：
+## 3. 快速开始
 
 ```bash
-.venv\Scripts\osccal.exe device list            # Windows
-./.venv/bin/osccal device list                  # Linux / macOS
-
-.venv\Scripts\python.exe simulate_calibrate.py  # Windows：用该环境跑本地模拟
-./.venv/bin/python simulate_calibrate.py        # Linux / macOS
-```
-
-### Windows：输出重定向时的编码
-
-`osccal` 命令与模拟脚本启动时会自动把标准输出/错误切换为 **UTF-8**。因此把输出重定向到文件或管道时（如 `osccal show > out.txt`、CI 日志收集），不会再因中文控制台的 GBK 编码无法表示 `✓`/`⚠`/`Δ`/表格边框而报 `UnicodeEncodeError`，输出文件即为 UTF-8 编码。
-
-如需自行指定编码（例如管道对端程序要求 GBK），设置环境变量即可覆盖默认行为：
-
-```powershell
-$env:PYTHONIOENCODING = "gbk"    # PowerShell，仅对当前窗口生效
-```
-
-```bash
-export PYTHONIOENCODING=gbk      # Linux / macOS / Git Bash
-```
-
-### 检查当前安装状态
-
-以下命令作用于**当前已激活的环境**（虚拟环境或系统 Python）：
-
-`osccal` 默认以可编辑安装（editable）方式安装，`osccal` 命令和 `import osccal` 都直接指向安装时的项目目录。检查当前指向：
-
-```bash
-# 查看 osccal 安装信息（Editable project location 即当前指向的源码目录）
-pip show osccal
-
-# 列出所有可编辑安装
-pip list -e
-```
-
-若 `Editable project location` 指向了其他目录（例如从旧项目路径安装过），需要先卸载再重装。
-
-### 卸载并重装（切换到当前项目）
-
-```bash
-# 1. 卸载旧安装（移除 .pth 指向与 osccal 命令脚本）
-pip uninstall -y osccal
-
-# 2. 进入当前项目目录，重新安装
-cd <当前项目目录>
-pip install -e .
-
-# 3. 验证指向已切换
-pip show osccal          # Editable project location 应指向当前目录
-osccal --version         # 命令可用
-python -c "import osccal; print(osccal.__file__)"   # 应输出当前目录下的 osccal/__init__.py
-```
-
-说明：
-
-- 卸载只移除 Python 环境中的注册信息，**不会删除旧目录下的源码文件**；确认不再需要后可手动删除旧项目文件夹。
-- 重装时会重新生成当前项目下的 `osccal.egg-info/`（已被 `.gitignore` 忽略）。
-- 若旧安装位于**另一个环境**（系统 Python 或别的虚拟环境），`osccal` 命令可能来自那个环境。先激活旧环境执行 `pip uninstall -y osccal`，再激活当前虚拟环境执行 `pip install -e .`；用 `where osccal`（Windows）/ `which osccal`（Linux、macOS）可确认实际调用的是哪个环境的命令。
-- 若曾在其他机器/环境遇到同样问题，执行上述 `pip uninstall` + `pip install -e .` 两步即可。
-
-## 快速开始
-
-### 1. 查看可用设备
-
-```bash
+# 1) 看设备
 osccal device list
-```
 
-### 2. 一键自动校准（推荐）
+# 2) 离线核对校准点表（不连仪器，先确认点数与跳过原因）
+osccal plan --profile profiles/tektronix_mdo3052.json --probe 9530 --channel 1
 
-```bash
-osccal calibrate --auto
-```
+# 3) 自动识别设备并校准（--spec 默认 jjf1057_2026，可省略）
+osccal calibrate --auto --spec jjf1057_2026 --probe 9530
 
-程序将自动：
-1. 扫描所有 VISA 资源
-2. 查询每个资源的 `*IDN?` 识别设备身份
-3. 自动匹配 FLUKE 校准仪和示波器（忽略无关设备）
-4. 根据示波器型号精确匹配指令集和特征配置
-5. 自动查询校准仪装载的探头型号
-6. 打印识别结果供你确认
-7. 确认后自动连接并开始校准
-
-```bash
-# 自动识别 + 指定探头
-osccal calibrate --auto --probe 9530
-
-# 自动识别 + 指定校准项目
-osccal calibrate --auto --items amp,dc_gain
-```
-
-### 3. 交互模式校准
-
-```bash
-osccal calibrate
-```
-
-程序将引导你依次选择：
-1. 校准仪探头型号
-2. 示波器指令集文件
-3. 示波器特征配置文件
-4. 校准通道（支持多通道）
-5. 校准项目
-6. 带宽参数（如涉及带宽校准）
-7. 校准仪 VISA 资源
-8. 示波器 VISA 资源
-
-多通道校准时，切换通道会暂停等待用户移动探头并确认接线。
-
-校准完成后，可选择"继续校准"重新选择通道和项目再测一轮，或直接退出。数据自动保存到 `data/` 目录。
-
-每轮校准使用包含微秒时间戳和 UUID 的独立 JSON 文件。开始执行及每个项目结束时更新同一文件：先写入同目录临时文件、刷新到磁盘，再原子替换，因此写入失败不会覆盖原有的完整记录。保存失败会停止后续校准。
-
-Ctrl+C 或项目异常时，会保存已有结果（包括当前项目已经完成的数据点），并记录整体状态、各项目状态与失败原因；若进程被强制终止或断电，最近一次成功保存的项目阶段记录可供查看，当前项目尚未保存的数据点可能丢失。`show --latest` 和 Excel 的校准信息会显示状态，进行中、中断或失败的记录不代表完整校准已完成。
-
-数据 `metadata.scpi_errors` 保存本轮错误次数；`metadata.failures` 保存失败项目与原因；`metadata.configurations` 保存实际使用的指令集、Profile 和校准仪配置副本及 SHA-256（包含本轮带宽参数和实际通信方式）。继续校准时创建新文件，错误计数按轮独立记录。旧格式文件仍可读取和导出。
-
-执行前会核对通道范围、重复或未知项目、探头信号模式与阻抗、带宽参数、必需动作及设备身份。连接阶段允许进行身份和探头查询，只有检查通过后才复位设备并执行测量。Profile 的 `channels` 决定通道菜单和范围，旧配置未填写时兼容为 4 通道；两通道设备应明确填写 `channels: 2`。
-
-设备身份核对规则：存在 `models` 列表时，设备型号必须包含在列表中（精确比较，忽略大小写与非字母数字字符）；校准仪配置未提供 `models` 时回退比较 `series`/`name`，按**型号家族**匹配——完全相同，或较短者为较长者的前缀且长度不少于 4 个字符。因此同一台 FLUKE 9500B 无论 `*IDN?` 上报 `9500B` 还是 `9500` 都能通过；报错信息会列出配置支持的全部型号，便于定位。
-
-`calibrate` 退出码：`0` 表示所选项目执行完成；`1` 表示连接、存储或项目执行失败；`2` 表示参数、配置或设备组合不合法；`130` 表示用户取消或中断。连续多轮中任一轮有执行失败，最终退出码仍为 `1`。退出码 `0` 不表示所有测量值均在允差内，是否超差以结果中的误差和限值为准。
-
-### 4. 查看校准结果
-
-```bash
-# 查看最近一次校准数据
+# 4) 查看 / 导出
 osccal show --latest
-
-# 查看指定文件
-osccal show --file data/calibration_20260427_143000.json
-
-# 交互选择文件
-osccal show
-```
-
-### 5. 导出 Excel 报告
-
-```bash
-# 导出最近一次校准数据为 Excel
 osccal export
-
-# 指定输入和输出
-osccal export --file data/calibration_20260427_143000.json --output report.xlsx
 ```
 
-导出规则：
+`calibrate --auto` 的连接与执行顺序：
 
-- 同一校准项目（如幅度）的**所有通道合并到同一个 sheet**，表头与终端表格一致。
-- 单元格按**显示精度**整理，位数与校准过程中的终端表格相同：幅度、直流增益保留 3 位有效数字，Δt 保留 4 位，误差保留 2 位小数，带宽保留 2 位小数，探头上升时间取整。SCPI 直读值（如 `0.01232000000000001`、`7.96248e-08`）不会以原始位数出现在报告里。
-- 整理后的仍是**数值单元格**（含数字格式，末尾零正常显示），可直接排序、统计、再计算；未舍入的原始读数完整保存在同目录的 JSON 记录中。
-- **超差判定用未舍入的原始值**，因此显示为 `2.00%` 的单元格也可能被标红（实际 `2.004%`，上限 `2%`）。
-- 各列的精度在 `osccal/core/table_configs.py` 的 `ITEM_PRECISION` 中集中声明，终端 `show` 与 Excel 导出共用。
-
-## 本地模拟运行
-
-无需真实示波器和校准仪，即可在本地跑通完整校准流程，便于开发调试和演示。模拟脚本内置两个实现 pyvisa 接口的模拟仪器，通过共享状态对象传递信号：校准仪 `write` 更新输出信号，示波器 `query` 据此返回合理的测量值，并按一阶低通模型模拟示波器 -3dB 带宽滚降。
-
-> 请先激活虚拟环境（见[安装](#安装)第 2 步），确保使用本项目安装的依赖运行。
-
-```bash
-# 默认跑全部 5 项校准（MDO34、CH1、9560 探头、模拟带宽 200MHz）
-python simulate_calibrate.py
-
-# 指定校准项目
-python simulate_calibrate.py --items amp,dc_gain
-
-# 多通道 + 切换探头
-python simulate_calibrate.py --channel 1,2 --probe 9530
-
-# 打印完整 SCPI 指令日志并导出 JSON + Excel
-python simulate_calibrate.py --log-scpi --export
-
-# 换用其它已支持机型模拟（例：TBS1000B/EDU 全项目，或 TDS1000/2000 系列四项）
-python simulate_calibrate.py --commands tektronix_tbs1000b --profile tektronix_tbs1000b --probe 9530
-python simulate_calibrate.py --commands tektronix_tds1000_tds2000 \
-    --profile tektronix_tds1000_tds2000_4ch --items amp,dc_gain,delta_time,bandwidth --probe 9530
+```
+扫描/指定 VISA 资源 → *IDN? 识别 → 匹配 commands + profile + calibrator
+→ 查询已装探头（ROUT:FITT?）→ 打印识别结果并确认
+→ 设备身份核对 → 按 specs 解析点表 → 逐项执行 → 每项结束原子保存记录
 ```
 
-> 非 TBS1000B/EDU 机型没有正过冲测量，模拟 `transient` 仍会执行，只记录上升时间，过冲记为"不适用"。
+多通道时，切换到下一个通道前会暂停，等待把探头接到对应通道后按回车。
 
-| 选项 | 说明 | 默认值 |
-|------|------|--------|
-| `--commands` | 指令集文件名（不含 .json） | `tektronix_mdo3` |
-| `--profile` | Profile 文件名（不含 .json） | `tektronix_mdo34` |
-| `--calibrator` | 校准仪配置文件名（不含 .json） | `fluke_9500b` |
-| `--items` | 校准项目，逗号分隔 | `all` |
-| `--channel` | 通道，逗号分隔（如 1,2） | `1` |
-| `--probe` | 探头型号（9560/9550/9530） | `9560` |
-| `--bandwidth` | 起始带宽（MHz） | `100.0` |
-| `--bd-step` | 带宽扫描步进（MHz） | `20.0` |
-| `--sim-bandwidth` | 模拟示波器 -3dB 带宽（MHz） | `200.0` |
-| `--log-scpi` | 打印完整 SCPI 指令序列 | 关闭 |
-| `--export` | 保存 JSON 数据并导出 Excel | 关闭 |
-| `--real-sleep` | 保留真实 sleep 延时（默认加速） | 关闭 |
+## 4. 命令参考
 
-默认启用快速模式（禁用 `time.sleep`、自动应答 `click.prompt`），全程秒级完成；多选项上升时间（如 9530 探头）会自动选择默认值。
-
-## 命令详解
-
-### `osccal calibrate`
-
-执行示波器校准流程。
+### 4.1 `osccal calibrate`
 
 ```bash
 osccal calibrate [OPTIONS]
 ```
 
-| 选项 | 说明 | 默认值 |
-|------|------|--------|
-| `--auto` | 自动扫描 VISA 资源，识别设备并匹配配置 | — |
-| `--osc` | 示波器指令集配置文件路径 | 交互选择 |
-| `--profile` | 示波器特征配置文件路径 | 交互选择 |
-| `--spec` | 校准规范配置：`specs/` 下名称（可省 `.json`）或文件路径 | — |
-| `--calibrator` | 校准仪配置文件路径 | 自动加载首个 |
-| `--channel` | 校准通道，逗号分隔（1,2,3,4） | 交互选择 |
-| `--probe` | 校准仪探头型号（9560/9550/9530） | 交互选择 / 自动识别 |
-| `--items` | 校准项目，逗号分隔 | `all` |
-| `--bandwidth` | 示波器标称带宽（MHz） | 交互输入 |
-| `--bd-step` | 带宽扫描步进（MHz） | 交互输入 |
-| `--resource-osc` | 示波器 VISA 资源地址 | 交互选择 |
-| `--resource-cal` | 校准仪 VISA 资源地址 | 交互选择 |
-| `--socket-osc` | 示波器 Socket 地址（host:port） | — |
-| `--log-scpi` | 打印完整 SCPI 指令日志与失败统计（现场排障用） | 关闭 |
+| 选项 | 说明 |
+|---|---|
+| `--auto` | 扫描 VISA 资源，按 `*IDN?` 自动识别设备并匹配配置 |
+| `--osc PATH` | 示波器指令集文件（默认交互选择） |
+| `--profile PATH` | 示波器 profile（默认交互选择） |
+| `--spec NAME 或 PATH` | 校准规范：`specs/` 下名称（可省 `.json`）或文件路径，默认 `jjf1057_2026` |
+| `--calibrator PATH` | 校准仪配置（默认取目录中首个） |
+| `--channel 1,2` | 通道，逗号分隔（MDO3052 共 2 通道） |
+| `--probe 9530 / 9550 / 9560` | 有源探头型号；`--auto` 下省略则自动识别 |
+| `--items a,b` | 校准项目键，逗号分隔；`all` 表示规范中所有已实现的项目 |
+| `--resource-osc` / `--resource-cal` | 指定 VISA 资源地址 |
+| `--socket-osc host:port` | 示波器走 Socket 连接（仅标量测量项可用，见[已知限制](#10-已知限制)） |
+| `--log-scpi` | 退出前打印完整 SCPI 指令日志与失败统计 |
 
-校准完成后若存在 SCPI 通信/组装失败，会在退出前提示失败次数，并将计数写入校准数据 `metadata.scpi_errors` 供报告追溯。
-
-**校准项目名称**：
-
-| 名称 | 项目 |
-|------|------|
-| `amp` | 幅度（ΔV） |
-| `dc_gain` | 直流增益 |
-| `delta_time` | Δt（时间） |
-| `bandwidth` | 频带宽度 |
-| `transient` | 上升时间及过冲 |
-| `all` | 全部项目 |
-
-**示例**：
+示例：
 
 ```bash
-# 一键自动识别
-osccal calibrate --auto
+# 自动识别 + 指定探头，跑全部 10 项
+osccal calibrate --auto --spec jjf1057_2026 --probe 9530
 
-# 自动识别 + 指定探头和项目
-osccal calibrate --auto --probe 9560 --items amp,dc_gain
+# 只跑直流类两项，通道 1
+osccal calibrate --auto --spec jjf1057_2026 --probe 9530 --channel 1 --items dc_gain,dc_offset
 
-# 交互模式，校准全部项目
-osccal calibrate
-
-# 指定配置和资源，校准通道2的幅度和直流增益
+# 手动指定全部配置与资源
 osccal calibrate \
   --osc commands/tektronix_mdo.json \
-  --profile profiles/tektronix_mdo3000.json \
+  --profile profiles/tektronix_mdo3052.json \
+  --spec jjf1057_2026 \
   --calibrator calibrators/fluke_9500b.json \
-  --probe 9560 \
-  --channel 2 \
-  --items amp,dc_gain \
+  --probe 9530 --channel 1 \
   --resource-cal "GPIB0::19::INSTR" \
-  --resource-osc "GPIB0::10::INSTR"
-
-# 多通道校准
-osccal calibrate --channel 1,2,3,4
-
-# 使用 Socket 连接示波器
-osccal calibrate --socket-osc 192.168.1.100:5025
+  --resource-osc "USB0::0x0699::0x0408::C020687::INSTR"
 ```
 
-### `osccal plan`
+退出码：
 
-只解析校准点表，**不连接任何仪器**：把 `specs/`（规范口径）+ `profiles/`（硬件事实）+ `calibrators/`（标准器能力）合成可执行的校准点，并逐条列出被跳过的点及原因。
-
-```bash
-osccal plan                              # 默认规范 + 默认 Profile/校准仪
-osccal plan --json data/plan.json        # 同时写出计划 JSON
-osccal plan --channel 1 --probe 9530
-```
-
-不静默降级：某个点超出标准器能力（例如 1 V/div 的方波需要 6.4 Vpp，超过 50 Ω 档 5 Vpp 上限）时，一定记入"跳过"并给出理由。
-
-### `osccal show`
-
-显示校准数据。
-
-```bash
-osccal show [OPTIONS]
-```
-
-| 选项 | 说明 |
-|------|------|
-| `--latest` | 显示最近一次校准数据 |
-| `--file` | 指定校准数据文件路径 |
-
-数值按与 Excel 导出相同的显示精度打印（见[导出 Excel 报告](#5-导出-excel-报告)），超差判断仍用未舍入原值。
-
-### `osccal export`
-
-导出校准报告。
-
-```bash
-osccal export [OPTIONS]
-```
-
-| 选项 | 说明 | 默认值 |
-|------|------|--------|
-| `--format` | 导出格式（目前支持 `excel`） | `excel` |
-| `--file` | 校准数据文件路径 | 最新文件 |
-| `--output` | 输出文件路径 | 自动生成 |
-
-### `osccal device list`
-
-列出所有可用的 VISA 设备资源。
-
-```bash
-osccal device list
-```
-
-### `osccal device info`
-
-查询设备的 `*IDN?` 标识信息。
-
-```bash
-osccal device info [OPTIONS]
-```
-
-| 选项 | 说明 |
-|------|------|
-| `--resource` | VISA 资源地址 |
-| `--socket` | Socket 地址（host:port） |
-
-## 项目结构
-
-```
-OscCal-CLI/
-├── osccal/                          # 主程序包
-│   ├── cli.py                       # CLI 命令入口
-│   ├── core/                        # 核心模块
-│   │   ├── auto_detect.py           # 自动识别设备与配置匹配
-│   │   ├── config.py                # JSON 配置文件加载
-│   │   ├── comm.py                  # SCPI 通信（PyVISA / Socket，含重试）
-│   │   ├── connect.py               # 设备连接与 *IDN? 查询
-│   │   ├── command.py               # SCPI 命令组装
-│   │   ├── storage.py               # 校准数据 JSON 存储
-│   │   ├── export.py                # Excel 报告导出
-│   │   ├── table_configs.py         # 表格配置集中管理
-│   │   └── utils.py                 # 共享工具函数
-│   ├── measure/                     # 校准测量模块
-│   │   ├── base.py                  # 校准基类（阻抗管理、垂直位置调整）
-│   │   ├── amp.py                   # 幅度校准
-│   │   ├── dc_gain.py               # 直流增益校准
-│   │   ├── delta_time.py            # Δt 时间校准
-│   │   ├── bandwidth.py             # 频带宽度校准
-│   │   ├── transient.py             # 上升时间及过冲校准
-│   │   ├── all.py                   # 全项目校准
-│   │   └── registry.py              # 校准器映射与执行顺序
-├── commands/                        # 示波器指令集配置
-│   ├── tektronix_mdo.json           #   泰克 MDO3000/MDO4000/MSO4000B/DPO4000B
-│   ├── tektronix_mdo3.json          #   泰克 3 Series MDO（MDO34/MDO32）
-│   ├── tektronix_tbs.json           #   泰克 TBS2000B
-│   ├── tektronix_tds.json           #   泰克 TDS5000
-│   ├── tektronix_mso2000b.json      #   泰克 MSO2000B/DPO2000B/MSO2000/DPO2000
-│   ├── tektronix_tbs1000b.json      #   泰克 TBS1000B/TBS1000B-EDU
-│   ├── tektronix_tds1000_tds2000.json #  泰克 TBS1000/TDS1000/B/C-EDU/TDS2000/B/C/TPS2000/B
-│   ├── rigol_mso.json               #   普源 MSO5000
-│   ├── siglent_sds.json             #   鼎阳 SDS6000 PRO/SDS6000A
-│   ├── unit_utd.json                #   优利德 UTD2000CEX/UTD7000C
-│   ├── unit_upo1000x.json           #   优利德 UPO1000X 系列（数字荧光示波器）
-│   ├── zlg_zds.json                 #   周立功 ZDS2000/ZDS4000
-│   └── zlg_zds1000.json             #   周立功 ZDS1000
-├── profiles/                        # 示波器特征配置
-│   ├── tektronix_mdo3000.json       #   泰克 MDO3000 全系列
-│   ├── tektronix_mdo34.json         #   泰克 MDO34（4 通道）
-│   ├── tektronix_mdo32.json         #   泰克 MDO32（2 通道）
-│   ├── tektronix_mso2000b_4ch.json  #   泰克 MSO2000B 系列（4 通道）
-│   ├── tektronix_mso2000b_2ch.json  #   泰克 MSO2000B 系列（2 通道）
-│   ├── tektronix_tbs1000b.json      #   泰克 TBS1000B/EDU（2 通道）
-│   ├── tektronix_tds1000_tds2000_2ch.json # 泰克 TBS1000/TDS1000/TDS2000/TPS2000（2 通道）
-│   ├── tektronix_tds1000_tds2000_4ch.json # 泰克 TDS2000/TPS2000（4 通道）
-│   ├── tektronix_tbs2000b.json
-│   ├── tektronix_tds5000.json
-│   ├── rigol_mso5000.json
-│   ├── siglent_sds.json
-│   ├── unit_utd2000cex.json
-│   ├── unit_utd7000c.json
-│   ├── unit_upo1000x.json
-│   ├── zlg_zds2000.json
-│   ├── zlg_zds4000.json
-│   └── zlg_zds1000.json
-├── calibrators/                     # 校准仪配置
-│   └── fluke_9500b.json             #   FLUKE 9500B（含探头 9560/9550/9530）
-├── tests/                           # 单元测试（pytest，用例数随功能增长）
-│   ├── conftest.py                  # 共享 fixture 与 FakeInstrument
-│   ├── test_mdo3_commands.py        # MDO3 指令集结构测试
-│   ├── test_mdo3_profiles.py        # MDO3 Profile 校验测试
-│   ├── test_mdo3_comm_integration.py # SCPI 通信集成测试
-│   ├── test_tek_tbs_tds_configs.py  # TBS1000B/TDS1000/TDS2000/TPS2000 系列配置与指令回归
-│   ├── test_unit_upo1000x_config.py # 优利德 UPO1000X 系列配置与指令回归
-│   └── test_all_configs.py          # 全量配置结构测试（commands/profiles/calibrators）
-├── data/                            # 校准数据存储目录
-├── simulate_calibrate.py            # 本地模拟校准脚本
-└── pyproject.toml                   # 项目配置
-```
-
-## 配置文件说明
-
-配置文件采用 JSON 格式，分为三类，结构清晰便于人工阅读和编辑。
-
-### 指令集文件（commands/）
-
-定义示波器的 SCPI 命令模板，与设备型号（指令集）绑定。
-
-```json
-{
-    "name": "Tektronix_MDO",
-    "description": "Tektronix MDO/MSO/DPO series ...",
-    "manufacturer": "Tektronix",
-    "models": ["MDO3052", "MDO3054", "MDO3012", "..."],
-    "type": "pyvisa",
-    "series": ["MDO4000C", "MDO3000", "..."],
-    "feature": {
-        "meas": "merge",
-        "return_value_index": 1,
-        "get_value": "Direct"
-    },
-    "keyword": {
-        "imp_fif": "FIF",
-        "imp_meg": "MEG",
-        "meas_amp": "AMP",
-        "meas_period": "PERI",
-        "meas_max": "MAX",
-        "meas_min": "MIN",
-        "..."
-    },
-    "actions": {
-        "preset": { "commands": ["FAC"], "args_num": 0, "..." },
-        "set_channel": { "commands": ["SEL:CH", " "], "args_num": 2, "..." },
-        "set_vertical_scale": { "commands": ["CH", ":SCALE "], "args_num": 2, "..." },
-        "set_vertical_position": { "commands": ["CH", ":POS "], "args_num": 2, "..." },
-        "..."
-    }
-}
-```
-
-关键字段：
-
-| 字段 | 说明 |
-|------|------|
-| `manufacturer` | 厂商全称，用于自动识别匹配 |
-| `models` | 适用型号列表，`--auto` 模式下精确匹配 `*IDN?` 型号 |
-| `type` | 通信方式：`pyvisa` 或 `socket` |
-| `feature.meas` | 测量模式：`merge`（先设源+类型再读值）或 `split`（同时指定项目和通道） |
-| `feature.meas_amp_scale` | 幅度测量换算系数，默认 1（标准值口径 = 峰峰值）。当 `meas_amp` 是有效值类测量（`CRMs`）时填 `2`：对称方波的有效值等于幅度（峰峰值的一半），需换算后才能与标准值比较 |
-| `feature.write_delay_ms` | 每条 SCPI 写入之后的最小间隔（毫秒），默认 0 = 不节流。个别机型**背靠背连续写入时会静默丢弃指令**（错误队列仍报 `No error`），实测优利德 UPO1104X 需要节流，故由指令集声明；未声明者时序完全不变 |
-| `keyword` | SCPI 关键字映射（阻抗、测量类型、max/min 等） |
-| `actions` | SCPI 命令模板，`commands` 为命令片段，`args_num` 为参数数量 |
-
-### 特征文件（profiles/）
-
-定义示波器的硬件特征和校准点，与校准规范绑定。
-
-```json
-{
-    "name": "osc",
-    "description": "Tektronix MDO3000 ...",
-    "manufacturer": "Tektronix",
-    "models": ["MDO3012", "MDO3014", "MDO3052", "MDO3054", "..."],
-    "factor": "tektronix",
-    "series": "MDO3000",
-    "imp_has_50": true,
-    "vertical_div": 8,
-    "horizontal_div": 10,
-    "calibration_limits": {
-        "amp": { "upper": 2.0, "lower": -2.0 },
-        "dc_gain": { "upper": 2.0, "lower": -2.0 },
-        "delta_time": { "upper": 2.0, "lower": -2.0 },
-        "bandwidth": { "min_mhz": 100 },
-        "transient": {}
-    },
-    "points": {
-        "delta_amp": [0.001, 0.002, 0.005, "..."],
-        "dc_gain": [0.001, 0.002, 0.005, "..."],
-        "delta_time": [10E-9, 20E-9, 40E-9, "..."],
-        "bandwidth": [0.005, 0.010, 0.020, "..."]
-    }
-}
-```
-
-关键字段：
-
-| 字段 | 说明 |
-|------|------|
-| `manufacturer` | 厂商全称，用于自动识别匹配 |
-| `models` | 适用型号列表，用于精确匹配 |
-| `series` | 产品系列，用于模糊匹配（回退） |
-| `imp_has_50` | 是否支持 50Ω 阻抗 |
-| `channels` | 通道数；未填写时兼容为 4，两通道设备应明确填写 2 |
-| `vertical_div` | 垂直方向分度数 |
-| `horizontal_div` | 水平方向分度数 |
-| `calibration_limits` | 各校准项目的允差限 |
-| `points` | 各校准项目的校准点列表 |
-| `averages` | 测量时写入示波器的平均次数（`ACQuire:NUMAVg`），默认 16。波形噪声确实会抬高读数时可调大，取值范围 2~4096，但必须是机型合法值且能在固定稳定等待（5 s）内完成采集 |
-| `bd_scan` | 带宽扫描模式：`bisect`（默认，指数粗定位+二分精化）或 `linear`（固定步进，旧方案） |
-
-> **带宽扫描算法**：默认 `bisect` 模式利用频响单调性，用"指数粗定位（×2 探测）+ 栅格二分精化"定位 -3dB 点，测量次数从线性扫描的 O(范围/步长) 降为 O(log₂(范围/步长))（实测 1GHz 场景约 3.4× 提速）。每步的稳定/采集延时与线性模式完全一致，不改变校准仪与示波器间的时序；报告值仍落在 `bd_step` 栅格上。若某机型频响非单调（出现 peaking），可将 profile 的 `bd_scan` 改为 `linear` 回退旧方案。
-
-### 校准仪文件（calibrators/）
-
-定义校准仪的 SCPI 命令、探头信息和阻抗规则。
-
-```json
-{
-    "name": "9500B",
-    "description": "Fluke 9500B Oscilloscope Calibrator ...",
-    "type": "pyvisa",
-    "series": ["9500B"],
-    "models": ["9500", "9500B"],
-    "keyword": {
-        "imp_fif": "50",
-        "imp_meg": "10000"
-    },
-    "probes": {
-        "9560": { "name": "9560", "max_frequency": "6.4 GHz", "edge_rise_times": [70E-12] },
-        "9550": { "name": "9550", "description": "Fast Edge Head", "edge_rise_times": [25E-12] },
-        "9530": { "name": "9530", "max_frequency": "600 MHz", "edge_rise_times": [150E-12, 500E-12] }
-    },
-    "impedance_rules": {
-        "9560": { "DC": ["1M","50"], "SQU": ["1M","50"], "MARK": ["50"], "SIN": ["50"], "EDGE": ["50"] },
-        "9550": { "EDGE": ["50"] },
-        "9530": { "DC": ["1M","50"], "SQU": ["1M","50"], "MARK": ["1M","50"], "SIN": ["1M","50"], "EDGE": ["1M","50"] }
-    },
-    "actions": { "..." }
-}
-```
-
-关键字段：
-
-| 字段 | 说明 |
-|------|------|
-| `models` | 该配置接受的 `*IDN?` 型号字符串列表（精确比较，比较时忽略大小写与空格等非字母数字字符，因此 `"TBS1102"` 可匹配上报为 `TBS 1102` 的机型）。用于同一型号存在多种上报形式的场景，如 FLUKE 9500B 既有上报 `9500B`、也有上报 `9500` 的固件，此时填写 `["9500","9500B"]`；省略时按 `series` 做型号家族回退匹配 |
-| `keyword.meas_pos_overshoot` | 正过冲测量助记符。**可省略**：省略表示该机型没有此测量能力，瞬态项目只测上升时间、过冲列记"不适用"（例：泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列） |
-| `probes` | 探头信息，`edge_rise_times` 为可用的上升时间列表（秒），`max_frequency` 为最大正弦波频率 |
-| `impedance_rules` | 阻抗规则，按探头型号和信号模式定义支持的阻抗列表。`["1M","50"]` 表示两种都支持，`["50"]` 表示仅支持 50Ω |
-
-### 校准规范文件（specs/）
-
-声明"按哪份校准规范、用什么口径"的配置层。**规范只写口径**（条款号、取点策略、屏占比、基准频率、记录表号、偏离声明、参考指标），硬件能力仍来自 `profiles/`，标准器输出能力来自 `calibrators/`。
-
-| 字段 | 说明 |
-|------|------|
-| `spec_code` / `name` / `effective` | 规范代号、名称、实施日期 |
-| `recall_interval_months` | 复校时间间隔（月） |
-| `deviations` | 对规范的偏离声明，逐条写入校准记录 |
-| `limits_semantics` | 必须为 `reference_only`：规范表 1 指标仅供参考，不作符合性判定依据 |
-| `items` | 各校准项目：`clause` 条款号、`automatable` 是否程序实现、`points.strategy` 取点策略、`record_table` 原始记录表号、`formula` 计算式 |
-
-取点策略（`points.strategy`）共 8 种：`explicit` 绝对点表、`screen_fraction` 屏占比、`scale_list` 档位列表、`bw_ratio` 相对带宽比值、`derived` 现场公式、`fixed` 固定条件、`channel_x_impedance` 通道×阻抗、`channel_x_edge_speed` 通道×边沿速度。
-
-用 `--spec` 指定：可写 `specs/` 下的名称（可省 `.json`）或直接给文件路径。
-
-> **当前状态（v0.2.0）**：`--spec` 只做"记录规范标识 + 校验规范配置"，**尚未切换测量口径**——本轮仍按现有 5 个项目的方法执行，记录里 `metadata.spec.applied` 恒为 `false`。
-
-## 自动识别流程
-
-`osccal calibrate --auto` 的完整识别链条：
-
-```
-扫描 VISA 资源
-  → *IDN? 查询（200ms 超时，超时=不可用，忽略）
-    → 厂商含 "FLUKE" → 校准仪
-    → 厂商为已知示波器厂商 → 示波器（多台同类设备时要求指定资源）
-    → 其他 → 忽略
-  → 指令集匹配：models 精确匹配 → series 模糊匹配 → 文件名前缀回退
-  → 特征匹配：同上三级回退
-  → 连接校准仪 → ROUT:FITT? CH1 查询探头 → 自动匹配探头型号
-  → 打印识别结果 → 用户确认 → 执行
-```
-
-> 型号比较统一按「忽略大小写 + 去除非字母数字字符」归一化（`config_validation.normalize_token`），
-> 因此 `TBS 1102`、`TBS-1102`、`tbs1102` 都匹配配置中的 `TBS1102`，与执行前校验使用同一条规则。
-> 归一化后若两个配置声明了同一型号，会判为歧义并要求手动指定配置，不会随机选一个。
-
-自动模式与手动模式共用配置校验。空厂商或型号、重复精确匹配和系列匹配同分时均不会自动选取；可切换到手动模式显式选择配置。检测到多台同类设备时，用 `--resource-cal` 和 `--resource-osc` 指定资源。配置会检查必需动作、测量模式所需动作、参数数量和字段类型，以及校准点和限值的有限数值约束。
-
-## 探头阻抗规则
-
-校准仪输出阻抗由探头型号和信号模式共同决定，程序自动匹配：
-
-| 探头 | DC | SQU | MARK | SIN | EDGE |
-|------|-----|------|------|------|------|
-| **9560** | 1MΩ / 50Ω | 1MΩ / 50Ω | 仅 50Ω | 仅 50Ω | 仅 50Ω |
-| **9550** | — | — | — | — | 仅 50Ω |
-| **9530** | 1MΩ / 50Ω | 1MΩ / 50Ω | 1MΩ / 50Ω | 1MΩ / 50Ω | 1MΩ / 50Ω |
-
-**自动切换逻辑**：
-
-- 示波器支持 50Ω 时，优先按示波器当前阻抗设置校准仪
-- 探头不支持期望阻抗时（如 9560 在 MARK 模式下不支持 1MΩ），自动切换为探头支持的阻抗，同时设置示波器和校准仪，并打印黄色警告
-- 示波器不支持 50Ω 但探头只能输出 50Ω 时，打印红色警告提示阻抗不匹配
-
-## 探头上升时间
-
-EDGE 校准时，校准仪上升时间根据探头型号自动设置：
-
-| 探头 | 可选上升时间 |
-|------|------------|
-| **9560** | 70 ps |
-| **9550** | 25 ps |
-| **9530** | 150 ps / 500 ps（交互选择） |
-
-## 添加新示波器
-
-只需创建两个 JSON 文件，无需修改任何代码：
-
-### 1. 创建指令集文件
-
-在 `commands/` 目录下新建 JSON 文件，定义示波器的 SCPI 命令模板。需要填写：
-- `manufacturer`：厂商全称（如 `"Tektronix"`）
-- `models`：适用型号列表（如 `["MDO3052", "MDO3054"]`），用于 `--auto` 精确匹配
-- `series`：产品系列（如 `["MDO3000"]`），用于模糊匹配回退
-- SCPI 命令模板
-
-可参考已有文件（如 `commands/tektronix_mdo.json`）的格式。
-
-### 2. 创建特征文件
-
-在 `profiles/` 目录下新建 JSON 文件，定义示波器的硬件参数和校准点。同样需要填写 `manufacturer` 和 `models` 字段。可参考已有文件（如 `profiles/tektronix_mdo3000.json`）的格式。
-
-完成后运行 `osccal calibrate --auto`，程序会自动根据 `*IDN?` 型号匹配新配置。
-
-## 校准项目说明
-
-### 幅度（ΔV）
-
-校准垂直偏转系数幅度准确度。校准仪输出方波信号（SQU），示波器测量幅度值，计算相对误差：
-
-```
-误差(%) = (测量值 - 标准值) / 标准值 × 100%
-```
-
-幅度、直流增益和 Δt 均用原始数值计算误差，JSON 保留未舍入的误差。终端和 Excel 只显示有效位数（幅度/直流增益 3 位有效数字、Δt 4 位、误差小数点后 2 位），超差判断仍使用未舍入值，因此显示为 `2.00%` 的值也可能被标红（如实际为 `2.004%`，上限为 `2%`）。
-
-小电压挡位（≤2mV/div）时自动调整垂直位置，确保波形完整显示。
-
-**没有 `Amplitude` 的机型用 `CRMs` 代替**（指令集 `meas_amp` 为 `CRMs`，如泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列）：峰峰值（`PK2pk`）会把方波沿的确定性峰化/过冲全额计入，实机实测偏高 1.3~5.3%（挡位越低越明显）且**加平均无法消除**；`CRMs`（第一周期真有效值）对窄峰只有二阶敏感。对称方波的有效值等于**幅度**（峰峰值的一半），因此这类指令集用 `feature.meas_amp_scale: 2` 把读数换算到标准值的峰峰值口径后再比较。此类 Profile 还可以用 `averages` 提高平均次数，并在每个挡位设定后微调触发电平（0.1 格、符号交替）迫使平均序列重启，避免读到上一个挡位的粘滞平均值。
-
-### 直流增益
-
-校准直流增益准确度。校准仪输出直流信号（DC），分别测量正负偏移的均值，计算增益误差：
-
-```
-G = (Ur+ - Ur-) / (U+ - U-)
-误差(%) = (1 - G) / G × 100%
-```
-
-支持 1MΩ 和 50Ω 两种阻抗（若示波器支持）。
-
-### Δt（时间）
-
-校准水平偏转系数时间准确度。校准仪输出梳状波（MARK）信号，示波器测量周期，计算相对误差。
-
-有 50Ω 阻抗的示波器按 50Ω 设置校准，只有 1MΩ 的示波器按 1MΩ 设置。
-
-### 频带宽度
-
-校准示波器频带宽度。校准仪输出正弦波信号（SIN），逐步增加频率，当幅度降至参考幅度的 0.707 倍（-3dB 点）时，记录当前频率为带宽。
-
-扫描起点必须在 50 kHz 至探头最高频率之间，步进至少为 1 Hz；参数不合法时不会开启输出。搜索到最低栅格仍无通过点时，报告项目失败并退出搜索。若最高可测栅格仍通过，则 JSON、终端和 Excel 的“结果状态”标记为“下界（未定位交叉点）”，数值仅表示已验证的带宽下界，不能作为精确带宽或据此判定低于标称值。
-
-通信重试耗尽、无效读数（包括 NaN、无穷大和仪器无效值标记）会终止当前项目，不再以零值参与计算。直流增益使用未舍入的读数计算，零增益作为无效结果处理。各校准项目正常结束、异常或 Ctrl+C 中断时均尝试关闭校准仪输出；关闭失败会终止会话并提示检查设备输出状态。
-
-### 上升时间及过冲
-
-校准瞬态响应。校准仪输出快沿信号（EDGE），示波器单次采集，测量上升时间和正过冲。上升时间根据探头型号自动设置。
-
-**缺少正过冲测量的机型**（指令集未声明 `meas_pos_overshoot`，如泰克 TBS1000/TDS1000/TDS2000/TPS2000 系列的基本测量类型组）：瞬态项目照常执行，只测上升时间，**过冲列记为"不适用"**（JSON 中为 `null`），不会因为缺少这一个测量项而放弃整项。执行时会给出提示。
-
-`meas_pos_overshoot` 不在必需 keyword 列表中（见 `config_validation.REQUIRED_KEYWORDS`），省略它即表示机型没有正过冲测量能力，这是当前唯一带"降级为不适用"语义的可选 keyword。
-
-## 已支持的示波器
-
-| 品牌 | 系列 | 指令集文件 | 特征文件 | 连接方式 |
-|------|------|-----------|---------|---------|
-| 泰克 | MDO3000, MDO4000, MSO4000B, DPO4000B | `tektronix_mdo.json` | `tektronix_mdo3000.json` | VISA |
-| 泰克 | MDO34（4 通道） | `tektronix_mdo3.json` | `tektronix_mdo34.json` | VISA |
-| 泰克 | MDO32（2 通道） | `tektronix_mdo3.json` | `tektronix_mdo32.json` | VISA |
-| 泰克 | TBS2000B | `tektronix_tbs.json` | `tektronix_tbs2000b.json` | VISA |
-| 泰克 | TDS5000 | `tektronix_tds.json` | `tektronix_tds5000.json` | VISA |
-| 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（4 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_4ch.json` | VISA |
-| 泰克 | MSO2000B, DPO2000B, MSO2000, DPO2000（2 通道） | `tektronix_mso2000b.json` | `tektronix_mso2000b_2ch.json` | VISA |
-| 泰克 | TBS1000B, TBS1000B-EDU（2 通道，50～200 MHz） | `tektronix_tbs1000b.json` | `tektronix_tbs1000b.json` | VISA |
-| 泰克 | TBS1000, TDS1000/B/C-EDU, TDS2000/B/C, TPS2000/B（2 通道，25～200 MHz） | `tektronix_tds1000_tds2000.json` | `tektronix_tds1000_tds2000_2ch.json` | VISA |
-| 泰克 | TDS2004/B/C, TDS2014/B/C, TDS2024/B/C, TPS2014/B, TPS2024/B（4 通道） | `tektronix_tds1000_tds2000.json` | `tektronix_tds1000_tds2000_4ch.json` | VISA |
-| 普源 | MSO5000 | `rigol_mso.json` | `rigol_mso5000.json` | VISA |
-| 鼎阳 | SDS6000 PRO, SDS6000A | `siglent_sds.json` | `siglent_sds.json` | VISA |
-| 优利德 | UTD2000CEX | `unit_utd.json` | `unit_utd2000cex.json` | VISA |
-| 优利德 | UTD7000C | `unit_utd.json` | `unit_utd7000c.json` | VISA |
-| 优利德 | UPO1000X 系列（UPO1054X/UPO1104X/UPO1204X/UPO1204X-E，4 通道，50～200 MHz） | `unit_upo1000x.json` | `unit_upo1000x.json` | VISA |
-| 周立功 | ZDS2000/2000B | `zlg_zds.json` | `zlg_zds2000.json` | Socket |
-| 周立功 | ZDS4000/3000 | `zlg_zds.json` | `zlg_zds4000.json` | Socket |
-| 周立功 | ZDS1000 | `zlg_zds1000.json` | `zlg_zds1000.json` | Socket |
-
-## 泰克 MSO2000B/DPO2000 系列特别说明
-
-该系列（MSO2000B/DPO2000B/MSO2000/DPO2000，2 通道与 4 通道共 18 个型号，覆盖 70/100/200 MHz）**输入阻抗仅 1 MΩ**，配置与使用方法如下：
-
-- **探头选择**：9560 探头的 MARK/SIN/EDGE 模式只能输出 50Ω，与本系列不匹配，执行前校验会拒绝 `delta_time`、`bandwidth`、`transient`。上述项目请改用 **9530 探头**（各模式均支持 1MΩ）；`amp` 与 `dc_gain` 用 9530 或 9560 均可。
-- **探头增益**：出厂 P2220 探头默认 10×，Profile 中 `probe_default: 10` 会在测量前把探头增益置为 1×（对应校准仪直连），避免读数差 10 倍。
-- **无 50Ω 选项**：手册中 `CH<x>:TERmination` 与 `CH<x>:IMPedance` 均为"为兼容性保留"的**无参数命令**，无法通过 SCPI 选择 50Ω，故指令集不含 `set_impedance`。
-- **垂直挡位范围 2 mV/div ～ 5 V/div**（手册偏移量说明："For V/Div settings from 2 mV/div to 200 mV/div, the offset range is ±1 V；from 202 mV/div to 5 V/div, the offset range is ±25 V"），按 1-2-5 排列，**不支持 1 mV/div 与 10 V/div**；**水平时基按 1-2-4-10 排列**（400 ns/div 之后直接是 1 µs/div，**没有 800 ns/div**）。因此本系列的 `delta_amp`/`dc_gain` 点表为 11 点（2 mV ～ 5 V/div）、`delta_time` 点表以 1 µs 取代 800 ns（20 点），避免示波器钳位挡位后标准值与被测波形不符而报出虚假大误差。
-- **时基下限 2 ns/div**：频带宽度扫描在约 250 MHz 以上会触及该下限，示波器自行钳位时基；幅度—频率测量本身仍然有效。
-- 其他已核实要点：`ACQuire:MODe` 仅支持 `SAMple|AVErage`（无峰值检测）；触发电平为全局 `TRIGger:A:LEVel <NR3>`（不带通道号）；测量值查询返回 `:MEASUREMENT:IMMED:VALUE <值>`（配置 `return_value_index: 1`）。
-
-## 泰克 TBS1000B/EDU、TBS1000、TDS1000/2000、TPS2000 系列特别说明
-
-该系列依据编程手册 **077-044403 Rev B**（TBS1000/B/EDU, TDS2000/B/C, TDS1000/B/C-EDU, TDS200, TPS2000/B）实现，覆盖 2 通道与 4 通道共 **49 个型号**（TBS1000B/EDU 10 个、TBS1000 5 个、TDS1000/B/C-EDU 9 个、TDS2000/B/C 19 个、TPS2000/B 6 个），带宽 25～200 MHz。共同特点与使用限制如下：
-
-- **输入阻抗仅 1 MΩ**：手册中不存在 `CH<x>:TERmination`/`CH<x>:IMPedance` 指令，故指令集不含 `set_impedance`。9560 探头的 MARK/SIN/EDGE 只能输出 50Ω，执行前校验会拒绝对应项目；请改用 **9530 探头**（各模式均支持 1MΩ）。`amp`/`dc_gain` 用 9530 或 9560 均可。
-- **指令集分两份，按测量能力划分**：
-  - `tektronix_tbs1000b.json`（TBS1000B/TBS1000B-EDU）：手册的**扩展测量类型**组，含 `AMplitude`（幅度）与 `POVERshoot`（正过冲），五项校准全部可用。
-  - `tektronix_tds1000_tds2000.json`（其余机型）：手册的**基本测量类型**组（16 种），**没有 `AMplitude`/`POVERshoot`**，因此幅度测量改用 **`CRMs`**（第一周期真有效值），并由 `feature.meas_amp_scale: 2` 换算到标准值的峰峰值口径；指令集**不声明 `meas_pos_overshoot`**，瞬态项目仍然执行，只测上升时间，**过冲列记为"不适用"**（不会向示波器下发机型不支持的测量类型）。五项校准都可用。
-- **未纳入的型号（TDS210/TDS220/TDS224）**：TDS200 系列必须选装 TDS2MM 测量模块才有自动测量、选装 TDS2CM(A) 才有通信接口（手册前言亦如此说明），无法保证指令可用，故不写入 `models` 白名单；手册适用列表中的其余型号均已覆盖。
-- **探头增益**：出厂无源探头默认 10×，Profile 中 `probe_default: 10` 会在测量前把衰减置为 1×（`CH<x>:PRObe 1`），对应校准仪直连，避免读数差 10 倍。
-- **分格数 8 × 10**：手册 CURSor 说明"屏幕中心为 0 格、屏幕底部为 -4 格"，即 8 垂直分格；标准值取 `挡位 × (垂直分格 - 2)`，即屏幕中部的 6 格峰峰值。
-- **垂直挡位 2 mV/div ～ 5 V/div（1-2-5）**：手册 `CH<x>:SCAle` 说明"使用 1× 探头时电压范围为 5 V/div ～ 2 mV/div"，位置范围表也列出 2 mV/div 一档，故 `delta_amp`/`dc_gain` 点表为 11 点，不含 1 mV/div 与 10 V/div。
-- **水平时基为 1-2.5-5 序列**（手册 `HORizontal:MAIn:SCAle`：*"The acceptable values are in a 1-2.5-5 sequence. Other values are forced to the closest acceptable value."*），与 MDO/MSO2000B 的 1-2-4-10 不同，因此 `delta_time` 点表按 1-2.5-5 排列（10 ns ～ 25 ms，20 点）。**起点取 10 ns/div**：TDS2001C/2002C/2004C 等机型最快 5 ns/div、TDS2012C 及 TBS1000B 最快 2.5 ns/div，10 ns/div 对所有机型都无需钳位。
-- **查询响应带表头**：`FACtory`（本工具的 `preset`）会打开 HEADer，`MEASUrement:IMMed:VALue?` 返回形如 `:MEASUREMENT:IMMED:VALUE 28.75E6`，故 `return_value_index: 1`。测量源写 `MEASUrement:IMMed:SOUrce1 CH<x>`，与附录 B 出厂设置一致。
-- **`ACQuire:NUMAVg` 只接受 4/16/64/128**：测量前一概写 16，测量后代码会写 2（本系列不在合法值内），示波器可能钳位到 4 并在事件队列中记录一条错误；下一次测量前仍会重新写入 16，且本工具不查询错误队列，不影响测量结果与判定。
-- **带宽判定阈值**：Profile 的 `bandwidth.min_mhz` 取该组机型中的**最低**标称带宽（TBS1000B/EDU 50、2 通道组 25、4 通道组 70）。如需按具体机型的标称带宽严格判定，请把对应 Profile 的 `min_mhz` 改为实际值（例如 TDS2024C 改为 200）。
-- **带宽扫描步进**：`bd_step` 设为 5 MHz，使 25/40/50/60/70/100/150/200 MHz 等标称带宽都落在扫描栅格上；二分扫描的测量次数只随栅格数对数增长，扫描时间与 10 MHz 步进基本一致。
-- **幅度测量用 `CRMs` 而不是 `PK2pk`（实机验证）**：该组机型没有 `AMplitude`。最初用 `PK2pk`，但峰峰值取的是记录内的最大值与最小值，方波沿的**确定性峰化/过冲被全额计入**——TBS1102 实测偏高 +1.3%（5 V/div）～ +5.3%（2 mV/div），且把平均次数从 16 加到 64、128 几乎不变（11 点中仅 2 点动了 1%，64 与 128 逐位相同），说明它**不是随机噪声、加平均解决不了**。改用 `CRMs`（第一周期真有效值）后读数与直流增益路线一致：对称方波的有效值 = 幅度，RMS 对窄峰只有二阶敏感。因为标准值口径是屏幕中部的 6 格**峰峰值**，故指令集用 `feature.meas_amp_scale: 2` 把 CRMs 读数换算成峰峰值再比较（`bandwidth` 项目用比值，系数自动约掉）。
-- **换挡位后微调触发电平**：平均模式下示波器可能沿用上一次的部分累加值（表现为"粘滞"，读数滞后于新挡位），手册 `ACQuire:NUMACq?` 明确"改变触发参数会复位平均序列（Sample/PeakDetect 模式除外）"。因此 `amp`/`dc_gain` 在每个挡位设定后（DC 项目在正、负半周之间再补一次）写入一次触发电平，取值为**当前挡位的 0.1 格、符号交替**：既大于触发电平 DAC 的分辨率（保证示波器确实重新平均），又远小于波形幅度（不影响测量）。带宽项目不做此微调——它的每个校准点都会改写垂直挡位与水平时基，平均序列本就会重启。
-- **型号上报形式**：真机 `*IDN?` 会上报带空格的型号，例如 `TEKTRONIX,TBS 1102,C030565,CF:91.1CT FV:v26.02`（TBS1102，固件 v26.02）；匹配时忽略大小写与空格，`--auto` 可直接识别。
-- **上机确认**：本系列配置全部依据上述编程手册推导，尚未在真机上验证。首次使用建议先跑单项（如 `--items amp --probe 9530`），确认测量查询响应形如 `:MEASUREMENT:IMMED:VALUE <值>`（带表头）后再执行全部项目；若某机型返回裸数值，把对应指令集 `feature.return_value_index` 改为 0 即可。
-
-## 优利德 UPO1000X 系列特别说明
-
-该系列依据《UPO1000X 系列可编程数字示波器编程手册 REV.1(2023)》与官方服务手册的机型清单实现（UPO1054X 50 MHz、UPO1104X 100 MHz、UPO1204X/UPO1204X-E 200 MHz），**全系列标配 4 通道**。编程手册封面标注适用于 "UPO1000X、UPO1204X-E 系列"，`*IDN?` 的示例返回为 `UNI-T Technologies, UPO1000X, UPO1000, 00.00.01`，故这五种写法都写入了 `models` 白名单。
-
-- **输入阻抗仅 1 MΩ**：数据手册为 `1 MΩ ±2% || 16 pF ±2 pF`，手册中不存在 `CHANnel<n>:IMPedance`/`TERmination` 指令，故指令集不含 `set_impedance`。9560 探头的 MARK/SIN/EDGE 只能输出 50Ω，执行前校验会拒绝 `delta_time`、`bandwidth`、`transient`；请改用 **9530 探头**（各模式均支持 1MΩ）。`amp`/`dc_gain` 用 9530 或 9560 均可。
-- **探头增益**：随机无源探头为 10:1（UT-P04/UT-P05），优利德操作手册亦注明"示波器出厂时菜单中的探头衰减系数的预定设置为 10X"，故 Profile 中 `probe_default: 10` 会在测量前下发 `:CHANnel<n>:PROBe 1X`，对应校准仪直连，避免读数差 10 倍。
-- **分格数 8 垂直 × 14 水平**（由手册的波形换算参数与游标量程推导，与泰克系列"游标量程推分格"的做法一致）：
-  - 垂直：`:WAVeform:YINCrement?` 为 `VerticalScale / 幅格挡纵向波形点数(25)`，即 25 码/格；`:WAVeform:YREFerence?` 固定为 128（8 位转换器中心、通道零点）；`:CURSor:CURAY`（纵向位置）只允许 `[28,227]`——正好 200 码，以参考电平 128 为中心，200 ÷ 25 = **8 格**。
-  - 水平：`:WAVeform:XINCrement?` 为 `TimeScale / 时基挡横向的波形点数(50)`，`:WAVeform:XORigin?` 为 `-1 × TimeScale × 7`（触发点在屏幕中心，波形数据从触发前 7 格开始），700 点 ÷ 50 点/格 = **14 格**。
-  - 标准值仍取 `挡位 × (垂直分格 - 2)`（屏幕中部的 6 格峰峰值），`delta_time` 取 `水平分格 - 2 = 12` 格（该系数在相对误差中约掉，只影响报表里的标准值/实测值绝对值）。
-
-  > 说明：`vertical_div` 只决定"让波形占屏幕几格"，标准值对应的电压由校准仪输出，因此分格数取值不影响误差计算的正确性——只要波形完整落在屏幕内即可。若某台机器实测是 10 格，把 `vertical_div` 改成 10 也只是让波形占 8 格、余量更大。
-- **背靠背连续写入会被静默丢弃（实机发现，必须节流）**：UPO1104X 在无间隔连续下发指令时会丢掉其中若干条，**错误队列仍返回 `0,"No error"`**，因此现象是"某些设置没生效"而不是报错。实测 `amp` 项目初始化阶段连写 8 条时，`:CHANnel<n>:SCALe` 被丢掉，示波器仍停在 `*RST` 默认的 1 V/div 下测量，读出的 80 mV×13 倍误差又被误当成超屏波形。指令集因此声明 `feature.write_delay_ms: 50`（每条写入后间隔 50 ms），实测 13 个挡位全部正确生效。**这是该机型特有的行为，其他指令集不声明该字段，时序完全不变。**
-- **无效测量用 `*` 表示（手册原文："当返回数据为无效数据均用*表示"）**：刚改过挡位/触发电平/垂直位置时读数可能短暂无效，`read_measurement` 会重试 3 次；仍无效时抛出指明测量项的错误，而不是 `could not convert string to float`。
-- **幅度测量用 `VAMPlitude` 而不是 `VPP`（实机验证）**：手册把 `VPP`（最大值 − 最小值）与 `VAMPlitude`（顶端值 − 底端值）列为两个不同的测量项。`VPP` 会把方波沿的确定性峰化/过冲**全额计入**——这正是泰克 TBS1000/TDS2000 系列弃用 `PK2pk` 的原因。实机对比（9530 输出，1 MΩ）：`VAMPlitude` 误差 **≤0.4%**，而 `VPP` 系统性偏高 **+2.4%～+9.3%**（挡位越低越差），故指令集用 `VAMPlitude` 且**不需要** `feature.meas_amp_scale` 换算。
-- **瞬态项目两项都测**：手册有 `:MEASure:OVERshoot?`（返回百分比）与 `:MEASure:RISetime?`，故指令集声明 `meas_pos_overshoot`，过冲列给出数值而非"不适用"。
-- **没有 `:SINGle` 命令**：单次采集由 `:TRIGger:SWEep SINGle`（"符合触发条件时触发一次然后停止"）加 `:RUN` 完成，对应 `acquire_stop_after_single: "SINGle"` 与 `acquire_state_run: "RUN"`。
-- **测量为 split 模式**：手册的 `:MEASure:<item>?` 逐项查询（先 `:MEASure:SOURce CHANnel<n>` 选源），共 36 种波形参数，指令集候选测量项与手册列表逐项一致。响应为裸科学计数法（`3.120e000`），故 `return_value_index: 0`。
-- **垂直挡位 500 µV/div ～ 20 V/div（1-2-5）**：`delta_amp`/`dc_gain` 点表取 **1 mV ～ 10 V/div（13 点）**，与优利德 UTD 系列一致；不取 500 µV/div 是因为校准仪在 `挡位 × 6 = 3 mV` 峰峰值上已接近方波/直流输出的下限。
-- **水平时基为 1-2-5 序列（实机确认）**：手册 `:TIMebase:SCALe` 举例列出 `1 ns/div、2 ns/div、5 ns/div、10 ns/div、25 ns/div…`，实机确认该机型档位按 **1-2-5** 步进（10/20/50/100/200/500…），仅 **25 ns/div** 一档是 2.5 步进。因此 `delta_time` 点表按此排列（**10 ns ～ 20 ms，20 点**），不会出现会被示波器钳位而报出虚假大误差的档位。
-- **平均次数保持默认 16**：手册 `:ACQuire:AVERages:COUNt` 支持 2 的幂（2～8192），`VAMPlitude` 取顶/底电平，噪声不会像峰峰值那样直接抬高结果，故 Profile 不声明 `averages`（沿用默认 16）；换挡位后仍会微调触发电平（0.1 格、符号交替）迫使平均序列重启。
-- **带宽判定阈值**：`bandwidth.min_mhz` 取系列最低带宽 **50**（UPO1054X）。如需按具体机型严格判定，请把 Profile 的 `min_mhz` 改为实际标称带宽（UPO1104X 改 100、UPO1204X/-E 改 200）。
-- **实机验证进度：五项校准均已实机验证通过**。验证机为 **UPO1104X**（固件 1.01.0046，9530 头接 CH1，1 MΩ）：其中 `amp` 项目 13 个挡位全部跑通，相对误差 **−1.29% ～ +0.2%**（最差为 1 mV/div 的 −1.29%，其余均 ≤0.4%）；`delta_time` 点表按实机实际可设档位调整过（1-2-5，10 ns ～ 20 ms）；`dc_gain`、`bandwidth`、`transient` 同样在本机跑通，无需再改 Profile 参数。
-
-## 周立功 ZDS1000 系列特别说明
-
-ZDS1000 系列使用 **完整 SCPI 关键字**（`:CHANnel`/`:MEASure`/`:TIMebase`/`:ACQuire`/`:TRIGger`），与 ZDS2000/4000 系列不兼容。主要差异：
-
-- **无 50Ω 输入阻抗**，EDGE 校准自动切换为 1MΩ + 500ps 上升时间
-- **直流均值测量**使用 `VAVG DISPlay` 替代 `VMEAn`（VMEAn 不支持 DC 信号）
-- **垂直偏置**使用 `:CHANnel<n>:OFFSet`（伏特单位），代码已自动适配
-- **瞬态测量**需提前设好测量项再 SINGLE 捕获，否则返回 Invalid
-- 小挡位（≤5mV/div）跳过自动垂直位置调整（`skip_vertical_adjust: true`）
-
-## 测试
-
-项目使用 pytest 进行单元测试，覆盖指令集结构、Profile 校验和 SCPI 通信集成。
-
-> 需先激活虚拟环境并安装开发依赖：`pip install -e ".[dev]"`（见[安装](#安装)）。
-
-```bash
-# 运行全部测试
-pytest
-
-# 运行指定测试文件
-pytest tests/test_mdo3_commands.py
-
-# 查看详细输出
-pytest -v
-```
-
-测试内容：
-
-| 测试文件 | 覆盖范围 |
-|---------|---------|
-| `tests/test_mdo3_commands.py` | MDO3 指令集结构完整性、action/keyword 齐全性、SCPI 组装与手册一致性 |
-| `tests/test_mdo3_profiles.py` | MDO34/MDO32 Profile 参数校验（通道数、带宽、校准点、限值） |
-| `tests/test_mdo3_comm_integration.py` | `scpi_write`/`scpi_query`/`read_measurement`/`setup_impedance` 通信链路；无效值标记 `*` 的重试与可诊断报错 |
-| `tests/test_all_configs.py` | 全量配置结构校验：commands/ 指令集 action/keyword 契约、profiles/ 校准点与限值、calibrators/ 探头阻抗规则 |
-| `tests/test_sim_integration.py` | 模拟仪器端到端集成测试：无硬件跑通全部校准项目，含带宽向下扫描边界用例 |
-| `tests/test_cli_flow.py` | CLI 校准流程测试：手动/自动模式、`--log-scpi`、SCPI 失败统计（mock 设备） |
-| `tests/test_device_identity.py` | 设备身份核对：厂商别名/跨厂商拒绝、`models` 白名单精确匹配、校准仪 `series` 型号家族回退（`9500`/`9500B` 兼容） |
-| `tests/test_export_grouping.py` | 报告分组：同一项目的多通道数据合并到同一 sheet / 同一表格 |
-| `tests/test_export_precision.py` | 报告显示精度：`ITEM_PRECISION` 与列数一致性、Excel 单元格数值/数字格式与终端位数一致、舍入不掩盖超差 |
-| `tests/test_tek_tbs_tds_configs.py` | 泰克 TBS1000B/EDU、TBS1000、TDS1000/2000、TPS2000 系列：型号唯一匹配、指令契约（CRMs+换算系数/TRIGger:MAIn/无 50Ω 指令）、1-2.5-5 时基点表、瞬态只测上升时间、mock 仪器端到端指令 |
-| `tests/test_unit_upo1000x_config.py` | 优利德 UPO1000X 系列：型号唯一匹配、指令契约（split 逐项查询/VAMPlitude 而非 VPP/无阻抗指令/`TRIGger:SWEep SINGle`+`:RUN`/写入节流）、36 种测量项与手册一致、8×14 分格与实机确认的 1-2-5 时基点表、瞬态两项都测、`amp` 先选方波、mock 仪器端到端指令 |
-
-> 配置结构校验规则与运行时加载校验共用同一实现（`osccal/core/config_validation.py`）：
-> 加载配置时即校验结构，出错会直接指出具体 JSON 文件与字段，而非运行时才报错。
-
-## 依赖
-
-| 库 | 用途 |
+| 退出码 | 含义 |
 |---|---|
-| [click](https://click.palletsprojects.com/) | CLI 命令框架 |
-| [rich](https://rich.readthedocs.io/) | 终端美观输出 |
-| [PyVISA](https://pyvisa.readthedocs.io/) | VISA 仪器通信 |
-| [PyVISA-py](https://pyvisa-py.readthedocs.io/) | PyVISA 纯 Python 后端 |
-| [openpyxl](https://openpyxl.readthedocs.io/) | Excel 报告生成 |
+| `0` | 所选项目执行完毕（不代表测量值在参考指标内） |
+| `1` | 连接、存储或项目执行失败 |
+| `2` | 参数、配置或设备身份核对不通过（未下发任何设置指令） |
+| `130` | 用户取消或 Ctrl+C 中断 |
 
-开发依赖（`pip install -e ".[dev]"`）：
+单项失败不会终止后续项目：失败项目记为 `failed`（已测到的数据点保留在 JSON 中便于诊断，
+但 `show`/Excel 不展示），后续项目继续执行，本轮状态为 `completed_with_errors`、退出码 `1`。
+用户中断（Ctrl+C）或"无法关闭校准仪输出"时仍立即终止本轮；已完成项目的记录会保存。
 
-| 库 | 用途 |
-|---|---|
-| [pytest](https://docs.pytest.org/) | 单元测试与集成测试框架 |
-| [ruff](https://docs.astral.sh/ruff/) | 代码 lint 与格式化 |
-| [mypy](https://mypy.readthedocs.io/) | 静态类型检查（配置类型模块） |
-| [pre-commit](https://pre-commit.com/) | Git 提交前钩子（可选） |
+### 4.2 `osccal plan`
 
-代码质量检查（CI 与本地一致）：
+只做点表解析，**不连接任何仪器**，用于执行前核对。
 
 ```bash
-ruff check .                 # lint
-ruff format --check osccal tests simulate_calibrate.py   # 格式检查
-mypy                         # 类型检查
-pytest                       # 全量测试
+osccal plan --profile profiles/tektronix_mdo3052.json --probe 9530 --channel 1,2
+osccal plan --json data/plan.json
 ```
 
-项目自带 GitHub Actions CI（`.github/workflows/ci.yml`），在 Python 3.10–3.13 上执行上述全部检查。
+输出每个项目的条款、取点策略、点数、跳过数，并逐条打印跳过原因。
+解析输入为 `specs/`（规范口径）+ `profiles/`（硬件事实）+ `calibrators/`（标准器能力）。
 
-## 硬件验证状态
+### 4.3 `osccal show`
 
-v0.2.0 的 10 个项目均已在真机上运行，逐项结论、实测数据、偏离声明与限制见
-[`verification/jjf1057_2026.json`](verification/jjf1057_2026.json)。摘要：
+```bash
+osccal show --latest                       # 最近一次
+osccal show --file data/calibration_xxx.json
+osccal show                                # 交互选择
+```
 
-| 项目 | 状态 | 关键结果（MDO3052 + 9500B/9530） |
+按项目输出表格（表名沿用规范附录 A 的记录表号），表尾打印参考指标与
+"仅供参考、不作符合性判定依据"的说明。
+
+### 4.4 `osccal export`
+
+```bash
+osccal export                              # 最近一次 → 同目录同名 .xlsx
+osccal export --file data/xxx.json --output report.xlsx
+```
+
+- 每个校准项目一张工作表，表名用规范附录 A 的编号与名称（如 `A.3 直流增益`）；
+- 同一项目的多个通道合并到同一张表；
+- 单元格按与 `show` 相同的显示精度舍入，仍是数值单元格；
+- 表尾给出参考指标文本与免责说明，**不做合格/超差判定**；
+- 首张"校准信息"表记录时间、状态、设备身份、依据规范（含 sha256）与逐条偏离声明。
+
+### 4.5 `osccal device`
+
+```bash
+osccal device list                 # 列出 VISA 资源
+osccal device info --resource "GPIB0::19::INSTR"
+osccal device info --socket 192.168.1.100:5025
+```
+
+## 5. 校准项目与实现口径
+
+所有项目均为：按 `specs/` 的取点策略生成点 → 设激励与示波器状态 → 读数 → 写记录。
+公共约定：
+
+- **每次读数前重新采集**，并用 `ACQuire:STATE?` 轮询确认采集结束，避免读到上一次的陈旧值；
+- **直流/无沿信号自由运行**，不走"单次采集等触发"（等不到触发会白等 5 s）；
+- **读数收敛判据**：标准源换函数后幅度约 2 s 才建立，幅度/频率/周期等标量读数按
+  "间隔 0.5 s 连读、相对差 ≤0.1%"判定收敛，等待时间与残差写入记录（直流扫描点仍用固定建立时间）；
+- **记录长度 = 分析点数**（ENOB、拟合、偏置），否则示波器返回的数据与 `XINCR` 不匹配；
+- **阻抗两端一起设并回读校验**：示波器与校准仪的输入/输出阻抗必须同时匹配（50 Ω 输出接 1 MΩ 输入会让读数翻倍），
+  设置后回读两端阻抗，不一致立即告警。
+
+各项目实现要点：
+
+| 项目 | 激励 | 读数与算法 |
+|---|---|---|
+| 输入阻抗 | 9500B 有源头 `CONF:RES` / `CONF:CAP` | 读校准仪的电阻/电容，与标称值比较；`2E35` 判为无效 |
+| 直流增益 | DC / 1 kHz 对称方波 | 方法一（7.4.1）屏 90%/10% 两点；方法二（7.4.2）方波幅度 `G=Vr/V`；方法三（7.4.3）16 点最小二乘，同时给截距 |
+| 直流偏置 | DC，偏置 0 与 2 格 | 方法二按 7.5.2：读原始码值 `(码值−YOFf)×YMUlt`（不叠加 YZEro）后扫 16 点拟合，`d_c=−b`；方法一按 7.5.1 两点（激励取与 d₀ 同号） |
+| 频率响应 | 正弦 0.5 Vpp | 以 50 kHz 为基准，`G=Vk/V0`；在相邻频点间按对数频率插值求 0.707 |
+| ENOB | 正弦，峰值约 95% 量程 | 采样率现场读回，`f=fs·n/N`（N=1000、n=7 互质），附录 E 四参数拟合，`ENOB=log2(V0/(√12·Er))` |
+| 上升时间 | 快沿，匹配阻抗（50 Ω） | `RIS` 测量项读 10%~90% 过渡时间，10 次独立采集平均，同时记录正过冲与标准差 |
+| 时基误差 | 正弦 | 方法一（7.9.1）频率读数 `δT=(f_std−f_read)/f_std`；方法二（7.9.2）波形拟合 `δT=f_std/f_app−1`，并校验拟合频率与读数一致（>5% 判时间轴不可信） |
+| ΔV | 1 kHz 对称方波 | 自动幅度测量读数代替光标，误差相对标准值 |
+| Δt | 1 kHz 对称方波 | 周期测量 ×M（M=2）与标准值比较 |
+| 随机噪声 | 输入端接 50 Ω 匹配负载（人工确认） | 最小量程、最高采样率下取 1000 点波形求标准差，占满量程百分比 |
+
+**已知与规范的偏离**（写入记录 `metadata.spec.deviations`）：
+
+1. ΔV、Δt 用示波器自动测量读数代替 7.11/7.12 要求的"移动测量光标读数"；
+2. 本记录不包含测量不确定度，由实验室按 JJF 1059.1 另行评定；
+3. 7.13 随机噪声为人工确认环节，程序暂停并提示接入匹配负载。
+
+**实现约定（规范未逐字规定、以实机可行性为准）**：
+
+- 直流偏置方法一的激励取与 d₀ **同号**（规范原文为 −d₀，取负号会把波形推出约两倍偏置量、无法读数）；
+- 零点测量用 **±1 mV 两点插值**：9500B 的 `SOUR:VOLT 0` 会被静默丢弃（最小可设约 1 mV）；
+- 上升时间按图 9 接**匹配阻抗**：机型有 50 Ω 输入时用 50 Ω 端接，没有时退为 1 MΩ 并在记录中注明；
+- 直流偏置误差按 `δd = d_r − d₀` 记录（与 `offset_error_v` 字段同号）。
+- 直流增益三种方法在同一次运行里对同一点各测一遍，并列保存以便互相印证。
+
+> 参考指标来自规范表 1，只作参照；终端与 Excel 均不给出合格/不合格结论。
+
+## 6. 硬件验证状态
+
+验证条件：MDO3052（SN C020687，FW CF:91.1CT FV:v1.30）+ 9500B（SN 045029，FW 4.11，9530 头 SN 882750012，
+证书 WWM202600225，检定日期 2026-03-03；快沿 146 ps、主输出上升时间 409 ps）。
+逐项实测数据、偏离、限制与记录文件见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json)。
+
+| 项目 | 状态 | 关键结果 |
 |---|---|---|
 | 输入阻抗 | verified | 1 MΩ：−0.290%；50 Ω：+0.050% |
-| 直流增益 | verified | 三方法 0.000% ~ +0.625%，互差 <0.42% |
-| 直流偏置 | deviation | 方法一取同号激励、零点用 ±1 mV 插值 |
-| 频率响应 | verified | 带宽 ≥500 MHz（500 MHz 处 0.726） |
-| 动态有效位数 | verified_with_caveat | 6.20 bit @ 2.5 GS/s |
-| 上升时间 | verified_with_caveat | 150 ps→807 ps、500 ps→865 ps，差 58±21 ps |
-| 时基误差 | verified_with_caveat | 拟合法 −366 ~ +127 ppm |
-| ΔV | deviation | 0.000% ~ +0.625%（自动测量代替光标） |
-| Δt | deviation | 0.000%（自动测量代替光标） |
-| 随机噪声 | verified_with_caveat | 0.179 mV（2.243% FS） |
+| 直流增益 | verified | 三方法误差 0.000% ~ +0.625%，方法间互差 <0.42% |
+| 直流偏置 | deviation | 方法一 Δd +0.7 ~ +19.2 mV；方法二 −0.9 ~ −47.4 mV；零点 −19.6 ~ +1.4 mV |
+| 频率响应 | verified_with_caveat | 500 MHz 处 G=0.726，测试范围内未出现 −3 dB 点 → 带宽 ≥500 MHz |
+| 动态有效位数 | verified_with_caveat | 2.5 GS/s、17.5 MHz、1.52 Vpp 下 6.20 bit |
+| 上升时间 | verified_with_caveat | 150 ps 边沿读 807.0 ps，500 ps 边沿读 865.4 ps，差 58.4±20.9 ps |
+| 时基误差 | verified_with_caveat | 频率法 −1767 ~ +1250 ppm（受读数位数限制），拟合法 −366 ~ +127 ppm |
+| ΔV | deviation | 误差 0.000% ~ +0.625%（自动测量代替光标） |
+| Δt | deviation | 误差 0.000%（自动测量代替光标） |
+| 随机噪声 | verified_with_caveat | 0.179 mV = 2.243% FS（1 mV/div 本底） |
 
-> 规范表 1 的技术指标"仅供参考、不作符合性判定依据"，因此上述状态描述的是
-> **测量是否完成且可信**，不是合格判定。
+`verified_with_caveat` 表示测量完成但存在需注明的限制（分辨率、重复性、外部条件）；
+`deviation` 表示与规范方法存在偏离，已在 `deviations` 中声明。状态描述的是
+**测量是否完成且可信**，不是合格判定。
+
+## 7. 记录、报告与追溯
+
+### 7.1 文件位置
+
+`data/calibration_<YYYYmmdd_HHMMSS_微秒>_<uuid>.json`（`data/` 已被 gitignore）。
+同一轮校准从开始到结束只写同一个文件：先写同目录临时文件、`fsync`、再 `os.replace` 原子替换，
+写入失败不会破坏上一份完整记录。
+
+### 7.2 记录结构
+
+```jsonc
+{
+  "metadata": {
+    "timestamp": "...", "status": "completed|completed_with_errors|interrupted|failed",
+    "channel": "1", "probe": "9530",
+    "oscilloscope": {"manufacturer": "...", "model": "...", "serial": "...", "firmware": "..."},
+    "calibrator":   {"manufacturer": "...", "model": "...", "serial": "...", "firmware": "..."},
+    "commands_file": "...", "profile_file": "...", "calibrator_file": "...",
+    "spec": {"spec_code": "JJF 1057-2026", "file": "...", "sha256": "...",
+             "deviations": [...], "limits_semantics": {...}},
+    "points_plan": {"1": {"dc_gain": 6, "...": 0}},
+    "skipped_points": [{"item": "Δt（时间）测量", "reason": "..."}],
+    "requested_items": [...], "item_status": {"dc_gain": "failed", "delta_v": "completed"},
+    "failures": {"dc_gain": {"type": "ScpiError", "message": "..."}},
+    "error": {"type": "...", "message": "..."},
+    "scpi_errors": 0,
+    "configurations": {"commands": {"sha256": "...", "data": {...}}, "profile": {...}, "calibrator": {...}}
+  },
+  "results": {
+    "dc_gain": [ {"index": 1, "channel": "1", "gain": 1.0012, "...": "..."} ]
+  }
+}
+```
+
+- 多通道时结果键为 `<item>_ch<通道>`；
+- 原始读数（未舍入）只保存在这里，终端与 Excel 显示的是按精度舍入后的值；
+- `metadata.item_status` 逐项记录 `completed` / `failed`；失败项目的已测点保留在 `results` 中，
+  但 `show` 与 Excel 会跳过该项，失败原因在 `metadata.failures`；
+- `metadata.configurations` 保存本次实际使用的指令集 / profile / 校准仪配置副本与 sha256，
+  配置文件事后被修改也能追溯。
+
+### 7.3 精度与显示
+
+列定义与显示精度只有一份声明：`osccal/core/table_configs.py` 的 `ITEM_CONFIGS`
+与 `ITEM_PRECISION`。终端 `show` 与 Excel 导出共用 `core/utils.py` 的格式化函数，
+新增/删除列时两处自动一致（`tests/test_report.py` 守护列数与精度数量一致）。
+
+## 8. 架构与配置契约
+
+### 8.1 目录
+
+```
+osccal/
+├── cli.py                    # 命令入口（calibrate / plan / show / export / device）
+├── core/
+│   ├── points.py             # 点表解析器：specs + profiles + calibrators → 点表
+│   ├── config.py             # JSON 加载（加载即校验）
+│   ├── config_validation.py  # 唯一的配置结构校验实现
+│   ├── comm.py               # SCPI 读写/重试/二进制块读取/无效值处理
+│   ├── connect.py            # VISA / Socket 连接与设备释放
+│   ├── command.py            # 命令模板组装
+│   ├── waveform.py           # WFMOutpre? 与 IEEE 488.2 块解析（纯函数）
+│   ├── fitting.py            # 正弦四参数最小二乘（附录 E）
+│   ├── storage.py            # 记录原子保存 / 配置快照 / 状态
+│   ├── export.py             # Excel 报告
+│   ├── table_configs.py      # 终端与 Excel 的列/精度/参考指标
+│   ├── auto_detect.py        # --auto 设备与配置匹配
+│   ├── scpi_trace.py         # SCPI 日志与失败计数
+│   ├── types.py              # TypedDict 配置类型
+│   └── utils.py              # 编码、格式化、误差
+└── measure/
+    ├── base.py               # 基类：连接、采集、读数收敛、波形读回、阻抗、表格
+    ├── registry.py           # 项目清单 + 执行顺序 + RUNNERS
+    ├── all.py                # 按序执行项目，未实现项直接报错
+    └── <10 个项目>.py         # 每项一个 runner
+specs/          # 规范口径（条款、取点策略、屏占比、偏离、参考指标）
+profiles/       # 硬件事实（型号、通道数、格线、档位集合、标称带宽、最高采样率）
+calibrators/    # 标准器能力（探头、阻抗规则、输出上下限）
+commands/       # 示波器 SCPI 指令模板与能力声明
+verification/   # 实机验证台账
+tests/          # pytest
+data/           # 运行产物（gitignore）
+```
+
+### 8.2 三层配置
+
+| 目录 | 只写什么 | 不写什么 |
+|---|---|---|
+| `specs/` | 规范要求：条款号、取点策略与参数、屏占比、偏离声明、`reference_limits`、判据语义 | 硬件能力、具体型号 |
+| `profiles/` | 硬件事实：`models`、`channels`、`imp_has_50`、`bandwidth_hz`、`vertical_scales`、`horizontal_scales`、`max_sample_rate_hz`、格线数 | 校准点、限值 |
+| `calibrators/` | 标准器：`probes`（边沿、最高频率）、`impedance_rules`、`output_limits`、SCPI actions | 被校设备信息 |
+
+三者由 `core/points.py` 合成点表，共 8 种策略：`channel_x_impedance`、`scale_list`、
+`bw_ratio`、`derived`、`fixed`、`channel_x_edge_speed`、`explicit`、`screen_fraction`。
+点表层面不做静默降级：任何超出标准器能力或机型不支持的点都会进入 `skipped` 并写明原因。
+（指令集缺少某项可选能力时，个别项目会跳过对应设置，当前版本尚未恢复执行前的能力完整性检查。）
+
+### 8.3 新增一款示波器
+
+1. 在 `commands/` 新建指令集：`manufacturer`/`models`/`series`、`feature`（测量模式）、
+   `keyword`（测量助记符）、`actions`（SCPI 模板）。校验规则见 `config_validation.validate_commands`。
+2. 在 `profiles/` 新建 profile：只写硬件事实，不含点表与限值。
+3. 用 `osccal plan --profile ...` 核对点表与跳过原因。
+4. 实机跑通全部项目，测得的点数、最大偏差、固件版本写入 `verification/*.json`。
+5. 更新本文档的"支持范围"与"硬件验证状态"两节。
+
+> 版本号只有一处来源：`osccal/__init__.py:__version__`；`pyproject.toml` 用
+> `dynamic = ["version"]` 引用它，不要在别处写死（`tests/test_specs.py` 守护）。
+
+## 9. 开发与测试
+
+### 9.1 质量门禁（与 CI 一致）
+
+```bash
+.venv\Scripts\ruff check .                                  # Windows
+.venv\Scripts\ruff format --check osccal tests simulate_calibrate.py
+.venv\Scripts\mypy
+.venv\Scripts\pytest
+```
+
+Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
+`mypy` 只检查 `pyproject.toml` 里列出的 4 个模块；`ruff format` 不覆盖
+`commands/ profiles/ calibrators/`（JSON 目录）。
+
+### 9.2 测试范围（约 456 个用例，以 CI 为准）
+
+| 文件 | 覆盖 |
+|---|---|
+| `test_specs.py` | 规范配置契约（条款、策略、参考指标语义、偏离声明）、版本号唯一来源 |
+| `test_plan.py` | 点表解析：各取点策略、跳过原因、频点与点数 |
+| `test_runners*.py` | 10 个项目 runner 的读数、算法、记录字段（假仪器） |
+| `test_impedance.py` | 阻抗设置/回读校验、通道号传递、回读值解析 |
+| `test_waveform.py` | 前导信息解析、块头/字节序/有符号解码、电压与时间轴 |
+| `test_fitting.py` | 正弦拟合精度、异常输入、ENOB 公式 |
+| `test_mdo3_*.py` | MDO 指令集结构与 SCPI 组装、通信重试、无效值 |
+| `test_config_validation.py` / `test_all_configs.py` | 配置结构校验（加载与测试共用） |
+| `test_auto_detect.py` / `test_device_identity.py` | 自动匹配与执行前身份核对 |
+| `test_storage.py` / `test_report.py` / `test_cli_calibrate.py` | 原子保存、报告列与精度、CLI 流程 |
+| `test_verification.py` | 验证台账：状态取值、verified 必须带实测信息 |
+
+### 9.3 CI
+
+`.github/workflows/ci.yml` 在 Ubuntu + Python 3.10/3.11/3.12/3.13 上依次执行
+`ruff check` → `ruff format --check` → `mypy` → `pytest`。
+
+> 受限沙箱下跑 `pytest` 时，使用 `tmp_path` 的用例可能因临时目录权限报 `PermissionError`；
+> 那是环境限制，正常终端不受影响。
+
+## 10. 已知限制
+
+- **波形读回只支持 pyvisa**（`--socket-osc` 下 ENOB、直流偏置、时基拟合法、随机噪声不可用）；
+- **9500B 不能输出 0 V**（`SOUR:VOLT 0` 与 0.5 mV 都会被静默丢弃，最小约 1 mV），零点用 ±1 mV 两点插值；
+- **随机噪声需人工接 50 Ω 匹配负载**，程序会暂停等待确认；
+- **不含测量不确定度**，不能直接作为校准证书的完整结果；
+- **其他品牌/型号没有 v0.2.0 profile**，`commands/` 中的遗留指令集不能执行；
+- **上升时间重复性最弱**：单次采集散布约 ±52 ps，已用 10 次平均降到约 ±17 ps；
+- **时基频率法受示波器频率读数位数限制**（约百~千 ppm），精测以拟合为准；
+- 指令集缺少某项可选 action 时，对应设置会被跳过而不报错（执行前能力完整性检查尚未接入）；
+- MDO3052 只有 2 个模拟通道；水平档位为 1-2-4-8 量化序列、垂直档位为 1-2-5，
+  请求不存在的档位会被吸附，记录里保存的是回读的实际值；
+- 记录中的 `metadata.skipped_points` 目前只在 JSON 中，`show` 与 Excel 不展示（后续版本补充）。
+
+## 11. 版本与兼容性
+
+- **v0.2.0**：按 JJF 1057-2026 重建。项目集、点表、记录字段、报告表名全部换新；
+  旧项目（`amp`、`delta_time`、`bandwidth`、`transient`）与旧 profile 已删除，
+  **不保留别名、不做回退**。
+- **V0.1.0（标签）**：旧版本行为，需要旧口径时 `git checkout V0.1.0`。
+- 旧 JSON 记录仍能被 v0.2.0 读取，但其中的旧项目名不在 `ITEM_CONFIGS` 里，
+  `show`/`export` 会跳过并提示"未知校准项目"；要看完整旧记录请检出 `V0.1.0`。
+- 记录字段与报告表名在 v0.2.0 全部换新；后续小版本升级也暂不承诺记录格式向前兼容。
 
 ## License
 
