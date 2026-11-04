@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import tempfile
 from datetime import datetime
@@ -34,7 +35,7 @@ def configuration_snapshot(config: dict) -> dict:
     }
 
 
-def spec_record(spec: dict, filepath: str, *, applied: bool = False) -> dict:
+def spec_record(spec: dict, filepath: str) -> dict:
     """记录本轮所用校准规范的标识与摘要。
 
     规范全文不写入记录，只保留代号、文件名、内容 sha256、偏离声明与判据语义，
@@ -48,8 +49,37 @@ def spec_record(spec: dict, filepath: str, *, applied: bool = False) -> dict:
         "sha256": snapshot["sha256"],
         "deviations": spec.get("deviations", []),
         "limits_semantics": spec.get("limits_semantics", {}),
-        "applied": applied,
     }
+
+
+def _sanitize_nonfinite(value: object) -> tuple[object, int]:
+    """把 NaN/Inf 换成 JSON 的 null，返回 (新值, 被替换的个数)。
+
+    runner 在分母为零等退化情形会写入 float('nan')，而记录用
+    ``json.dump(..., allow_nan=False)`` 保存；不先清洗就会在 checkpoint 抛
+    ValueError，导致整轮记录写不进去。这里统一降级为 null 并提示，保证其余
+    数据仍能落盘（失败的项目另有 item_status/failures 标记）。
+    """
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value, 0
+        return None, 1
+    if isinstance(value, dict):
+        result: dict = {}
+        replaced = 0
+        for key, item in value.items():
+            result[key], count = _sanitize_nonfinite(item)
+            replaced += count
+        return result, replaced
+    if isinstance(value, (list, tuple)):
+        items = []
+        replaced = 0
+        for item in value:
+            cleaned, count = _sanitize_nonfinite(item)
+            items.append(cleaned)
+            replaced += count
+        return items, replaced
+    return value, 0
 
 
 class CalibrationRecording:
@@ -96,24 +126,32 @@ def save_calibration_data(cal_results: dict, metadata: dict, *, filepath: str | 
     directory = os.path.dirname(os.path.abspath(filepath))
     os.makedirs(directory, exist_ok=True)
 
+    clean_results, results_replaced = _sanitize_nonfinite(cal_results)
+    clean_metadata, metadata_replaced = _sanitize_nonfinite(metadata)
+    replaced = results_replaced + metadata_replaced
+    if replaced:
+        console.print(
+            f"[yellow]⚠[/yellow] 记录中有 {replaced} 个非有限数值（NaN/Inf），已按 null 写入"
+        )
+
     data = {
         "metadata": {
             "timestamp": now.isoformat(),
-            "channel": metadata.get("channel", ""),
-            "probe": metadata.get("probe", ""),
-            "oscilloscope": metadata.get("oscilloscope", {}),
-            "calibrator": metadata.get("calibrator", {}),
-            "commands_file": metadata.get("commands_file", ""),
-            "profile_file": metadata.get("profile_file", ""),
-            "calibrator_file": metadata.get("calibrator_file", ""),
-            "simulated": metadata.get("simulated", False),
-            "limits": metadata.get("limits", {}),
-            "spec": metadata.get("spec", {}),
+            "channel": clean_metadata.get("channel", ""),
+            "probe": clean_metadata.get("probe", ""),
+            "oscilloscope": clean_metadata.get("oscilloscope", {}),
+            "calibrator": clean_metadata.get("calibrator", {}),
+            "commands_file": clean_metadata.get("commands_file", ""),
+            "profile_file": clean_metadata.get("profile_file", ""),
+            "calibrator_file": clean_metadata.get("calibrator_file", ""),
+            "simulated": clean_metadata.get("simulated", False),
+            "limits": clean_metadata.get("limits", {}),
+            "spec": clean_metadata.get("spec", {}),
             "scpi_errors": 0,
-            **metadata,
+            **clean_metadata,
             "updated_at": now.isoformat(),
         },
-        "results": cal_results,
+        "results": clean_results,
     }
 
     temporary_path = None

@@ -2,13 +2,15 @@
 
 规范方法：快沿脉冲输入，直流耦合，调节直流偏置与信号幅度，使脉冲底值与顶值之间
 的部分**居中覆盖屏幕 60%~80%**；读 10%~90% 上升时间，同时读取过冲 S_b。
+图 9 要求输入端接**匹配阻抗**。
 
 实机约定（MDO3052 + 9500B 9530 头）：
-- 9500B 输出的是**下沿**脉冲，示波器用 50 Ω 端接，触发沿选 FALL；
-- 脉冲为单极性（高电平 ~V、低电平 0），用垂直偏置把高/低电平的中点抬到屏幕中心，
+- 9500B 输出单极性快沿（低电平 −V、高电平 0），示波器用 50 Ω 端接；
+- 脉冲为单极性，用垂直偏置把高/低电平的中点抬到屏幕中心，
   即满足"底顶之间居中覆盖"；
 - 占屏：1 Vpp 在 0.2 V/div、8 格下为 62.5%，落在规范要求的 60%~80% 内。
 
+机型没有 50 Ω 输入时退为 1 MΩ 并在记录中注明（偏离图 9 的匹配阻抗要求）。
 每个通道按探头可用的边沿速度各取一点。跳变幅度与顶部不平度需要波形数据才有
 意义，留待后续补充（当前只记录过渡时间与过冲，不虚报未测量的量）。
 """
@@ -36,12 +38,14 @@ class RiseTimeCalibrator(BaseCalibrator):
 
     def _measure_point(self, point: dict) -> dict:
         edge_speed = float(point["edge_rise_time_s"])
+        # 图 9 要求匹配阻抗：机型有 50 Ω 时用 50 Ω，否则退为 1 MΩ 并记录
+        impedance = "50" if self.profile.get("imp_has_50", False) else "1M"
 
-        self._apply_impedance("50")
+        self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
         self._set_timebase(TIMEBASE_S_PER_DIV)
-        # 单极性下沿脉冲：把高低电平中点抬到屏幕中心
+        # 单极性快沿（低电平 −V、高电平 0）：把高低电平中点抬到屏幕中心
         # 脉冲高电平 0 V、低电平 −1 V：中点是 −0.5 V，用它做屏幕中心
         if "set_offset" in self.cmd_osc.get("actions", {}):
             self._write_osc("set_offset", self.channel, -AMPLITUDE_VPP / 2.0)
@@ -73,9 +77,9 @@ class RiseTimeCalibrator(BaseCalibrator):
         if "meas_pos_overshoot" in self.cmd_osc.get("keyword", {}):
             overshoot = self._read_meas_value("meas_pos_overshoot")
 
-        return {
+        record = {
             "channel": self.channel,
-            "impedance": "50",
+            "impedance": impedance,
             "edge_rise_time_s": edge_speed,
             "vertical_scale": VERTICAL_SCALE,
             "amplitude_vpp": AMPLITUDE_VPP,
@@ -84,6 +88,9 @@ class RiseTimeCalibrator(BaseCalibrator):
             "repeats": REPEATS,
             "overshoot_pct": overshoot,
         }
+        if impedance != "50":
+            record["impedance_note"] = "机型无 50 Ω 输入，按 1 MΩ 测量（偏离图 9 的匹配阻抗要求）"
+        return record
 
     @ensure_output_off
     def run(self):

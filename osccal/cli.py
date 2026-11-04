@@ -301,7 +301,8 @@ def cli():
 @click.option(
     "--spec",
     type=click.STRING,
-    default=None,
+    default="jjf1057_2026",
+    show_default=True,
     help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
 )
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
@@ -349,40 +350,25 @@ def calibrate(
     calibrators_dir = os.path.join(project_dir, "calibrators")
     specs_dir = os.path.join(project_dir, "specs")
 
-    spec_data: dict = {}
-    spec_filepath = ""
-    if spec is not None:
-        resolved = resolve_spec_path(specs_dir, spec)
-        if resolved is None:
-            raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
-        spec_data = load_spec(resolved)
-        if not spec_data:
-            raise click.UsageError("校准规范配置校验失败，已中止")
-        spec_filepath = resolved
-        console.print(
-            Panel(
-                f"[bold]{spec_data.get('spec_code', '')}[/bold]"
-                f"　实施: {spec_data.get('effective', '未注明')}"
-                f"　复校间隔: {spec_data.get('recall_interval_months', '未注明')} 个月"
-                f"　偏离声明: {len(spec_data.get('deviations', []))} 条",
-                title="校准规范",
-                expand=False,
-            )
+    spec_filepath = resolve_spec_path(specs_dir, spec)
+    if spec_filepath is None:
+        raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
+    spec_data = load_spec(spec_filepath)
+    if not spec_data:
+        raise click.UsageError("校准规范配置校验失败，已中止")
+    console.print(
+        Panel(
+            f"[bold]{spec_data.get('spec_code', '')}[/bold]"
+            f"　实施: {spec_data.get('effective', '未注明')}"
+            f"　复校间隔: {spec_data.get('recall_interval_months', '未注明')} 个月"
+            f"　偏离声明: {len(spec_data.get('deviations', []))} 条",
+            title="校准规范",
+            expand=False,
         )
-        console.print(
-            "[yellow]⚠ 规范口径尚未启用（当前版本只记录规范标识），"
-            "本轮仍按现有项目方法执行[/yellow]"
-        )
+    )
 
     session_failed = False
 
-    from osccal.measure.registry import RUNNERS as _RUNNERS
-
-    if not _RUNNERS:
-        raise click.UsageError(
-            "v0.2.0 重建中：校准项目尚未实现（M3'~M5' 逐个落地），本轮不执行采集。\n"
-            "现有可用：`osccal show` / `osccal export` 查看历史记录、`--spec` 校验规范配置。"
-        )
     try:
         if socket_osc is not None and _parse_socket_addr(socket_osc) is None:
             raise click.BadParameter("应为有效的 host:port 地址", param_hint="--socket-osc")
@@ -551,9 +537,11 @@ def calibrate(
             # 项目选择
             if items is None:
                 items = _select_items()
-            item_list = [i.strip() for i in items.split(",") if i.strip()]
-            if "all" in item_list:
-                item_list = [name for name in ITEM_ORDER if name in RUNNERS]
+            requested = [i.strip() for i in items.split(",") if i.strip()]
+            requested_all = "all" in requested
+            item_list = (
+                [name for name in ITEM_ORDER if name in RUNNERS] if requested_all else requested
+            )
             if not item_list:
                 available = "、".join(sorted(RUNNERS)) or "无"
                 raise click.UsageError(f"没有可执行的项目（当前已实现: {available}）")
@@ -578,8 +566,10 @@ def calibrate(
             # 按规范解析本轮实际要跑的点（每个通道一份），并提示被跳过的点。
             points_by_channel: dict[str, dict[str, list]] = {}
             skipped_notes: list[dict] = []
+            planned_items: set[str] = set()
             for ch in channel_list:
                 plan = build_plan(spec_data, profile_data, cmd_calibrator, probe, [ch])
+                planned_items = {item["name"] for item in plan["items"]}
                 points_by_channel[ch] = {item["name"]: item["points"] for item in plan["items"]}
                 for item in plan["items"]:
                     if item["name"] not in item_list:
@@ -588,6 +578,16 @@ def calibrate(
                         skipped_notes.append(
                             {"item": item["title"], "reason": skip.get("reason", "")}
                         )
+            if not planned_items:
+                raise click.UsageError("校准规范未解析出任何校准项目，请检查 --spec")
+            if requested_all:
+                # all = 规范里所有已实现的项目；规范未覆盖的项目不报错、只不执行
+                item_list = [name for name in item_list if name in planned_items]
+                if not item_list:
+                    raise click.UsageError("所选规范未包含任何已实现项目，请检查 --spec")
+            missing_items = [name for name in item_list if name not in planned_items]
+            if missing_items:
+                raise click.UsageError("以下项目不在所选规范中: " + "、".join(missing_items))
             for note in skipped_notes:
                 console.print(f"[yellow]·[/yellow] {note['item']} 跳过：{note['reason']}")
 
@@ -601,8 +601,8 @@ def calibrate(
                 "profile_file": os.path.basename(profile_filepath) if profile_filepath else "",
                 "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
                 "simulated": False,
-                "limits": spec_data.get("reference_limits", {}) if spec_data else {},
-                "spec": spec_record(spec_data, spec_filepath) if spec_data else {},
+                "limits": spec_data.get("reference_limits", {}),
+                "spec": spec_record(spec_data, spec_filepath),
                 "bandwidth_hz": profile_data.get("bandwidth_hz", 0),
                 "points_plan": {
                     ch: {name: len(points) for name, points in items_map.items()}
@@ -957,10 +957,12 @@ def _display_calibration_data(data: dict):
     )
     from osccal.core.utils import format_display_value
 
-    # 按校准项目分组：同一项目的所有通道数据合并到同一个表格
+    # 按校准项目分组：同一项目的所有通道数据合并到同一个表格。
+    # 失败项目即使留有部分数据点也不展示（失败原因见"校准信息"表），避免半套结果被当成完整记录。
+    failed_keys = set(metadata.get("failures", {}))
     grouped: dict[str, list] = {}
     for item_name, rows in results.items():
-        if not rows:
+        if not rows or item_name in failed_keys:
             continue
         base_name = item_name.split("_ch")[0]
         grouped.setdefault(base_name, []).extend(rows)

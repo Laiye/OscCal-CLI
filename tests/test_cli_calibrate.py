@@ -142,3 +142,59 @@ class TestCalibrateFlow:
         assert result.exit_code == 0, result.output
         assert fake_env["metadata"]["points_plan"]["1"]["delta_t"] == 2
         assert len(fake_env["results"]["delta_t"]) == 2
+
+    def test_spec_defaults_to_shipped_spec(self, fake_env):
+        """省略 --spec 时必须按内置规范执行，而不是解析出空点表空跑。"""
+        args = _args("--channel", "1", "--items", "dc_gain")
+        index = args.index("--spec")
+        del args[index : index + 2]
+        result = CliRunner().invoke(cli, args, input="n\n")
+        assert result.exit_code == 0, result.output
+        assert fake_env["metadata"]["spec"]["spec_code"] == "JJF 1057-2026"
+        assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 6
+
+    def test_rejects_item_missing_from_spec(self, fake_env, tmp_path):
+        """所选项目不在规范里时必须中止，不能静默跑 0 个点。"""
+        spec = json.loads(
+            (PROJECT_ROOT / "specs" / "jjf1057_2026.json").read_text(encoding="utf-8")
+        )
+        del spec["items"]["enob"]
+        spec_path = tmp_path / "without_enob.json"
+        spec_path.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+
+        args = _args("--channel", "1", "--items", "enob")
+        index = args.index("--spec")
+        del args[index : index + 2]
+        args.extend(["--spec", str(spec_path)])
+
+        result = CliRunner().invoke(cli, args, input="n\n")
+        assert result.exit_code == 2
+        assert "不在所选规范中" in result.output
+
+    def test_one_failed_item_does_not_stop_the_round(self, fake_env, monkeypatch):
+        """单项失败只记录该项，后续项目继续执行，本轮状态为 completed_with_errors。"""
+        from osccal.core.comm import ScpiError
+        from osccal.measure import registry
+
+        class BoomRunner:
+            def __init__(self, *args, **kwargs):
+                self.rows: list = []
+
+            def run(self):
+                raise ScpiError("模拟项目失败")
+
+            def get_results(self):
+                return self.rows
+
+        monkeypatch.setitem(registry.RUNNERS, "dc_gain", BoomRunner)
+        result = CliRunner().invoke(
+            cli,
+            _args("--channel", "1", "--items", "dc_gain,delta_v"),
+            input="n\n",
+        )
+        assert result.exit_code == 1, result.output
+        metadata = fake_env["metadata"]
+        assert metadata["status"] == "completed_with_errors"
+        assert metadata["item_status"]["dc_gain"] == "failed"
+        assert metadata["failures"]["dc_gain"]["type"] == "ScpiError"
+        assert len(fake_env["results"]["delta_v"]) == 4, "后续项目必须继续执行"

@@ -168,7 +168,7 @@ class TestSpecLoading:
         assert len(record["sha256"]) == 64
         assert len(record["deviations"]) == 3
         assert record["limits_semantics"]["kind"] == "reference_only"
-        assert record["applied"] is False
+        assert "applied" not in record, "v0.2.0 起规范是唯一口径，不再记录 applied 标志"
 
 
 class TestVersionSingleSource:

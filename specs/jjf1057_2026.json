@@ -215,13 +215,12 @@
                 ],
                 "zero_point": true,
                 "offset_nominal_divisions": 2,
-                "note": "零点：偏置 0、激励 0，读电压平均值为零点偏置误差；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
+                "note": "零点：偏置 0、激励用 ±1 mV 两点插值到 0 V（9500B 最小可设幅度约 1 mV，无法直接输出 0 V）；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
             },
             "formula": {
-                "offset_error": "δd = d0 - dr",
+                "offset_error": "δd = dr - d0（与记录字段 offset_error_v 同号）",
                 "offset_gain": "Gd = dr / d0"
-            },
-            "pending_confirm": "式 (9)(10) 的确切表达待按正文逐式核对"
+            }
         },
         "freq_response_bandwidth": {
             "clause": "7.6",
@@ -298,7 +297,7 @@
                 "samples_n": 1000,
                 "integer_cycles_n": 7,
                 "require_coprime": true,
-                "note": "f = N·fs/n，fs 由 :ACQuire:SRATe? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
+                "note": "f = fs·n/N，fs 由 :HORizontal:SAMPLERATE? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
             },
             "formula": {
                 "fit": "按附录 E 四参数最小二乘拟合 a(i) = E·sin(ω·i·Δt + φ) + d",
@@ -327,7 +326,8 @@
                     0.6,
                     0.8
                 ],
-                "impedance": "1M"
+                "impedance": "50",
+                "note": "图 9 要求输入端接匹配阻抗（50 Ω）；机型无 50 Ω 输入时退为 1 MΩ，并在记录中注明"
             },
             "points": {
                 "strategy": "channel_x_edge_speed",

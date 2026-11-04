@@ -57,6 +57,17 @@ def build(cls, configs, points):
     return instance
 
 
+def load_query(responses, state):
+    """模拟校准仪查询：RES/CAP 读数走 responses，阻抗回读固定为高阻。"""
+
+    def query(action, *args):
+        if action == "query_impedance":
+            return "10000"
+        return responses[state["func"]]
+
+    return query
+
+
 class TestInputImpedance:
     @pytest.mark.parametrize(
         "text,expected",
@@ -80,11 +91,7 @@ class TestInputImpedance:
         responses = {"RES": "1.0005E+06\n", "CAP": "1.2E-11\n"}
         points = [{"channel": "1", "impedance": "1M"}]
         instance = build(InputImpedanceCalibrator, configs, points)
-        instance._query_calibrator = lambda action, *args: responses.pop(0) if False else None
         state = {"func": None}
-
-        def query(action, *args):
-            return responses[state["func"]]
 
         def write(action, *args):
             if action == "set_load_func":
@@ -92,7 +99,7 @@ class TestInputImpedance:
             instance.inst_calibrator.written.append(action)
 
         instance._write_calibrator = write
-        instance._query_calibrator = query
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
 
         record = instance.results[0]
@@ -109,7 +116,7 @@ class TestInputImpedance:
         instance._write_calibrator = lambda action, *args: state.update(
             func=args[0] if action == "set_load_func" else state["func"]
         )
-        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
         record = instance.results[0]
         assert record["tolerance_pct"] == pytest.approx(1.0)
@@ -123,7 +130,7 @@ class TestInputImpedance:
         instance._write_calibrator = lambda action, *args: state.update(
             func=args[0] if action == "set_load_func" else state["func"]
         )
-        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
         record = instance.results[0]
         assert record["resistance_ohm"] is None
@@ -142,7 +149,7 @@ class TestInputImpedance:
                 state["func"] = args[0]
 
         instance._write_calibrator = write
-        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
         assert "set_shap" in calls, "测量后必须退出负载测量功能、恢复波形输出"
 
@@ -160,7 +167,7 @@ class TestInputImpedance:
                 state["func"] = args[0]
 
         instance._write_calibrator = write
-        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
 
         first_load = calls.index("set_load_func")
@@ -180,7 +187,7 @@ class TestInputImpedance:
                 state["func"] = args[0]
 
         instance._write_calibrator = write
-        instance._query_calibrator = lambda action, *args: responses[state["func"]]
+        instance._query_calibrator = load_query(responses, state)
         instance.run()
 
         load_index = calls.index("set_load_func")
@@ -275,7 +282,7 @@ class TestRiseTime:
 
         points = [{"channel": "1", "edge_rise_time_s": 150e-12}]
         instance = build(RiseTimeCalibrator, configs, points)
-        # 9500B 输出下沿脉冲，示波器侧对应 FALL 测量项
+        # 9500B 输出单极性快沿，示波器按上升沿（RIS）测量
         readings = {"meas_risetime": 700e-12, "meas_pos_overshoot": 2.5}
         instance._read_meas = lambda key, trigger=True: readings[key]
         instance.run()
@@ -295,8 +302,22 @@ class TestRiseTime:
         written = instance.inst_calibrator.written
         assert any("SHAP EDGE" in cmd for cmd in written)
         assert any("EDGE:SPE" in cmd and "5e-10" in cmd for cmd in written)
-        # 50 Ω 端接 + 下降沿触发
+        # 50 Ω 端接 + 上升沿触发
         assert any("IMP 50" in cmd for cmd in written)
+
+    def test_falls_back_to_1m_without_50_ohm(self, configs):
+        """机型没有 50 Ω 输入时退为 1 MΩ，并记录该偏离。"""
+        from osccal.measure.rise_time import RiseTimeCalibrator
+
+        cmd_osc, cmd_cal, profile = configs
+        profile = {**profile, "imp_has_50": False}
+        points = [{"channel": "1", "edge_rise_time_s": 150e-12}]
+        instance = build(RiseTimeCalibrator, (cmd_osc, cmd_cal, profile), points)
+        instance._read_meas = lambda key, trigger=True: 1e-9
+        instance.run()
+        record = instance.results[0]
+        assert record["impedance"] == "1M"
+        assert "impedance_note" in record
 
 
 class TestRegistryM5:

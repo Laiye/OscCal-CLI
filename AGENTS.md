@@ -59,6 +59,7 @@
 - `data/*.json`、`data/*.xlsx` 被 gitignore（仅保留 `.gitkeep`），不要把生成物提交。
 - 启动时强制 stdout/stderr 为 UTF-8（Windows 中文控制台/重定向的 `UnicodeEncodeError` 修复），改相关代码别破坏该行为。
 - 校准记录 `metadata` 的状态字段（`status`/`item_status`/`failures`/`configurations`/`scpi_errors`）与中断续存行为见 `README.md`，由 `tests/test_storage.py` 守护（CLI 流程测试随 M3' 重建）。
+- 单项失败不终止整轮：`measure/all.py:run_items` 捕获项目异常后写 `failures`/`item_status` 并继续执行后续项目（`show`/Excel 跳过失败项目的部分数据）；只有用户中断与 `OutputShutdownError` 会终止会话。记录中的 NaN/Inf 由 `core/storage.py:_sanitize_nonfinite` 降级为 `null`，否则 `allow_nan=False` 会让整份记录写不进去。
 - 受限沙箱环境下运行 `pytest` 时，使用 `tmp_path` 的用例可能因临时目录权限报 fixture setup 的 `PermissionError`；那是环境限制而非代码问题（正常终端不受影响）。
 - 无效测量值的处理集中在 `core/comm.py`：`read_measurement` 识别手册规定的无效标记 `*`（优利德 UPO1000X："返回数据为无效数据均用\*表示"）并重试，仍无效才抛出指明测量项的错误——不要在调用方再写浮点解析兜底。
 - 个别机型**背靠背连续写入会静默丢指令**（UPO1104X 实测，错误队列仍报 `No error`）：指令集用 `feature.write_delay_ms` 声明写入间隔，`BaseCalibrator.__init__` 会调用 `comm.set_write_delay` 生效；未声明该字段的机型时序完全不变。排查"某条设置没生效"类问题时优先怀疑这一点。

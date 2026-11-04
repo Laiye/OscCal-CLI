@@ -33,10 +33,12 @@ def export_to_excel(data: dict, output_path: str) -> str:
 
     _create_info_sheet(wb, metadata)
 
-    # 按校准项目分组：同一项目的所有通道数据合并到同一个 sheet
+    # 按校准项目分组：同一项目的所有通道数据合并到同一个 sheet。
+    # 失败项目的部分数据点不导出（失败原因写在校准信息表）。
+    failed_keys = set(metadata.get("failures", {}))
     grouped: dict[str, list] = {}
     for item_name, rows in results.items():
-        if not rows:
+        if not rows or item_name in failed_keys:
             continue
         base_name = item_name.split("_ch")[0]
         grouped.setdefault(base_name, []).extend(rows)

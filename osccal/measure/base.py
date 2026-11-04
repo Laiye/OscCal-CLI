@@ -117,7 +117,8 @@ class BaseCalibrator:
     def _apply_impedance(self, label: str) -> None:
         """把示波器与校准仪的输入阻抗同时切到 1 MΩ 或 50 Ω。
 
-        切换前先关输出，避免在校准仪输出有效电平时改变负载。
+        切换前先关输出，避免在校准仪输出有效电平时改变负载；切换后回读两端
+        阻抗，发现不匹配立即告警（这类状态错误不会产生 SCPI 错误码）。
         """
         key = "imp_fif" if label == "50" else "imp_meg"
         if label == "50" and not self.profile.get("imp_has_50", False):
@@ -125,6 +126,7 @@ class BaseCalibrator:
         self._write_calibrator("set_output", "OFF")
         self.setup_impedance(key)
         self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][key])
+        self._verify_impedance(label)
 
     def _setup_signal_impedance(self, shape, preferred_osc_impedance="1M"):
         rules = self.cmd_calibrator.get("impedance_rules", {})
@@ -161,28 +163,57 @@ class BaseCalibrator:
         self._verify_impedance(actual_osc_imp)
         return imp_key
 
+    @staticmethod
+    def _impedance_is_high(raw: str) -> bool | None:
+        """把阻抗回读响应归一化为"是否高阻"；无法判断时返回 None。
+
+        不同机型的回读形式不一致：泰克 MDO 返回 ``MEG`` / ``FIF``（可能带
+        响应头），9500B 返回欧姆数（``50`` / ``10000``），也可能返回 ``1E+6``。
+        """
+        text = raw.upper()
+        if "MEG" in text:
+            return True
+        if "FIF" in text:
+            return False
+        for token in reversed(raw.replace("\n", " ").split()):
+            try:
+                value = float(token)
+            except ValueError:
+                continue
+            return value > 55
+        return None
+
     def _verify_impedance(self, label: str) -> None:
         """回读两端阻抗，发现不匹配立即告警。
 
         实机依据：50 Ω 输出接 1 MΩ 输入会把幅度读数放大到 2 倍（0.5 Vpp 读成
         1.0040 V），1 MΩ 输出接 50 Ω 输入则读成 0.66 倍。这类状态错误不会产生
-        SCPI 错误码，必须主动核对。
+        SCPI 错误码，必须主动核对。示波器查询按接口声明的参数个数决定是否带
+        通道号（MDO 为 ``CH<x>:TERmination?``，回读形如 ``:CH2:TERMINATION 50.0E+0``）。
         """
         expected_meg = label != "50"
         want = "1 MΩ" if expected_meg else "50 Ω"
-        if "query_impedance" in self.cmd_osc.get("actions", {}):
-            raw = str(self._query_osc("query_impedance")).upper()
-            if ("MEG" in raw) != expected_meg:
-                console.print(f"[red]⚠ 示波器阻抗与设定不符（应 {want}）：{raw.strip()}[/red]")
-        if "query_impedance" in self.cmd_calibrator.get("actions", {}):
-            raw = str(self._query_calibrator("query_impedance")).strip()
-            tokens = raw.replace("\n", " ").split()
+        actions = self.cmd_osc.get("actions", {})
+        if "query_impedance" in actions:
+            action = actions["query_impedance"]
+            args = (self.channel,) if action.get("args_num", 0) >= 1 else ()
             try:
-                value = float(tokens[-1])
-            except (ValueError, IndexError):
-                return
-            if (value > 55) != expected_meg:
-                console.print(f"[red]⚠ 校准仪阻抗与设定不符（应 {want}）：{raw}[/red]")
+                raw = str(self._query_osc("query_impedance", *args))
+            except Exception as exc:  # noqa: BLE001 - 回读失败不应中断本点测量
+                console.print(f"[yellow]⚠ 示波器阻抗回读失败：{exc}[/yellow]")
+            else:
+                actual = self._impedance_is_high(raw)
+                if actual is not None and actual != expected_meg:
+                    console.print(f"[red]⚠ 示波器阻抗与设定不符（应 {want}）：{raw.strip()}[/red]")
+        if "query_impedance" in self.cmd_calibrator.get("actions", {}):
+            try:
+                raw = str(self._query_calibrator("query_impedance")).strip()
+            except Exception as exc:  # noqa: BLE001 - 回读失败不应中断本点测量
+                console.print(f"[yellow]⚠ 校准仪阻抗回读失败：{exc}[/yellow]")
+            else:
+                actual = self._impedance_is_high(raw)
+                if actual is not None and actual != expected_meg:
+                    console.print(f"[red]⚠ 校准仪阻抗与设定不符（应 {want}）：{raw}[/red]")
 
     def _get_probe_edge_rise_times(self):
         probe = self.probe or "9550"

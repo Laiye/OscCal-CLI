@@ -582,12 +582,20 @@
         "query_impedance": {
             "name": "query_impedance",
             "type": "query",
-            "commands_num": 1,
-            "args_num": 0,
+            "commands_num": 2,
+            "args_num": 1,
             "commands": [
-                "CH1:IMPEDANCE?"
+                "CH",
+                ":TERmination?"
             ],
-            "args": []
+            "args": [
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                ]
+            ]
         }
     }
 }

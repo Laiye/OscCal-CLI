@@ -95,6 +95,54 @@ def test_configuration_hash_tracks_content_and_snapshot_is_independent():
     assert snapshot["sha256"] != storage.configuration_snapshot(config)["sha256"]
 
 
+def test_non_finite_values_are_saved_as_null(data_dir):
+    """runner 写入 NaN/Inf 时不能因为 allow_nan=False 丢掉整份记录。"""
+    path = storage.save_calibration_data(
+        {"dc_gain": [{"gain": float("nan"), "error_pct": float("inf"), "ok": 1.0}]},
+        {"status": "completed"},
+    )
+    row = storage.load_calibration_data(path)["results"]["dc_gain"][0]
+    assert row["gain"] is None
+    assert row["error_pct"] is None
+    assert row["ok"] == 1.0
+
+
+def test_failed_item_rows_are_not_exported(data_dir):
+    """失败项目即使留有部分数据点，也不得进入 show / Excel 报告。"""
+    from click.testing import CliRunner
+    from openpyxl import load_workbook
+
+    from osccal.cli import cli
+    from osccal.core.export import export_to_excel
+    from osccal.core.table_configs import ITEM_CONFIGS
+
+    path = storage.save_calibration_data(
+        {
+            "dc_gain": [{"index": 1, "channel": "1"}],
+            "delta_v": [{"index": 1, "channel": "1"}],
+        },
+        {
+            "status": "completed_with_errors",
+            "failures": {"dc_gain": {"type": "ScpiError", "message": "读取失败"}},
+        },
+    )
+    shown = CliRunner().invoke(cli, ["show", "--file", path])
+    assert shown.exit_code == 0
+    assert ITEM_CONFIGS["delta_v"]["title"] in shown.output
+    assert ITEM_CONFIGS["dc_gain"]["title"] not in shown.output
+
+    output = data_dir / "report.xlsx"
+    export_to_excel(storage.load_calibration_data(path), str(output))
+    wb = load_workbook(output)
+    try:
+        assert ITEM_CONFIGS["delta_v"]["title"] in wb.sheetnames
+        assert ITEM_CONFIGS["dc_gain"]["title"] not in wb.sheetnames
+        values = {row[0]: row[1] for row in wb["校准信息"].iter_rows(min_row=3, values_only=True)}
+        assert values["失败项目 dc_gain"] == "读取失败"
+    finally:
+        wb.close()
+
+
 def test_partial_record_status_and_failures_visible_in_show_and_excel(data_dir):
     from click.testing import CliRunner
     from openpyxl import load_workbook
