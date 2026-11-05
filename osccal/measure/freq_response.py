@@ -77,24 +77,12 @@ class FreqResponseCalibrator(BaseCalibrator):
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")
             return
 
-        scale = self._pick_vertical_scale()
-        self._apply_impedance("1M")
-        self._write_osc("set_vertical_scale", self.channel, scale)
-        self._write_osc("set_coupling", self.channel, "DC")
-        if "set_vertical_position" in self.cmd_osc["actions"]:
-            self._write_osc("set_vertical_position", self.channel, 0.0)
-        self._nudge_trigger_level(scale)
-
-        self._write_calibrator("set_shap", "SIN")
-        self._write_calibrator("set_volt", AMPLITUDE_VPP)
-        self._write_calibrator("set_output", "ON")
-        time.sleep(1.0)
-
         table = self.make_table(
             "频率响应 / 频带宽度校准结果",
             [
                 {"name": "序号"},
                 {"name": "通道", "justify": "center"},
+                {"name": "阻抗", "justify": "center"},
                 {"name": "频率", "justify": "left"},
                 {"name": "幅值(Vpp)"},
                 {"name": "相对响应 G"},
@@ -102,66 +90,94 @@ class FreqResponseCalibrator(BaseCalibrator):
             ],
         )
 
-        frequencies: list[float] = []
-        responses: list[float] = []
-        reference: float | None = None
+        groups: dict[str, list[dict]] = {}
+        for point in self.points:
+            groups.setdefault(point.get("impedance", "1M"), []).append(point)
 
+        index = 0
+        summaries: list[tuple[list[float], list[float], str]] = []
         with Progress() as progress:
             task = progress.add_task("频率响应", total=len(self.points))
-            for index, point in enumerate(self.points, start=1):
-                frequency = float(point["frequency_hz"])
-                measured = self._measure_amplitude(frequency)
-                if reference is None:
-                    reference = measured
-                response = measured / reference if reference else float("nan")
-                frequency_hz = frequency
-                frequencies.append(frequency_hz)
-                responses.append(response)
+            for impedance, points in groups.items():
+                self._apply_impedance(impedance)
+                scale = self._pick_vertical_scale()
+                self._write_osc("set_vertical_scale", self.channel, scale)
+                self._write_osc("set_coupling", self.channel, "DC")
+                if "set_vertical_position" in self.cmd_osc["actions"]:
+                    self._write_osc("set_vertical_position", self.channel, 0.0)
+                self._nudge_trigger_level(scale)
 
-                note = "基准" if index == 1 else ""
-                if response < HALF_POWER and not note:
-                    note = "低于 −3 dB"
-                self.results.append(
-                    {
-                        "index": index,
-                        "channel": self.channel,
-                        "frequency_hz": frequency_hz,
-                        "amplitude_vpp": measured,
-                        "response": response,
-                        "note": note,
-                        "vertical_scale": scale,
-                        "test_amplitude_vpp": AMPLITUDE_VPP,
-                    }
-                )
-                self.add_result_row(
-                    table,
-                    [
-                        index,
-                        f"CH{self.channel}",
-                        self._format_frequency(frequency_hz),
-                        f"{measured:.6g}",
-                        f"{response:.4f}",
-                        note,
-                    ],
-                )
-                progress.update(task, advance=1)
+                self._write_calibrator("set_shap", "SIN")
+                self._write_calibrator("set_volt", AMPLITUDE_VPP)
+                self._write_calibrator("set_output", "ON")
+                time.sleep(1.0)
 
+                frequencies: list[float] = []
+                responses: list[float] = []
+                reference: float | None = None
+                for point in points:
+                    index += 1
+                    frequency = float(point["frequency_hz"])
+                    measured = self._measure_amplitude(frequency)
+                    is_reference = reference is None
+                    if is_reference:
+                        reference = measured
+                    response = measured / reference if reference else float("nan")
+                    frequencies.append(frequency)
+                    responses.append(response)
+
+                    note = "基准" if is_reference else ""
+                    if response < HALF_POWER and not note:
+                        note = "低于 −3 dB"
+                    self.results.append(
+                        {
+                            "index": index,
+                            "channel": self.channel,
+                            "impedance": impedance,
+                            "frequency_hz": frequency,
+                            "amplitude_vpp": measured,
+                            "response": response,
+                            "note": note,
+                            "vertical_scale": scale,
+                            "test_amplitude_vpp": AMPLITUDE_VPP,
+                        }
+                    )
+                    self.add_result_row(
+                        table,
+                        [
+                            index,
+                            f"CH{self.channel}",
+                            "1 MΩ" if impedance == "1M" else "50 Ω",
+                            self._format_frequency(frequency),
+                            f"{measured:.6g}",
+                            f"{response:.4f}",
+                            note,
+                        ],
+                    )
+                    progress.update(task, advance=1)
+
+                summaries.append((frequencies, responses, impedance))
         console.print(table)
-        self._report_bandwidth(frequencies, responses)
+        for frequencies, responses, impedance in summaries:
+            self._report_bandwidth(frequencies, responses, impedance)
 
-    def _report_bandwidth(self, frequencies: list[float], responses: list[float]) -> None:
+    def _report_bandwidth(
+        self, frequencies: list[float], responses: list[float], impedance: str
+    ) -> None:
+        label = "1 MΩ" if impedance == "1M" else "50 Ω"
         bandwidth = self.bandwidth_from_response(frequencies, responses)
         if bandwidth is None:
             top = max(frequencies) if frequencies else 0.0
             console.print(
-                f"[cyan]频带宽度[/cyan] ≥ {self._format_frequency(top)}"
+                f"[cyan]频带宽度（{label}）[/cyan] ≥ {self._format_frequency(top)}"
                 "（测试范围内未出现 −3 dB 点）"
             )
         else:
-            console.print(f"[cyan]频带宽度[/cyan] ≈ {self._format_frequency(bandwidth)}")
+            console.print(f"[cyan]频带宽度（{label}）[/cyan] ≈ {self._format_frequency(bandwidth)}")
         self.results.append(
             {
                 "channel": self.channel,
+                "impedance": impedance,
                 "summary": "bandwidth",
                 "bandwidth_hz": bandwidth,
                 "max_frequency_hz": max(frequencies) if frequencies else None,

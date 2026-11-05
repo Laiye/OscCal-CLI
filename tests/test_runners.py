@@ -324,6 +324,28 @@ class TestFreqResponse:
         assert rows[0]["response"] == pytest.approx(1.0), "基准点自身响应应为 1"
         assert rows[1]["response"] == pytest.approx(0.9)
 
+    def test_two_impedance_groups(self, configs):
+        points = [
+            {"channel": "1", "impedance": "1M", "frequency_hz": 5e4},
+            {"channel": "1", "impedance": "1M", "frequency_hz": 2.5e8},
+            {"channel": "1", "impedance": "50", "frequency_hz": 5e4},
+            {"channel": "1", "impedance": "50", "frequency_hz": 5e8},
+        ]
+        instance, _, _ = build(FreqResponseCalibrator, configs, points, None)
+        applied: list[str] = []
+        instance._apply_impedance = lambda impedance: applied.append(impedance)
+        instance._measure_amplitude = lambda frequency: 0.5 if frequency == 5e4 else 0.25
+        instance.run()
+
+        rows = [r for r in instance.results if "response" in r]
+        assert {r["impedance"] for r in rows} == {"1M", "50"}
+        assert all(
+            r["response"] == pytest.approx(1.0 if i % 2 == 0 else 0.5) for i, r in enumerate(rows)
+        )
+        summaries = [r for r in instance.results if r.get("summary") == "bandwidth"]
+        assert {r["impedance"] for r in summaries} == {"1M", "50"}
+        assert applied == ["1M", "50"], "必须按阻抗分组切换，且每组重新取基准"
+
     def test_summary_recorded(self, configs):
         points = [
             {"channel": "1", "frequency_hz": 50000},

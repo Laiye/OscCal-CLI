@@ -228,13 +228,33 @@ def _resolve_bw_ratio(
     frequencies = [reference] + [bandwidth * ratio for ratio in ratios]
 
     points, skipped = [], []
+    wanted = rule.get("impedances", ["1M"])
     for channel in channels:
-        for freq in frequencies:
-            reason = _check_frequency(freq, calibrator, "1M", "SIN")
-            if reason:
-                skipped.append({"channel": channel, "frequency_hz": freq, "reason": reason})
+        for impedance in wanted:
+            if not _impedance_supported(characteristics, impedance):
+                skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
                 continue
-            points.append(_point({"channel": channel, "frequency_hz": freq}))
+            for freq in frequencies:
+                reason = _check_frequency(freq, calibrator, impedance, "SIN")
+                if reason:
+                    skipped.append(
+                        {
+                            "channel": channel,
+                            "impedance": impedance,
+                            "frequency_hz": freq,
+                            "reason": reason,
+                        }
+                    )
+                    continue
+                points.append(
+                    _point(
+                        {
+                            "channel": channel,
+                            "impedance": impedance,
+                            "frequency_hz": freq,
+                        }
+                    )
+                )
     return {"points": points, "skipped": skipped}
 
 

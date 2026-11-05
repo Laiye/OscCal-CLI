@@ -111,17 +111,28 @@
             "status": "verified_with_caveat",
             "verified_at": "2026-11-05",
             "reference": "带内波动 ±3 dB；半功率点 0.707（参考）",
-            "points": 9,
+            "points": 18,
             "measured": {
                 "reference_frequency_hz": 50000,
-                "response_at_450mhz": 0.862,
-                "response_at_500mhz": 0.732,
-                "bandwidth": "≥500 MHz（测试范围内未出现 −3 dB 点）",
-                "inband_max_response": 1.0244
+                "1M": {
+                    "response_at_450mhz": 0.846,
+                    "response_at_500mhz": 0.715,
+                    "bandwidth": "≥500 MHz（测试范围内未出现 −3 dB 点）",
+                    "inband_max_response": 1.0244
+                },
+                "50": {
+                    "response_at_450mhz": 0.910,
+                    "response_at_500mhz": 0.836,
+                    "bandwidth": "≥500 MHz（测试范围内未出现 −3 dB 点）",
+                    "inband_max_response": 1.0164
+                }
             },
             "deviations": [],
-            "limitations": ["带内最大 +2.44%（25 MHz / 250 MHz），属带内纹波或单点测量散布"],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "limitations": [
+                "1 MΩ 500 MHz 处 G=0.715、50 Ω 处 G=0.836，两种阻抗均 ≥0.707，带宽 ≥500 MHz",
+                "1 MΩ 带内最大 +2.44%（25/250 MHz），50 Ω 为 +1.64%（25 MHz），属带内纹波或单点测量散布"
+            ],
+            "record": "data/calibration_20261105_165913_194588_3e16cbc070424b7e88591b76b4618681.json"
         },
         {
             "item": "enob",

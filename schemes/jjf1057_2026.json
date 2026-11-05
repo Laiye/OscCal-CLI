@@ -89,8 +89,7 @@
             ],
             "stimulus": {
                 "shape": "SIN",
-                "screen_fraction": 0.8,
-                "impedance": "1M"
+                "screen_fraction": 0.8
             },
             "points": {
                 "strategy": "bw_ratio",
@@ -109,6 +108,10 @@
                     "target_ratio": 0.707,
                     "interpolation": "log_frequency"
                 },
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
                 "note": "频点 = ratio × characteristics.bandwidth_hz；另加 50 kHz 基准。标称带宽处 G ≥ 0.707 记作带宽 ≥ 标称；否则在相邻频点间按对数频率插值求 G=0.707 的频点"
             },
             "notes": [

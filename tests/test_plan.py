@@ -45,10 +45,10 @@ def _by_name(plan: dict) -> dict[str, dict]:
 
 class TestPlanContent:
     def test_total_points(self, plan):
-        # 4 + 12 + 14 + 18 + 4 + 4 + 8 + 12 + 4 + 2 = 82
+        # 4 + 12 + 14 + 36 + 4 + 4 + 8 + 12 + 4 + 2 = 100
         # Δt 只有 2 点/通道：方波激励受 9500B 10 Hz~10 kHz 限制，快时基不可行
         # 时基挡位按实机能力收敛到 10 ms/div（去掉 100 ms/div）
-        assert plan["total_points"] == 82
+        assert plan["total_points"] == 100
 
     @pytest.mark.parametrize(
         "name,expected",
@@ -56,7 +56,7 @@ class TestPlanContent:
             ("input_impedance", 4),
             ("dc_gain", 12),
             ("dc_offset", 14),
-            ("freq_response_bandwidth", 18),
+            ("freq_response_bandwidth", 36),
             ("enob", 4),
             ("rise_time", 4),
             ("timebase_error", 8),
@@ -137,11 +137,18 @@ class TestPlanContent:
         freqs = [
             p["frequency_hz"]
             for p in _by_name(plan)["freq_response_bandwidth"]["points"]
-            if p["channel"] == "1"
+            if p["channel"] == "1" and p["impedance"] == "1M"
         ]
         assert freqs[0] == pytest.approx(50000)
         assert freqs[-1] == pytest.approx(5e8)
         assert len(freqs) == 9
+
+    def test_bandwidth_covers_both_impedances(self, plan):
+        points = [
+            p for p in _by_name(plan)["freq_response_bandwidth"]["points"] if p["channel"] == "1"
+        ]
+        assert {p["impedance"] for p in points} == {"1M", "50"}
+        assert len(points) == 18
 
     def test_enob_points_are_runtime(self, plan):
         points = _by_name(plan)["enob"]["points"]
@@ -212,7 +219,7 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "82" in result.output
+        assert "100" in result.output
         assert "JJF 1057-2026" in result.output
         assert "MDO3052" in result.output
 
@@ -227,7 +234,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 82
+        assert data["total_points"] == 100
         assert len(data["items"]) == 12
         assert data["scheme_name"] == "JJF 1057-2026 默认校准方案"
 
