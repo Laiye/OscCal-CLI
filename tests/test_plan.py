@@ -67,6 +67,11 @@ class TestPlanContent:
             assert items[name]["status"] == "manual"
             assert items[name]["points"] == []
 
+    def test_impedance_tolerance_comes_from_spec(self, plan):
+        points = _by_name(plan)["input_impedance"]["points"]
+        tolerances = {p["impedance"]: p["tolerance_pct"] for p in points if p["channel"] == "1"}
+        assert tolerances == {"1M": 0.5, "50": 1.0}
+
     def test_dc_gain_skips_50_ohm_above_limit(self, plan):
         skipped = _by_name(plan)["dc_gain"]["skipped"]
         assert len(skipped) == 4

@@ -133,11 +133,35 @@ class TestReadMeasurement:
 
     def test_invalid_measurement_records_failure(self, mdo3_commands, fake_osc):
         """P1 回归：Invalid（>1e30）同样应计入失败。"""
+        import osccal.core.comm as comm
+
         scpi_trace.reset()
         fake_osc.query_responses = {"MEASUrement:IMMed:VALue?": ":MEASUREMENT:IMMED:VALUE 9.91E+37"}
         with pytest.raises(ScpiError):
             read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude")
         assert scpi_trace.failure_count() >= 1
+        # 泰克 9.9E+37 与优利德 "*" 一样应先重试
+        assert len(fake_osc.commands_matching("VALue?")) == 1 + comm.INVALID_VALUE_RETRIES
+
+    def test_tek_sentinel_then_valid_value_recovers(self, mdo3_commands, fake_osc, monkeypatch):
+        """实机现象：刚改完时基/激励时首读可能返回 9.9E+37，重试应恢复。"""
+        import osccal.core.comm as comm
+
+        monkeypatch.setattr(comm.time, "sleep", lambda _: None)
+        state = {"queries": 0}
+
+        def query(cmd: str) -> str:
+            fake_osc.written.append(cmd)
+            if cmd.endswith("VALue?"):
+                state["queries"] += 1
+                if state["queries"] < 3:
+                    return ":MEASUREMENT:IMMED:VALUE 9.9E+37"
+            return ":MEASUREMENT:IMMED:VALUE 2.5E+0"
+
+        fake_osc.query = query
+        assert read_measurement(fake_osc, None, mdo3_commands, "1", "AMPlitude") == pytest.approx(
+            2.5
+        )
 
     def test_invalid_marker_star_retries_then_reports_item(
         self, mdo3_commands, fake_osc, monkeypatch

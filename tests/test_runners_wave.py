@@ -124,6 +124,21 @@ class TestTimebaseConsistency:
         assert record["rel_error_fit"] is not None
 
 
+class TestTimebaseOrder:
+    def test_record_length_pinned_before_timebase(self, configs):
+        """记录长度必须在采集/时基设置之前固定，否则波形与新 XINcr 不匹配。"""
+        points = [{"channel": "1", "timebase_s_per_div": 1e-4, "signal_freq_hz": 3000.0}]
+        instance = build(TimebaseErrorCalibrator, configs, points)
+        instance._read_meas = lambda key, trigger=True: 3000.0
+        instance._read_waveform = lambda samples, fresh=True: sine_wave(3000.0, 1e-6)
+        instance.run()
+
+        written = instance.inst_osc.written
+        record_index = next(i for i, cmd in enumerate(written) if "RECORDLENGTH" in cmd)
+        scale_index = next(i for i, cmd in enumerate(written) if "HOR:SCALE" in cmd)
+        assert record_index < scale_index
+
+
 class TestTimebaseError:
     def test_frequency_method_sign_and_scale(self, configs):
         points = [

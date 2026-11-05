@@ -117,7 +117,7 @@
                 "通道",
                 "输入电阻",
                 "输入电容",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "points": {
                 "strategy": "channel_x_impedance",
@@ -144,16 +144,16 @@
             "note": "9500B 通过有源头测量，CONF:RES / CONF:CAP 切换功能、READ? 取值；未接示波器或未选中时返回 2E35，须判为无效测量。"
         },
         "dc_gain": {
-            "clause": "7.4.2",
+            "clause": "7.4.1 / 7.4.2 / 7.4.3",
             "title": "直流增益",
             "automatable": true,
-            "method": "square_amplitude",
+            "method": "three_methods",
             "record_table": "A.3",
             "record_fields": [
                 "通道",
                 "量程",
                 "直流增益实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SQU",
@@ -187,17 +187,17 @@
             ]
         },
         "dc_offset": {
-            "clause": "7.5.1",
+            "clause": "7.5.1 / 7.5.2",
             "title": "直流偏置",
             "automatable": true,
-            "method": "offset_zero_and_gain",
+            "method": "two_methods",
             "record_table": "A.4",
             "record_fields": [
                 "通道",
                 "量程",
                 "直流偏置标称值",
                 "直流偏置实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "DC"
@@ -234,7 +234,7 @@
                 "频率值",
                 "频率响应实测值",
                 "频带宽度",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SIN",
@@ -254,12 +254,11 @@
                     0.9,
                     1.0
                 ],
-                "bandwidth_search": {
-                    "start_ratio": 1.0,
+                "crossing": {
                     "target_ratio": 0.707,
-                    "direction": "down"
+                    "interpolation": "log_frequency"
                 },
-                "note": "频点 = ratio × profile.bandwidth_hz；MDO3052（500 MHz）为 25/50/100/150/250/350/450/500 MHz，另加 50 kHz 基准，共 9 点/通道"
+                "note": "频点 = ratio × profile.bandwidth_hz；MDO3052（500 MHz）为 25/50/100/150/250/350/450/500 MHz，另加 50 kHz 基准，共 9 点/通道。标称带宽处 G ≥ 0.707 记作带宽 ≥ 标称；否则在相邻频点间按对数频率插值求 G=0.707 的频点"
             },
             "formula": {
                 "response": "Gk = Vk / V0  （V0 为 50 kHz 基准幅度）",
@@ -282,7 +281,7 @@
                 "信号幅度",
                 "信号频率",
                 "动态有效位数",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SIN",
@@ -305,7 +304,7 @@
                 "enob": "ENOB = log2( V0 / (√12 · Er) )，V0 为通道量程"
             },
             "pending_confirm": "式 (13)(14)(15) 的确切表达待按正文逐式核对",
-            "fallback": "附录 F 频域法（傅里叶分解 / SINAD）作为 --method 可选"
+            "fallback_note": "附录 F 频域法（傅里叶分解 / SINAD）本版本未实现，程序只做时域拟合"
         },
         "rise_time": {
             "clause": "7.8",
@@ -318,7 +317,7 @@
                 "量程",
                 "参数",
                 "实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "EDGE",
@@ -343,16 +342,16 @@
             ]
         },
         "timebase_error": {
-            "clause": "7.9.1",
+            "clause": "7.9.1 / 7.9.2",
             "title": "时基（采集速率）误差",
             "automatable": true,
-            "method": "frequency_readout",
+            "method": "frequency_and_fit_methods",
             "record_table": "A.8",
             "record_fields": [
                 "通道",
                 "时基挡位",
                 "时基相对误差实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SIN",
@@ -368,7 +367,7 @@
                     0.0001,
                     0.01
                 ],
-                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
+                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值。记录长度固定为 1000 点后挡位网格随之变化：800 ns/div 会吸附为 1 µs/div，记录中保存回读的实际挡位。"
             },
             "formula": {
                 "rel_error": "δT = (f_std - f_read) / f_std（正值 = 时基偏慢）",
@@ -391,7 +390,7 @@
                 "量程",
                 "标称值",
                 "实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SQU",
@@ -424,7 +423,7 @@
                 "量程",
                 "标称值",
                 "实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "SQU",
@@ -457,7 +456,7 @@
                 "通道",
                 "量程",
                 "实测值",
-                "不确定度"
+                "不确定度（另行评定）"
             ],
             "stimulus": {
                 "shape": "NONE",

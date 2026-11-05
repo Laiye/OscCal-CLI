@@ -16,6 +16,7 @@ from osccal.core.table_configs import (
     ITEM_CONFIGS,
     ITEM_PRECISION,
     LIMITS_DISCLAIMER,
+    reference_text,
     row_values,
     select_rows,
 )
@@ -117,13 +118,31 @@ class TestTableConfigs:
         values = row_values(ITEM_CONFIGS["dc_gain"], row)
         assert values[0] == 1
         assert values[1] == "1"
-        assert values[2:] == [""] * 6
+        assert values[2:] == [""] * 11
 
     def test_select_rows_filters_summary(self):
         rows = _results()["freq_response_bandwidth"]
         selected = select_rows(ITEM_CONFIGS["freq_response_bandwidth"], rows)
         assert len(selected) == 1
         assert "summary" not in selected[0]
+
+
+class TestReferenceText:
+    """参考指标只有规范一处来源：记录里的 limits 决定显示文本。"""
+
+    def test_renders_from_record_limits(self):
+        assert reference_text("dc_gain", {"dc_gain": {"mpe_pct": 2.0}}) == "最大允许误差 ±2%"
+        text = reference_text(
+            "input_impedance", {"input_impedance": {"ohm_50_pct": 1.0, "ohm_1m_pct": 0.5}}
+        )
+        assert text == "50 Ω ±1%，1 MΩ ±0.5%"
+
+    def test_timebase_uses_scientific_notation(self):
+        text = reference_text("timebase_error", {"timebase_rel_error": {"from": 1e-6, "to": 5e-9}})
+        assert "10⁻⁶" in text and "10⁻⁹" in text
+
+    def test_falls_back_without_limits(self):
+        assert reference_text("dc_gain", None) == ITEM_CONFIGS["dc_gain"]["reference"]
 
 
 class TestExport:
@@ -157,6 +176,24 @@ class TestExport:
         assert "参考指标" in text
         assert LIMITS_DISCLAIMER in text
         assert "ΔV、Δt 采用自动测量读数。" in text, "偏离声明应写入报告"
+
+    def test_reference_cell_uses_record_limits(self, tmp_path):
+        from osccal.core.export import export_to_excel
+
+        metadata = _metadata()
+        metadata["limits"] = {"dc_gain": {"mpe_pct": 2.0}}
+        out = tmp_path / "report.xlsx"
+        export_to_excel({"metadata": metadata, "results": _results()}, str(out))
+
+        wb = load_workbook(out)
+        text = " ".join(
+            str(cell.value)
+            for ws in wb.worksheets
+            for row in ws.iter_rows()
+            for cell in row
+            if cell.value is not None
+        )
+        assert "最大允许误差 ±2%" in text, "参考指标文本应由记录里的规范限值渲染"
 
     def test_no_pass_fail_wording(self, tmp_path):
         from osccal.core.export import export_to_excel

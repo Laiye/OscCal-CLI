@@ -3,14 +3,17 @@
 方法一（频率法，规范 7.9.1）：输入已知频率的正弦信号，用示波器的频率测量功能
 读 f_read。时基偏慢时测得的频率偏低，故
 
-    δT = (f_std − f_read) / f_std      （正值 = 时基偏慢）
+    δT = (f_std − f_read) / f_std      （正值 = 时基偏慢，一阶近似）
 
 方法二（拟合角频率法，规范 7.9.2）：读回波形并按附录 E 拟合，拟合以**标称时间轴**
 （`WFMOutpre:XINcr`）为基准，得到表观频率 f_app，则
 
     δT = f_std / f_app − 1
 
-指令集声明了波形能力时两种方法都记录，方法一为判定值，拟合值作为交叉核对。
+两法是规范给出的并列方法，测的是同一个 δT：本实现两个都记录、都写入报告，
+**不指定唯一"判定值"**。频率法受示波器频率读数位数限制（百~千 ppm），
+拟合法分辨力高一个量级；两者相差超过 5% 时说明采集时间轴不可信，拟合值置空
+并写明原因（`fit_note`）。
 """
 
 import time
@@ -32,7 +35,7 @@ CONSISTENCY_TOLERANCE = 0.05
 
 
 class TimebaseErrorCalibrator(BaseCalibrator):
-    """时基（采集速率）误差：频率法为判定值，拟合角频率法为交叉核对。"""
+    """时基（采集速率）误差：频率法与拟合角频率法并列记录，不指定唯一判定值。"""
 
     title = "时基（采集速率）误差（7.9）"
 
@@ -66,6 +69,10 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         scale = float(point["timebase_s_per_div"])
         freq_std = float(point["signal_freq_hz"])
 
+        # 记录长度必须在采集之前固定：先采集再改记录长度会让波形与新 XINcr 不匹配
+        if self._has_waveform() and "set_record_length" in self.cmd_osc.get("actions", {}):
+            self._write_osc("set_record_length", FIT_SAMPLES)
+
         actual_scale = self._set_timebase(scale)
         scale_used = actual_scale if actual_scale else scale
         if actual_scale and abs(actual_scale / scale - 1.0) > 0.01:
@@ -95,9 +102,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         fit_note = None
         if self._has_waveform():
             try:
-                # 记录长度与分析点数必须一致，否则该机型返回的数据与 XINcr 不匹配
-                if "set_record_length" in self.cmd_osc.get("actions", {}):
-                    self._write_osc("set_record_length", FIT_SAMPLES)
+                # 记录长度已在采集前固定为 FIT_SAMPLES，复用刚才那次采集的记录
                 wave = self._read_waveform(FIT_SAMPLES, fresh=False)
                 fit_implied = self.implied_frequency(wave)
                 fit = fit_sine(wave.seconds, wave.volts)
@@ -117,7 +122,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                 fit_note = f"波形拟合法失败: {exc}"
 
         if fit_note:
-            console.print(f"[yellow]⚠ {self._format_time(scale)}/div：{fit_note}[/yellow]")
+            console.print(f"[yellow]⚠ {self._format_time(scale_used)}/div：{fit_note}[/yellow]")
 
         return {
             "channel": self.channel,

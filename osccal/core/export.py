@@ -17,6 +17,7 @@ from osccal.core.table_configs import (
 )
 from osccal.core.table_configs import (
     LIMITS_DISCLAIMER,
+    reference_text,
     row_values,
     select_rows,
 )
@@ -30,6 +31,7 @@ def export_to_excel(data: dict, output_path: str) -> str:
 
     metadata = data.get("metadata", {})
     results = data.get("results", {})
+    limits = metadata.get("limits", {})
 
     _create_info_sheet(wb, metadata)
 
@@ -50,7 +52,7 @@ def export_to_excel(data: dict, output_path: str) -> str:
             continue
         data_rows = select_rows(config, rows)
         if data_rows:
-            _create_data_sheet(wb, config, data_rows)
+            _create_data_sheet(wb, base_name, config, data_rows, limits)
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -131,7 +133,7 @@ def _create_info_sheet(wb, metadata):
     ws.column_dimensions["B"].width = 60
 
 
-def _create_data_sheet(wb, config, rows):
+def _create_data_sheet(wb, name, config, rows, limits):
     ws = wb.create_sheet(title=config["title"])
 
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -170,7 +172,7 @@ def _create_data_sheet(wb, config, rows):
     # 表尾：参考指标 + 免责说明（不做合格判定）
     note_row = row_idx + 1
     ws.cell(row=note_row, column=1, value="参考指标").font = Font(bold=True, size=10)
-    ws.cell(row=note_row, column=2, value=config["reference"]).font = Font(size=10)
+    ws.cell(row=note_row, column=2, value=reference_text(name, limits)).font = Font(size=10)
     ws.merge_cells(start_row=note_row, start_column=2, end_row=note_row, end_column=len(headers))
     ws.cell(row=note_row + 1, column=1, value=LIMITS_DISCLAIMER).font = Font(italic=True, size=10)
     ws.merge_cells(

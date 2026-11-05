@@ -92,15 +92,24 @@ def _point(values: dict, **extra) -> dict:
     return point
 
 
-def _resolve_channel_x_impedance(item: dict, profile: dict, channels: list[str]) -> dict:
+def _resolve_channel_x_impedance(
+    item: dict, profile: dict, channels: list[str], reference_limits: dict
+) -> dict:
     wanted = item.get("points", {}).get("impedances", ["1M", "50"])
+    tolerance_limits = reference_limits.get("input_impedance") or {}
     points, skipped = [], []
     for channel in channels:
         for impedance in wanted:
             if not _impedance_supported(profile, impedance):
                 skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
                 continue
-            points.append(_point({"channel": channel, "impedance": impedance}))
+            point = {"channel": channel, "impedance": impedance}
+            # 参考指标来自规范（reference_limits），随点下发，避免 runner 里再写死一份
+            key = "ohm_1m_pct" if impedance == "1M" else "ohm_50_pct"
+            tolerance = tolerance_limits.get(key)
+            if isinstance(tolerance, (int, float)) and not isinstance(tolerance, bool):
+                point["tolerance_pct"] = float(tolerance)
+            points.append(_point(point))
     return {"points": points, "skipped": skipped}
 
 
@@ -260,6 +269,7 @@ def resolve_item(
     calibrator: dict,
     probe: str,
     channels: list[str],
+    reference_limits: dict | None = None,
 ) -> dict:
     """解析单个校准项目，返回 {name, clause, title, method, strategy, points, skipped}。"""
     if not spec_item.get("automatable"):
@@ -278,7 +288,9 @@ def resolve_item(
     strategy = rule.get("strategy")
 
     if strategy == "channel_x_impedance":
-        resolved = _resolve_channel_x_impedance(spec_item, profile, channels)
+        resolved = _resolve_channel_x_impedance(
+            spec_item, profile, channels, reference_limits or {}
+        )
     elif strategy == "scale_list":
         resolved = _resolve_scale_list(spec_item, profile, calibrator, channels)
     elif strategy == "bw_ratio":
@@ -316,8 +328,11 @@ def build_plan(
 ) -> dict:
     """生成完整计划：逐项解析 + 汇总统计。"""
     items = []
+    reference_limits = spec.get("reference_limits", {})
     for name, spec_item in spec.get("items", {}).items():
-        items.append(resolve_item(name, spec_item, profile, calibrator, probe, channels))
+        items.append(
+            resolve_item(name, spec_item, profile, calibrator, probe, channels, reference_limits)
+        )
 
     total_points = sum(len(item["points"]) for item in items)
     total_skipped = sum(len(item["skipped"]) for item in items)

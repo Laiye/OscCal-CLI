@@ -1,18 +1,22 @@
-"""直流偏置（JJF 1057-2026 7.5.2 方法二）。
+"""直流偏置（JJF 1057-2026 7.5.1 / 7.5.2 两种方法并列）。
 
-实机结论：示波器的"电压平均值"测量**已对偏置做过补偿**，直接用 MEAN 读数无法
-反映偏置误差（实测偏置 0 V 与 0.2 V 时拟合截距都是约 3 mV）。规范 7.5.2 要求
-"按 7.4.3 操作"——取的是**直流波形采样数据** y_ij，即未经偏置补偿的原始码值：
+方法一（7.5.1）：规范规定用示波器"电压平均值"功能读数——先测零点，再把偏置
+设为 d₀、激励设为 −d₀（本实现按实机可行性改为同号 +d₀），读 d_r，按式 (9)(10)
+计算 δd 与 G_d。实机上 MDO 的 MEAN 测量已对垂直偏置做过补偿，方法一只剩残差，
+因此还需要方法二。
+
+方法二（7.5.2）：按 7.4.3 取**直流波形采样数据** y_ij，即未经偏置补偿的原始码值：
 
     v_raw = (码值 − YOFf) × YMUlt        （不叠加 YZEro，它是示波器的补偿项）
 
-于是 v_raw ≈ E − d₀ − ε，线性拟合截距 b = −(d₀ + ε)，从而
+线性拟合截距 b = −(d₀ + ε)，从而
 
     d_c = −b = d₀ + ε         偏置示值
-    Δd  = d_c − d₀ = ε        偏置误差（式 9）
+    Δd  = d_c − d₀ = ε        偏置误差（式 9，符号按现行实现）
     G_d = d_c / d₀            偏置增益（式 10，d₀ ≠ 0 时）
 
-本实现：先在 d₀ = 0 下扫一遍得到零点误差，再在 d₀ = 2 格下扫一遍得到偏置示值。
+本实现：先在 d₀ = 0 下扫一遍得到零点误差，再在 d₀ = 2 格下扫一遍得到偏置示值；
+方法一在同一挡位再测一遍，两种方法并列保存。
 """
 
 import time
@@ -97,7 +101,6 @@ class DcOffsetCalibrator(BaseCalibrator):
         """在给定量程内扫 16 个直流电平，返回 (斜率 G, 截距 b)。"""
         half = SWEEP_HALF_DIV * scale
         step = 2.0 * half / SWEEP_POINTS
-        self.setup_measurement("meas_mean")
 
         inputs: list[float] = []
         readings: list[float] = []
@@ -164,12 +167,15 @@ class DcOffsetCalibrator(BaseCalibrator):
             "dc_gain_offset": gain_offset,
             "zero_reading_v_m1": zero_m1,
             "offset_nominal_v_m1": OFFSET_DIV * scale,
-            "offset_measured_v_m1_raw": measured_m1,
             "offset_measured_v_m1": measured_m1,
             "offset_error_v_m1": error_m1,
             "error_m1_pct": 100.0 * error_m1 / full_scale if full_scale else float("nan"),
             "gain_m1": gain_m1,
-            "method1_note": "激励取同号 d0（规范原文为 -d0，实际会把波形推出屏幕）",
+            "method1_note": (
+                "方法一按 7.5.1 用平均值读数、激励取同号 d0（规范原文为 -d0，"
+                "实际会把波形推出屏幕）；MDO 的 MEAN 带偏置补偿，方法一只剩残差，"
+                "与原始码值方法的结果不可直接相加"
+            ),
         }
 
     @ensure_output_off
@@ -215,7 +221,7 @@ class DcOffsetCalibrator(BaseCalibrator):
                         f"{record['scale']:g}",
                         f"{record['zero_reading_v_m1'] * 1e3:+.2f}",
                         f"{record['offset_nominal_v_m1']:.4g}",
-                        f"{record['offset_measured_v_m1_raw']:.5f}",
+                        f"{record['offset_measured_v_m1']:.5f}",
                         f"{record['offset_error_v_m1'] * 1e3:+.2f}",
                         f"{record['gain_m1']:.4f}",
                         f"{record['offset_measured_v']:.5f}",

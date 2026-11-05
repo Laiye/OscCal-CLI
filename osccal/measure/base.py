@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from osccal.core.comm import (
+    InvalidMeasurementError,
     read_measurement,
     scpi_query,
     scpi_query_raw,
@@ -21,6 +22,8 @@ console = Console()
 ACQUIRE_TIMEOUT_SECONDS = 5.0
 #: 触发单次采集后先静置的时间（秒）：过短会读到半填记录。
 ACQUIRE_SETTLE_SECONDS = 0.6
+#: 读到无效测量哨兵时的最大尝试次数（每次重新采集，而不是重复查询同一份记录）。
+READ_MEAS_ATTEMPTS = 3
 
 
 class OutputShutdownError(RuntimeError):
@@ -230,15 +233,29 @@ class BaseCalibrator:
 
     def _read_meas(self, meas_keyword, trigger: bool = True):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
-        if not trigger:
-            # 直流、平直基线这类没有边沿的信号无法触发单次采集，直接自由运行取当前记录，
-            # 否则每次读数都要白等一个采集超时。
-            self._ensure_free_running()
-            return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
-        # 单次采集模式下，改完激励/时基若不重新采集，MEASU:IMM:VAL 会返回**上一次**
-        # 的读数（实机：30 MHz 的读数一直延续到 300 kHz 的点上）。读数前先取新数据。
-        self._run_single_acquisition()
-        return read_measurement(self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword)
+        last_error = None
+        for attempt in range(READ_MEAS_ATTEMPTS):
+            if not trigger:
+                # 直流、平直基线这类没有边沿的信号无法触发单次采集，直接自由运行取当前记录，
+                # 否则每次读数都要白等一个采集超时。
+                self._ensure_free_running()
+            else:
+                # 单次采集模式下，改完激励/时基若不重新采集，MEASU:IMM:VAL 会返回**上一次**
+                # 的读数（实机：30 MHz 的读数一直延续到 300 kHz 的点上）。读数前先取新数据。
+                self._run_single_acquisition()
+            try:
+                return read_measurement(
+                    self.inst_osc, None, self.cmd_osc, self.channel, actual_keyword
+                )
+            except InvalidMeasurementError as exc:
+                # 实机：每次会话的第一条读数偶发 9.9E+37（该次采集没有有效波形）。
+                # 只重复查询会一直拿到同一份无效记录，必须重新采集后再读。
+                last_error = exc
+                if attempt == READ_MEAS_ATTEMPTS - 1:
+                    break
+                time.sleep(0.5)
+        assert last_error is not None
+        raise last_error
 
     def _read_meas_stable(
         self,

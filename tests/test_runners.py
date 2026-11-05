@@ -97,6 +97,71 @@ class TestDcGainMethodTwo:
         assert instance.results == []
 
 
+class TestDcGainMethodOne:
+    def test_method_one_uses_converged_reads(self, configs):
+        """方法一/三必须走 _read_meas_stable，不能用固定延时 + 单次读数。"""
+        points = [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
+        instance, _, _ = build(DcGainCalibrator, configs, points, lambda key, trigger=True: 0.0)
+        calls: list[dict] = []
+
+        def stable(key, **kwargs):
+            calls.append({"key": key, **kwargs})
+            return 0.0, 0.0, 0.4
+
+        instance._read_meas_stable = stable
+        instance._method_one(0.1, 8.0)
+        assert len(calls) == 2, "方法一两个直流点各读一次"
+        assert all(call["key"] == "meas_mean" for call in calls)
+        assert all(call["trigger"] is False for call in calls), "直流信号不能走触发采集"
+
+
+class TestInvalidMeasurementRetry:
+    """实机回归：会话首条读数偶发 9.9E+37，必须重新采集后再读。"""
+
+    def _instance(self, configs):
+        cmd_osc, cmd_cal, profile = configs
+        return DcGainCalibrator(
+            StubInstrument(), StubInstrument(), cmd_osc, cmd_cal, profile, "1", "9530", []
+        )
+
+    def test_reacquires_before_retrying(self, configs, monkeypatch):
+        import osccal.measure.base as base_mod
+        from osccal.core.comm import InvalidMeasurementError
+
+        instance = self._instance(configs)
+        acquisitions: list[int] = []
+        instance._run_single_acquisition = lambda *args, **kwargs: acquisitions.append(1)
+        monkeypatch.setattr(base_mod.time, "sleep", lambda _: None)
+        state = {"calls": 0}
+
+        def fake_read(*args, **kwargs):
+            state["calls"] += 1
+            if state["calls"] < 3:
+                raise InvalidMeasurementError("示波器返回无效测量值")
+            return 1.23
+
+        monkeypatch.setattr(base_mod, "read_measurement", fake_read)
+        assert instance._read_meas("meas_amp") == 1.23
+        assert len(acquisitions) == 3, "每次重试前都必须重新采集"
+
+    def test_gives_up_after_max_attempts(self, configs, monkeypatch):
+        import osccal.measure.base as base_mod
+        from osccal.core.comm import InvalidMeasurementError
+
+        instance = self._instance(configs)
+        acquisitions: list[int] = []
+        instance._run_single_acquisition = lambda *args, **kwargs: acquisitions.append(1)
+        monkeypatch.setattr(base_mod.time, "sleep", lambda _: None)
+        monkeypatch.setattr(
+            base_mod,
+            "read_measurement",
+            lambda *args, **kwargs: (_ for _ in ()).throw(InvalidMeasurementError("无效")),
+        )
+        with pytest.raises(InvalidMeasurementError):
+            instance._read_meas("meas_amp")
+        assert len(acquisitions) == base_mod.READ_MEAS_ATTEMPTS
+
+
 class TestDcOffset:
     def test_zero_and_offset_reading(self, configs):
         points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]

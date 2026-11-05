@@ -10,6 +10,7 @@ build/
 .trae/
 data/*.json
 data/*.xlsx
+data/*.log
 !data/.gitkeep
 show_out.txt
 sim_output.txt

@@ -14,7 +14,21 @@
 # 各校准项目的显示精度，按列顺序排列
 ITEM_PRECISION = {
     "input_impedance": [None, None, None, ("sig", 4), ("sig", 4), ("sig", 3), ("dec", 3), None],
-    "dc_gain": [None, None, None, ("sig", 3), ("sig", 3), ("sig", 3), ("dec", 6), ("dec", 3)],
+    "dc_gain": [
+        None,
+        None,
+        None,
+        ("sig", 3),
+        ("sig", 3),
+        ("sig", 3),
+        ("dec", 6),
+        ("dec", 3),
+        ("dec", 4),
+        ("dec", 3),
+        ("dec", 4),
+        ("dec", 3),
+        ("dec", 6),
+    ],
     "dc_offset": [
         None,
         None,
@@ -26,6 +40,8 @@ ITEM_PRECISION = {
         ("sig", 3),
         ("dec", 3),
         ("dec", 6),
+        ("dec", 6),
+        ("dec", 4),
     ],
     "freq_response_bandwidth": [None, None, ("sig", 4), ("sig", 4), ("dec", 4), None],
     "enob": [None, None, ("sig", 3), ("sig", 4), ("sig", 3), ("sig", 3), ("dec", 2), None],
@@ -74,6 +90,11 @@ ITEM_CONFIGS = {
             "被校示值(Vpp)",
             "增益 G",
             "增益误差(%)",
+            "方法一 G",
+            "方法一误差(%)",
+            "方法三 G",
+            "方法三误差(%)",
+            "截距 d(V)",
         ],
         "keys": [
             "index",
@@ -84,6 +105,11 @@ ITEM_CONFIGS = {
             "measured_vpp",
             "gain",
             "error_pct",
+            "gain_m1",
+            "error_m1_pct",
+            "gain_m3",
+            "error_m3_pct",
+            "intercept_m3_v",
         ],
         "error_col": 7,
         "precision": ITEM_PRECISION["dc_gain"],
@@ -102,6 +128,8 @@ ITEM_CONFIGS = {
             "偏置误差(V)",
             "误差(%FS)",
             "偏置增益 G",
+            "方法一 Δd(V)",
+            "方法一 G",
         ],
         "keys": [
             "index",
@@ -114,6 +142,8 @@ ITEM_CONFIGS = {
             "offset_error_v",
             "error_pct",
             "gain",
+            "offset_error_v_m1",
+            "gain_m1",
         ],
         "error_col": 8,
         "precision": ITEM_PRECISION["dc_offset"],
@@ -177,8 +207,8 @@ ITEM_CONFIGS = {
             "时基挡位(s/div)",
             "信号频率(Hz)",
             "测得频率(Hz)",
-            "相对误差(ppm)",
-            "拟合法(ppm)",
+            "方法一(ppm)",
+            "方法二(ppm)",
         ],
         "keys": [
             "index",
@@ -189,7 +219,7 @@ ITEM_CONFIGS = {
             "rel_ppm",
             "fit_ppm",
         ],
-        "error_col": 5,
+        "error_col": None,
         "precision": ITEM_PRECISION["timebase_error"],
         "reference": "最大允许误差 ±1×10⁻⁶ ~ ±5×10⁻⁹",
     },
@@ -282,6 +312,93 @@ EXCEL_ITEM_CONFIGS = {
 
 #: 参考指标的统一说明，终端与 Excel 报告都会输出。
 LIMITS_DISCLAIMER = "以上参考指标取自 JJF 1057-2026 表 1，仅供参照，不作为符合性判定依据。"
+
+_SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+
+
+def _number(value: object) -> float | None:
+    """把配置里的数值转成 float；非数值/布尔返回 None。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _sci(value: float) -> str:
+    """把 1e-6 写成 1×10⁻⁶（参考指标文本用）。"""
+    mantissa, exponent = f"{value:.1e}".split("e")
+    return f"{float(mantissa):g}×10{str(int(exponent)).translate(_SUPERSCRIPT)}"
+
+
+def reference_text(name: str, limits: dict | None) -> str:
+    """按记录里的规范参考指标（`metadata.limits`）生成参考指标文本。
+
+    参考指标只有规范一处来源（`specs/*.json:reference_limits`），随记录保存为
+    `metadata.limits`；本函数把它渲染成终端/Excel 的文本。旧记录没有 limits 时
+    回退到 `ITEM_CONFIGS` 的静态文本，保证历史记录仍可显示。
+    """
+    config = ITEM_CONFIGS.get(name)
+    fallback = config["reference"] if config else ""
+    data = limits if isinstance(limits, dict) else {}
+
+    if name == "input_impedance":
+        entry = data.get("input_impedance") or {}
+        fifty = _number(entry.get("ohm_50_pct"))
+        meg = _number(entry.get("ohm_1m_pct"))
+        if fifty is None or meg is None:
+            return fallback
+        return f"50 Ω ±{fifty:g}%，1 MΩ ±{meg:g}%"
+
+    if name == "dc_gain":
+        value = _number((data.get("dc_gain") or {}).get("mpe_pct"))
+        return fallback if value is None else f"最大允许误差 ±{value:g}%"
+
+    if name == "dc_offset":
+        value = _number((data.get("dc_offset") or {}).get("mpe_pct_of_full_scale"))
+        return fallback if value is None else f"最大允许误差 ±({value:g}%×满量程)"
+
+    if name == "freq_response_bandwidth":
+        value = _number((data.get("freq_response_db") or {}).get("max_ripple_db"))
+        if value is None:
+            return fallback
+        return f"带内波动 ±{value:g} dB；半功率点 0.707"
+
+    if name == "enob":
+        value = _number(data.get("enob_bits"))
+        return fallback if value is None else f"{value:g} bits"
+
+    if name == "rise_time":
+        value = _number((data.get("rise_time_ps") or {}).get("min"))
+        return fallback if value is None else f"可测下限 >{value:g} ps"
+
+    if name == "timebase_error":
+        entry = data.get("timebase_rel_error") or {}
+        start = _number(entry.get("from"))
+        stop = _number(entry.get("to"))
+        if start is None or stop is None:
+            return fallback
+        return f"最大允许误差 ±{_sci(start)} ~ ±{_sci(stop)}"
+
+    if name == "delta_v":
+        entry = data.get("delta_v") or {}
+        percent = _number(entry.get("mpe_pct_of_reading"))
+        lsb = _number(entry.get("extra_lsb"))
+        if percent is None or lsb is None:
+            return fallback
+        return f"最大允许误差 ±({percent:g}%×读值 ± {lsb:g} 个量化阶梯)"
+
+    if name == "delta_t":
+        entry = data.get("delta_t") or {}
+        percent = _number(entry.get("mpe_pct_of_reading"))
+        lsb = _number(entry.get("extra_lsb"))
+        if percent is None or lsb is None:
+            return fallback
+        return f"最大允许误差 ±({percent:g}%×读值 + {lsb:g} 个量化间隔)"
+
+    if name == "random_noise":
+        value = _number((data.get("random_noise") or {}).get("mpe_pct_of_full_scale"))
+        return fallback if value is None else f"±{value:g}%×满量程"
+
+    return fallback
 
 
 def row_values(config: dict, row: dict) -> list:

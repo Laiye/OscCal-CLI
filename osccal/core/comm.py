@@ -38,6 +38,10 @@ class ScpiError(RuntimeError):
     """通信或测量失败，禁止将失败响应作为校准数值使用。"""
 
 
+class InvalidMeasurementError(ScpiError):
+    """仪器返回无效测量哨兵（`*`、9.9E+37、3.4E+38 等），通常需要重新采集。"""
+
+
 def _socket_read_response(sock, max_bytes: int = 65536) -> str:
     """循环读取 Socket 响应直到换行或达到上限，避免单次 recv 截断长响应。
 
@@ -273,9 +277,10 @@ def read_measurement(
                 )
             return ""
 
-        # 部分机型（如优利德 UPO1000X）用 "*" 表示本次测量无效——手册原文："当返回
-        # 数据为无效数据均用*表示"。刚改过挡位/触发电平/垂直位置时读数可能短暂无效，
-        # 因此先重试几次；仍无效时给出可诊断的提示，而不是抛浮点转换异常。
+        # 部分机型用哨兵值表示本次测量无效：优利德 UPO1000X 用 "*"（手册原文："当返回
+        # 数据为无效数据均用*表示"），泰克用 9.9E+37，ZDS 用 3.40282E+38。刚改过挡位/
+        # 触发电平/垂直位置时读数可能短暂无效，因此先重试几次；仍无效时给出可诊断的
+        # 提示，而不是抛浮点转换异常。
         def extract_value(raw: str) -> str:
             """取响应中第 return_value_index 个字段；字段不足时返回空串。
 
@@ -285,29 +290,38 @@ def read_measurement(
             parts = raw.split("\n")[0].split(" ")
             return parts[return_value_index] if return_value_index < len(parts) else ""
 
+        def is_invalid(raw_value: str) -> bool:
+            """无效读数：`*` 标记，或非有限/超大哨兵值（>1e30）。"""
+            text = raw_value.strip()
+            if text == INVALID_VALUE_MARKER:
+                return True
+            try:
+                number = float(text)
+            except ValueError:
+                return False
+            return not math.isfinite(number) or abs(number) > 1e30
+
         invalid = False
         for attempt in range(INVALID_VALUE_RETRIES + 1):
             res = query_once()
             value = extract_value(res)
             # 无效标记可能整个响应就是 "*"，也可能是带表头响应的某个字段
-            invalid = res.split("\n")[0].strip() == INVALID_VALUE_MARKER or (
-                value.strip() == INVALID_VALUE_MARKER
-            )
+            invalid = res.split("\n")[0].strip() == INVALID_VALUE_MARKER or is_invalid(value)
             if not invalid:
                 break
             if attempt < INVALID_VALUE_RETRIES:
                 time.sleep(0.5)
                 scpi_setup_measurement(inst, cmd_osc, channel, meas_keyword)
         if invalid:
-            raise ScpiError(
-                f"示波器返回无效测量值 {INVALID_VALUE_MARKER}（测量项 {meas_keyword}）："
+            scpi_trace.record_failure()
+            raise InvalidMeasurementError(
+                f"示波器返回无效测量值（{value.strip() or '空响应'}，测量项 {meas_keyword}）："
                 "通常是没有有效采集——请检查挡位是否与信号匹配、波形是否超出屏幕、"
                 "触发电平与信号连接是否正常"
             )
 
         measured = float(value)
-        # ZDS 系列返回 3.40282e+38 表示 Invalid
-        if not math.isfinite(measured) or abs(measured) > 1e30:
+        if not math.isfinite(measured):
             raise ValueError(f"测量值无效: {value}")
         return measured
     except ScpiError:

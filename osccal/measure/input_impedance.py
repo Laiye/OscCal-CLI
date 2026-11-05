@@ -72,6 +72,8 @@ class InputImpedanceCalibrator(BaseCalibrator):
         self._write_calibrator("set_shap", "DC")
 
         error_pct = 100.0 * (resistance - nominal) / nominal if resistance is not None else None
+        # 参考允差优先取规范下发的点参数；手工构造的点（测试/旧计划）回退常量
+        tolerance = float(point.get("tolerance_pct", TOLERANCE_PCT[impedance]))
         return {
             "channel": self.channel,
             "impedance": impedance,
@@ -79,7 +81,7 @@ class InputImpedanceCalibrator(BaseCalibrator):
             "resistance_ohm": resistance,
             "capacitance_f": capacitance,
             "error_pct": error_pct,
-            "tolerance_pct": TOLERANCE_PCT[impedance],
+            "tolerance_pct": tolerance,
         }
 
     @ensure_output_off

@@ -38,17 +38,19 @@
   - **读数前必须重新采集**：单次采集完成后示波器停止，改完激励/时基若不再采集，`MEASU:IMM:VAL?` 返回上一点的读数。`base._read_meas` 已统一先触发一次单次采集并用 `ACQuire:STATE?` 轮询确认结束。
   - **直流/无沿信号不要走单次采集**：等不到触发会白等 5 s 超时。用 `_read_meas(trigger=False)` / `_ensure_free_running()`。
   - **读数要等收敛**：标准源换函数后幅度约需 2 s 建立（0.5 s 只到 3%、1.0 s 到 49%）。统一用 `_read_meas_stable()`（间隔 0.5 s 连读、相对差 ≤0.1%、最长 6 s），并把等待与残差写入记录。
-  - **记录长度必须等于分析点数**：实测 100 µs/div 下记录 1000 点拟合正确（3000.6 Hz），记录 10000 点则偏差 4.8 倍（数据与 `WFMOutpre:XINcr` 不匹配）。ENOB 与拟合法都显式设 `HOR:RECORDLENGTH` 为 N。
+  - **记录长度必须等于分析点数，且在采集之前固定**：实测 100 µs/div 下记录 1000 点拟合正确（3000.6 Hz），记录 10000 点则偏差 4.8 倍（数据与 `WFMOutpre:XINcr` 不匹配）。ENOB 在设置时基前固定 `HOR:RECORDLENGTH`；时基拟合法也必须在采集前固定，先采集再改会让波形与新 `XINcr` 不匹配。
   - **水平挡位序列随记录长度变化**：记录 10000 点时 800 ns/div 可用、1 µs 不可用；记录 1000 点时相反。挡位表不能写死，`_set_timebase` 已回读实际值并写入记录。
   - **阻抗必须两端一起设并回读校验**：50 Ω 输出接 1 MΩ 输入会让读数翻倍（0.5 Vpp 读成 1.004 V），1 MΩ 接 50 Ω 则降为 0.66 倍。`_apply_impedance` 已含 `_verify_impedance`，这类错误不产生 SCPI 错误码。
   - **测量顺序会影响结果**：先跑直流类方法再测方波幅度，方波法会系统性偏高 1.9%~5.0%（量化台阶整数倍）。直流增益把方波方法排在最前面。
   - **示波器平均测量带偏置补偿**：直流偏置不能用 MEAN 读数，必须取**原始码值** `(码值 − YOFf) × YMUlt`（不叠加 YZEro），否则拟合截距恒接近 0。
   - **9500B 的 DC 输出不能设 0 V**：`SOUR:VOLT 0` 与 0.5 mV 都被静默丢弃、保持原值（最小可设约 1 mV）。零点改用 ±1 mV 两点插值。
   - **快沿/脉冲测量要多次采集平均**：单次重复性约 ±52 ps，10 次平均降到约 ±17 ps。
+  - **无效读数要重新采集，而不是重复查询**：泰克用 `9.9E+37`、优利德用 `*`、ZDS 用 `3.4E+38` 表示"本次测量无效"。`read_measurement` 内部的重试只重发测量设置，同一份无效采集不会变；`base._read_meas` 现在会在 `InvalidMeasurementError` 时重新采集（最多 3 次）。实机现象：每次会话的第一条读数偶发 `9.9E+37`，不重采会直接让整项失败。
 - 版本号只有一处来源：`osccal/__init__.py:__version__`。`pyproject.toml` 用 `dynamic = ["version"]` + `[tool.setuptools.dynamic]` 指向它，CLI 用 `@click.version_option(version=__version__)`。**不要在任何地方再写死版本字符串**（`tests/test_specs.py` 守护）。
 - 配置文件一律 JSON，不引入 YAML：各类配置共用同一套校验与 `configuration_snapshot` 追溯链（快照基于 `json.dumps`，换 YAML 会破坏 sha256 语义）。
 - 配置结构校验只有一份实现 `osccal/core/config_validation.py`，运行时加载和 `tests/test_all_configs.py` 共用；改 JSON 契约时同步这里，不要另写校验。`REQUIRED_KEYWORDS` 之外的测量 keyword 可省略，表示机型没有该能力（旧 `transient.py` 已删除，新项目按需检查 `cmd_osc["keyword"]` 是否存在对应键，不要用"缺少 action"让整项失败）。
-- 结果表格的列与**显示精度**只有一份声明 `osccal/core/table_configs.py`（`ITEM_CONFIGS`/`EXCEL_ITEM_CONFIGS` 的 `precision` 指向 `ITEM_PRECISION`）：终端 `show` 与 Excel 导出共用 `osccal/core/utils.py` 的 `format_display_value`/`prepare_excel_value`，增删列时同步精度规格（列数一致性由 M6' 重写后的导出测试守护）。Excel 单元格按显示精度舍入，超差判定仍用未舍入原值，未舍入读数只保留在 JSON 记录里。
+- 结果表格的列与**显示精度**只有一份声明 `osccal/core/table_configs.py`（`ITEM_CONFIGS`/`EXCEL_ITEM_CONFIGS` 的 `precision` 指向 `ITEM_PRECISION`）：终端 `show` 与 Excel 导出共用 `osccal/core/utils.py` 的 `format_display_value`/`prepare_excel_value`，增删列时同步精度规格（列数一致性由 M6' 重写后的导出测试守护）。Excel 单元格按显示精度舍入，超差判定仍用未舍入原值，未舍入读数只保留在 JSON 记录里。参考指标文本由 `table_configs.reference_text(name, metadata["limits"])` 从规范 `reference_limits` 渲染，旧记录无 limits 时回退静态文本；`reference_limits` 是唯一来源，不要在报告代码里另写一份限值。
+- 时基误差的 7.9.1（频率法）与 7.9.2（拟合法）是规范的**并列方法**：记录与报告两列都出，不指定唯一判定值；拟合值仅在"拟合频率与读数相差 ≤5%"时有效，否则置空并在 `fit_note` 说明。
 - 幅度口径与平均次数的旧规则（`meas_amp_scale`、`averages`、`_nudge_trigger_level` 的具体用法）描述的是 V0.1.0 测量层，相关模块已在 M1' 删除。`measure/base.py` 的公共能力（连接、SCPI 追踪、垂直位置防呆、触发微调）保留供 M3'~M5' 复用；重写新项目时**以 JJF 1057-2026 条款为准，不要沿用旧口径**。
 - 同一模块提供**执行前校验**：`cli.py` 在连接设备后、任何设置指令之前调用 `validate_selection()`（通道/项目/探头信号与阻抗/带宽参数/必需 action）与 `validate_device_identity()`（厂商与型号）；不通过则本轮中止、不发任何设置指令，退出码 `2`。
 - 设备身份匹配：存在 `models` 时按精确白名单（忽略大小写与非字母数字字符，真机存在 `TBS 1102` 这类带空格上报）；校准仪无 `models` 时回退 `series`/`name` 的**型号家族**匹配（完全相同，或较短者为较长者前缀且长度 ≥ 4，如 `9500` 与 `9500B`）。`calibrators/*.json` 可用 `models` 声明同一型号的多种 `*IDN?` 上报形式。归一化规则只有一份实现 `config_validation.normalize_token`，`auto_detect.py` 的 `--auto` 识别与执行前校验共用它，改规则时两处同时生效。
@@ -61,7 +63,7 @@
 - 校准记录 `metadata` 的状态字段（`status`/`item_status`/`failures`/`configurations`/`scpi_errors`）与中断续存行为见 `README.md`，由 `tests/test_storage.py` 守护（CLI 流程测试随 M3' 重建）。
 - 单项失败不终止整轮：`measure/all.py:run_items` 捕获项目异常后写 `failures`/`item_status` 并继续执行后续项目（`show`/Excel 跳过失败项目的部分数据）；只有用户中断与 `OutputShutdownError` 会终止会话。记录中的 NaN/Inf 由 `core/storage.py:_sanitize_nonfinite` 降级为 `null`，否则 `allow_nan=False` 会让整份记录写不进去。
 - 受限沙箱环境下运行 `pytest` 时，使用 `tmp_path` 的用例可能因临时目录权限报 fixture setup 的 `PermissionError`；那是环境限制而非代码问题（正常终端不受影响）。
-- 无效测量值的处理集中在 `core/comm.py`：`read_measurement` 识别手册规定的无效标记 `*`（优利德 UPO1000X："返回数据为无效数据均用\*表示"）并重试，仍无效才抛出指明测量项的错误——不要在调用方再写浮点解析兜底。
+- 无效测量值的处理集中在 `core/comm.py`：`read_measurement` 识别 `*` 与 9.9E+37 / 3.4E+38 等无效哨兵并按设置重试，仍无效抛 `InvalidMeasurementError`；`base._read_meas` 收到该异常会**重新采集**后再读（最多 3 次）。不要在调用方再写浮点解析兜底。
 - 个别机型**背靠背连续写入会静默丢指令**（UPO1104X 实测，错误队列仍报 `No error`）：指令集用 `feature.write_delay_ms` 声明写入间隔，`BaseCalibrator.__init__` 会调用 `comm.set_write_delay` 生效；未声明该字段的机型时序完全不变。排查"某条设置没生效"类问题时优先怀疑这一点。
 - `measure/base.py:_adjust_vertical_position` 有防呆：波形远超整屏时判定为挡位问题并跳过调整。历史事故是按超屏量算出 −45.6 V 偏移、把波形推出屏幕，导致后续测量全部返回无效值——不要去掉该判断。
 - 已支持设备与各字段含义见 `README.md`（内容详尽，改动前先读）。

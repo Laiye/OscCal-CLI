@@ -69,10 +69,10 @@ class TestShippedSpec:
         assert "7.11" in joined and "7.12" in joined, "应声明 ΔV/Δt 采用自动测量的偏离"
         assert "不确定度" in joined
 
-    def test_dc_gain_uses_method_two(self, spec):
+    def test_dc_gain_covers_three_methods(self, spec):
         item = spec["items"]["dc_gain"]
-        assert item["clause"] == "7.4.2"
-        assert item["method"] == "square_amplitude"
+        assert item["clause"] == "7.4.1 / 7.4.2 / 7.4.3"
+        assert item["method"] == "three_methods"
         assert item["points"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
         assert item["points"]["screen_fraction"] == 0.8
         assert "Vr / V" in item["formula"]["gain"]

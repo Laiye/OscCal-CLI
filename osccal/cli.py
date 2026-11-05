@@ -952,6 +952,7 @@ def _display_calibration_data(data: dict):
     from osccal.core.table_configs import (
         ITEM_CONFIGS,
         LIMITS_DISCLAIMER,
+        reference_text,
         row_values,
         select_rows,
     )
@@ -991,7 +992,7 @@ def _display_calibration_data(data: dict):
 
         console.print()
         console.print(table)
-        console.print(f"[dim]参考指标：{config['reference']}[/dim]")
+        console.print(f"[dim]参考指标：{reference_text(base_name, metadata.get('limits'))}[/dim]")
 
     if grouped:
         console.print(f"\n[dim]{LIMITS_DISCLAIMER}[/dim]")

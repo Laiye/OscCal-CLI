@@ -40,9 +40,21 @@ class DcGainCalibrator(BaseCalibrator):
         if "set_vertical_position" in self.cmd_osc["actions"]:
             self._write_osc("set_vertical_position", self.channel, 0.0)
 
-    def _read_mean(self) -> float:
-        voltage = self._read_meas("meas_mean", trigger=False)
-        return voltage
+    def _read_mean(self) -> tuple[float, float]:
+        """读平均值并等收敛，返回 (读数, 已等待秒数)。
+
+        直流电平换挡后标准源同样需要建立时间；方法一/三此前用固定延时 + 单次
+        读数，与方法二判据不一致。这里统一用 `_read_meas_stable`（间隔 0.3 s、
+        相对差 ≤0.05%、最长 4 s），并把等待时间写入记录。
+        """
+        value, _spread, waited = self._read_meas_stable(
+            "meas_mean",
+            tolerance=0.0005,
+            interval=0.3,
+            max_wait=4.0,
+            trigger=False,
+        )
+        return value, waited
 
     def _set_dc(self, volts: float) -> None:
         """输出带符号的直流电平。
@@ -53,9 +65,11 @@ class DcGainCalibrator(BaseCalibrator):
         self._write_calibrator("set_shap", "DC")
         self._write_calibrator("set_volt", volts)
         self._write_calibrator("set_output", "ON")
-        time.sleep(0.8)
+        time.sleep(0.3)  # 函数切换的建立时间由随后的读数收敛判据兜底
 
-    def _method_one(self, scale: float, vertical_div: float) -> tuple[float | None, float | None]:
+    def _method_one(
+        self, scale: float, vertical_div: float
+    ) -> tuple[float | None, float | None, float]:
         """方法一：屏幕 90% / 10% 两个直流点的增益。"""
         span = scale * vertical_div
         level_high = (POSITION_HIGH - 0.5) * span
@@ -63,14 +77,14 @@ class DcGainCalibrator(BaseCalibrator):
 
         self.setup_measurement("meas_mean")
         self._set_dc(level_high)
-        read_high = self._read_mean()
+        read_high, wait_high = self._read_mean()
         self._set_dc(level_low)
-        read_low = self._read_mean()
+        read_low, wait_low = self._read_mean()
 
         if level_high == level_low:
-            return None, None
+            return None, None, wait_high + wait_low
         gain = (read_high - read_low) / (level_high - level_low)
-        return gain, 100.0 * (gain - 1.0)
+        return gain, 100.0 * (gain - 1.0), wait_high + wait_low
 
     def _method_two(self, std_value: float) -> tuple[float, float, float, float]:
         """方法二：方波幅度法。
@@ -91,7 +105,7 @@ class DcGainCalibrator(BaseCalibrator):
         return gain, 100.0 * (gain - 1.0), waited, spread_pct
 
     def _method_three(self, scale: float, vertical_div: float) -> tuple[float | None, float | None]:
-        """方法三：量程内 m 点最小二乘，返回 (G, 截距 d)。"""
+        """方法三：量程内 m 点最小二乘，返回 (G, 截距 d, 累计等待秒数)。"""
         span = scale * vertical_div
         low_limit = -span / 2.0
         high_limit = span / 2.0
@@ -100,24 +114,27 @@ class DcGainCalibrator(BaseCalibrator):
         self.setup_measurement("meas_mean")
         inputs: list[float] = []
         readings: list[float] = []
+        settle = 0.0
         for index in range(SWEEP_POINTS):
             level = low_limit + (index + 0.5) * step
             self._set_dc(level)
+            value, waited = self._read_mean()
             inputs.append(level)
-            readings.append(self._read_mean())
+            readings.append(value)
+            settle += waited
 
         count = len(inputs)
         if count < 2:
-            return None, None
+            return None, None, settle
         mean_x = sum(inputs) / count
         mean_y = sum(readings) / count
         numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(inputs, readings, strict=True))
         denominator = sum((x - mean_x) ** 2 for x in inputs)
         if denominator == 0:
-            return None, None
+            return None, None, settle
         gain = numerator / denominator
         intercept = mean_y - gain * mean_x
-        return gain, intercept
+        return gain, intercept, settle
 
     def _measure_point(self, point: dict) -> dict:
         scale = float(point["scale"])
@@ -133,8 +150,8 @@ class DcGainCalibrator(BaseCalibrator):
         # 方法（一/三），随后的方波幅度读数会系统性偏高 1.9%~5.0%（且正好是
         # 0.625% 的整数倍，属量化台阶上的偏差）。
         gain2, error2, settle_s, spread2 = self._method_two(std_value)
-        gain1, error1 = self._method_one(scale, vertical_div)
-        gain3, intercept3 = self._method_three(scale, vertical_div)
+        gain1, error1, settle_m1 = self._method_one(scale, vertical_div)
+        gain3, intercept3, settle_m3 = self._method_three(scale, vertical_div)
 
         return {
             "channel": self.channel,
@@ -149,7 +166,9 @@ class DcGainCalibrator(BaseCalibrator):
             "gain_m3": gain3,
             "error_m3_pct": None if gain3 is None else 100.0 * (gain3 - 1.0),
             "intercept_m3_v": intercept3,
+            "settle_s_m1": settle_m1,
             "settle_s_m2": settle_s,
+            "settle_s_m3": settle_m3,
             "read_spread_m2_pct": spread2,
         }
 
