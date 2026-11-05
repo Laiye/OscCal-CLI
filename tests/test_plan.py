@@ -1,5 +1,6 @@
 """校准点解析器（core/points.py）与 `osccal plan` 的守护用例。"""
 
+import copy
 import json
 from pathlib import Path
 
@@ -18,18 +19,24 @@ def _load(name: str, sub: str) -> dict:
 
 
 @pytest.fixture(scope="module")
-def configs() -> tuple[dict, dict, dict]:
+def configs() -> tuple[dict, dict, dict, dict]:
     return (
         _load("jjf1057_2026.json", "specs"),
-        _load("tektronix_mdo3052.json", "profiles"),
+        _load("jjf1057_2026.json", "schemes"),
+        _load("tektronix_mdo3052.json", "characteristics"),
         _load("fluke_9500b.json", "calibrators"),
     )
 
 
+def _build(configs, spec=None, scheme=None, probe="9530", channels=None) -> dict:
+    spec = spec if spec is not None else configs[0]
+    scheme = scheme if scheme is not None else configs[1]
+    return build_plan(spec, scheme, configs[2], configs[3], probe, channels or ["1", "2"])
+
+
 @pytest.fixture(scope="module")
 def plan(configs) -> dict:
-    spec, profile, calibrator = configs
-    return build_plan(spec, profile, calibrator, "9530", ["1", "2"])
+    return _build(configs)
 
 
 def _by_name(plan: dict) -> dict[str, dict]:
@@ -66,6 +73,23 @@ class TestPlanContent:
         for name in ("visual_check", "self_cal_signal"):
             assert items[name]["status"] == "manual"
             assert items[name]["points"] == []
+
+    def test_default_scheme_methods_reach_plan(self, plan):
+        items = _by_name(plan)
+        assert items["dc_gain"]["methods"] == [
+            "square_amplitude",
+            "dc_two_point",
+            "multi_point_lsq",
+        ]
+        assert items["dc_gain"]["primary"] == "square_amplitude"
+        assert items["dc_offset"]["methods"] == ["raw_lsq", "mean_readout"]
+        assert items["dc_offset"]["primary"] == "raw_lsq"
+        assert items["timebase_error"]["methods"] == [
+            "frequency_readout",
+            "waveform_fit",
+        ]
+        assert items["timebase_error"]["primary"] is None
+        assert items["random_noise"]["methods"] == ["sample_stddev"]
 
     def test_impedance_tolerance_comes_from_spec(self, plan):
         points = _by_name(plan)["input_impedance"]["points"]
@@ -131,11 +155,34 @@ class TestPlanContent:
         assert _by_name(plan)["timebase_error"]["skipped"] == []
 
     def test_unknown_probe_marks_rise_time_skipped(self, configs):
-        spec, profile, calibrator = configs
-        plan = build_plan(spec, profile, calibrator, "9999", ["1"])
+        plan = _build(configs, probe="9999", channels=["1"])
         item = _by_name(plan)["rise_time"]
         assert item["points"] == []
         assert any("edge_rise_times" in s["reason"] for s in item["skipped"])
+
+
+class TestSchemeSelection:
+    def test_method_subset_does_not_change_points(self, configs):
+        scheme = copy.deepcopy(configs[1])
+        scheme["items"]["dc_gain"]["methods"] = ["square_amplitude"]
+        scheme["items"]["dc_gain"]["primary"] = "square_amplitude"
+        plan = _build(configs, scheme=scheme)
+        item = _by_name(plan)["dc_gain"]
+        assert item["methods"] == ["square_amplitude"]
+        assert len(item["points"]) == 12
+
+    def test_item_not_in_scheme_is_reported(self, configs):
+        scheme = copy.deepcopy(configs[1])
+        del scheme["items"]["dc_offset"]
+        plan = _build(configs, scheme=scheme)
+        item = _by_name(plan)["dc_offset"]
+        assert item["status"] == "not_in_scheme"
+        assert item["points"] == []
+        assert any("方案未列入" in s["reason"] for s in item["skipped"])
+
+    def test_plan_reports_scheme_name(self, plan):
+        assert plan["scheme_name"] == "JJF 1057-2026 默认校准方案"
+        assert plan["scheme_spec"] == "jjf1057_2026"
 
 
 class TestPlanCommand:
@@ -144,6 +191,13 @@ class TestPlanCommand:
         assert result.exit_code == 0, result.output
         assert "70" in result.output
         assert "JJF 1057-2026" in result.output
+        assert "MDO3052" in result.output
+
+    def test_plan_shows_methods(self):
+        result = CliRunner().invoke(cli, ["plan"])
+        assert result.exit_code == 0, result.output
+        assert "3法" in result.output
+        assert "方波" in result.output
 
     def test_plan_writes_json(self, tmp_path):
         out = tmp_path / "plan.json"
@@ -152,11 +206,27 @@ class TestPlanCommand:
         data = json.loads(out.read_text(encoding="utf-8"))
         assert data["total_points"] == 70
         assert len(data["items"]) == 12
+        assert data["scheme_name"] == "JJF 1057-2026 默认校准方案"
 
-    def test_plan_rejects_unknown_spec(self):
-        result = CliRunner().invoke(cli, ["plan", "--spec", "no_such_spec"])
+    def test_plan_accepts_characteristics_name(self):
+        result = CliRunner().invoke(cli, ["plan", "--characteristics", "tektronix_mdo3032"])
+        assert result.exit_code == 0, result.output
+        assert "MDO3032" in result.output
+
+    def test_plan_rejects_unknown_scheme(self):
+        result = CliRunner().invoke(cli, ["plan", "--scheme", "no_such_scheme"])
         assert result.exit_code == 2
-        assert "找不到规范配置文件" in result.output
+        assert "找不到方案配置文件" in result.output
+
+    def test_plan_rejects_unknown_characteristics(self):
+        result = CliRunner().invoke(cli, ["plan", "--characteristics", "no_such_model"])
+        assert result.exit_code == 2
+        assert "找不到特征文件" in result.output
+
+    def test_old_spec_option_is_gone(self):
+        result = CliRunner().invoke(cli, ["plan", "--spec", "jjf1057_2026"])
+        assert result.exit_code != 0
+        assert "No such option" in result.output or "no such option" in result.output
 
 
 class TestRunnerAvailability:
@@ -170,8 +240,8 @@ class TestRunnerAvailability:
     def test_calibrate_help_drops_legacy_options(self):
         result = CliRunner().invoke(cli, ["calibrate", "--help"])
         assert result.exit_code == 0
-        # 标称带宽与扫描步进改由 Profile 的 bandwidth_hz 与规范比值决定
         assert "--bandwidth" not in result.output
         assert "--bd-step" not in result.output
         assert "--items" in result.output
-        assert "--spec" in result.output
+        assert "--scheme" in result.output
+        assert "--characteristics" in result.output

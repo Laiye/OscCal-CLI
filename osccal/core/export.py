@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from rich.console import Console
 
+from osccal.core.methods import ITEM_METHODS
 from osccal.core.storage import STATUS_LABELS
 from osccal.core.table_configs import (
     EXCEL_ITEM_CONFIGS as item_configs,
@@ -83,6 +84,9 @@ def _create_info_sheet(wb, metadata):
         ("通道", f"CH{metadata.get('channel', '')}"),
         ("探头", metadata.get("probe", "")),
     ]
+    characteristics_file = metadata.get("characteristics_file") or metadata.get("profile_file")
+    if characteristics_file:
+        info_items.append(("特征文件", characteristics_file))
 
     spec = metadata.get("spec") or {}
     if spec:
@@ -94,6 +98,24 @@ def _create_info_sheet(wb, metadata):
                 ("规范摘要(sha256)", spec.get("sha256", "")),
             ]
         )
+
+    scheme = metadata.get("scheme") or {}
+    if scheme:
+        info_items.extend(
+            [
+                ("依据方案", scheme.get("name", "")),
+                ("方案文件", scheme.get("file", "")),
+                ("方案摘要(sha256)", scheme.get("sha256", "")),
+            ]
+        )
+        for item_name, selection in (scheme.get("items") or {}).items():
+            labels = ITEM_METHODS.get(item_name, {})
+            methods = [labels.get(name, name) for name in selection.get("methods", [])]
+            primary = selection.get("primary")
+            text = " + ".join(methods)
+            if primary:
+                text += f"（主：{labels.get(primary, primary)}）"
+            info_items.append((f"方案方法 {item_name}", text))
 
     for name, failure in metadata.get("failures", {}).items():
         info_items.append((f"失败项目 {name}", failure.get("message", "")))

@@ -35,7 +35,7 @@ def configs() -> tuple[dict, dict, dict]:
     return (
         _load("tektronix_mdo.json", "commands"),
         _load("fluke_9500b.json", "calibrators"),
-        _load("tektronix_mdo3052.json", "profiles"),
+        _load("tektronix_mdo3052.json", "characteristics"),
     )
 
 

@@ -1,4 +1,4 @@
-"""校准规范配置（specs/*.json）与版本号来源的守护用例。"""
+"""校准规范（specs/）、校准方案（schemes/）与版本号来源的守护用例。"""
 
 import json
 import re
@@ -9,23 +9,44 @@ from click.testing import CliRunner
 
 from osccal import __version__
 from osccal.cli import cli
-from osccal.core.config import load_spec, resolve_spec_path
-from osccal.core.config_validation import validate_spec
-from osccal.core.storage import spec_record
+from osccal.core.config import load_scheme, load_spec, resolve_config_path
+from osccal.core.config_validation import validate_scheme, validate_spec
+from osccal.core.storage import scheme_record, spec_record
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = PROJECT_ROOT / "specs"
+SCHEMES_DIR = PROJECT_ROOT / "schemes"
 SPEC_PATH = SPECS_DIR / "jjf1057_2026.json"
+SCHEME_PATH = SCHEMES_DIR / "jjf1057_2026.json"
 
 # 规范第 7 章共 12 个校准项目，条款号 7.2 ~ 7.13 各一。
 EXPECTED_CLAUSES = {f"7.{n}" for n in range(2, 14)}
 # 其中程序不实现的 2 项（人工执行）。
 MANUAL_ITEMS = {"visual_check", "self_cal_signal"}
+# 方案应覆盖的 10 个自动化项目。
+AUTOMATABLE_ITEMS = {
+    "input_impedance",
+    "dc_gain",
+    "dc_offset",
+    "freq_response_bandwidth",
+    "enob",
+    "rise_time",
+    "timebase_error",
+    "delta_v",
+    "delta_t",
+    "random_noise",
+}
 
 
 @pytest.fixture(scope="module")
 def spec() -> dict:
     with open(SPEC_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture(scope="module")
+def scheme() -> dict:
+    with open(SCHEME_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -47,11 +68,10 @@ class TestShippedSpec:
         autos = {k for k, v in spec["items"].items() if v["automatable"]}
         assert autos == set(spec["items"]) - MANUAL_ITEMS
 
-    def test_automatable_items_declare_points_and_record(self, spec):
+    def test_automatable_items_have_record_table(self, spec):
         for key, item in spec["items"].items():
             if not item["automatable"]:
                 continue
-            assert "strategy" in item["points"], f"{key} 缺少取点策略"
             assert re.match(r"^A\.\d+$", item["record_table"]), f"{key} 记录表号非法"
 
     def test_record_tables_are_unique(self, spec):
@@ -69,29 +89,65 @@ class TestShippedSpec:
         assert "7.11" in joined and "7.12" in joined, "应声明 ΔV/Δt 采用自动测量的偏离"
         assert "不确定度" in joined
 
-    def test_dc_gain_covers_three_methods(self, spec):
+    def test_spec_has_no_points_or_methods(self, spec):
+        """v0.3.0 起规范只写要求，取点与方法必须留在 schemes/。"""
+        for key, item in spec["items"].items():
+            for forbidden in ("points", "stimulus", "method", "methods"):
+                assert forbidden not in item, f"{key} 不应包含方案字段 {forbidden}"
+
+    def test_dc_gain_formula_declared(self, spec):
         item = spec["items"]["dc_gain"]
         assert item["clause"] == "7.4.1 / 7.4.2 / 7.4.3"
-        assert item["method"] == "three_methods"
-        assert item["points"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
-        assert item["points"]["screen_fraction"] == 0.8
         assert "Vr / V" in item["formula"]["gain"]
 
-    def test_bandwidth_ratios_stop_at_one(self, spec):
-        ratios = spec["items"]["freq_response_bandwidth"]["points"]["ratios"]
+    def test_timebase_pending_confirm_kept(self, spec):
+        assert "待按正文逐式核对" in spec["items"]["timebase_error"]["pending_confirm"]
+
+
+class TestShippedScheme:
+    def test_scheme_is_valid(self, scheme):
+        assert validate_scheme(scheme) == []
+
+    def test_scheme_covers_all_automatable_items(self, scheme):
+        assert set(scheme["items"]) == AUTOMATABLE_ITEMS
+
+    def test_scheme_references_spec(self, scheme):
+        assert scheme["spec"] == "jjf1057_2026"
+
+    def test_dc_gain_covers_three_methods(self, scheme):
+        item = scheme["items"]["dc_gain"]
+        assert item["methods"] == [
+            "square_amplitude",
+            "dc_two_point",
+            "multi_point_lsq",
+        ]
+        assert item["primary"] == "square_amplitude"
+        points = item["points"]
+        assert points["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
+        assert points["screen_fraction"] == 0.8
+
+    def test_bandwidth_ratios_stop_at_one(self, scheme):
+        ratios = scheme["items"]["freq_response_bandwidth"]["points"]["ratios"]
         assert ratios[-1] == 1.0
         assert ratios == sorted(ratios)
 
-    def test_timebase_points(self, spec):
-        scales = spec["items"]["timebase_error"]["points"]["horizontal_scales_s_per_div"]
+    def test_timebase_points(self, scheme):
+        scales = scheme["items"]["timebase_error"]["points"]["horizontal_scales_s_per_div"]
         assert len(scales) == 4
         assert scales[0] == pytest.approx(10e-9)
         assert scales[-1] == pytest.approx(10e-3)
+        assert scheme["items"]["timebase_error"]["methods"] == [
+            "frequency_readout",
+            "waveform_fit",
+        ]
 
-    def test_random_noise_pauses_for_load(self, spec):
-        action = spec["items"]["random_noise"]["requires_user_action"]
+    def test_random_noise_pauses_for_load(self, scheme):
+        action = scheme["items"]["random_noise"]["requires_user_action"]
         assert action["pause"] is True
         assert "50 Ω" in action["prompt"]
+
+    def test_random_noise_uses_implemented_method(self, scheme):
+        assert scheme["items"]["random_noise"]["methods"] == ["sample_stddev"]
 
 
 class TestValidateSpec:
@@ -124,10 +180,10 @@ class TestValidateSpec:
         data["items"]["not_a_clause"] = {"clause": "1", "title": "x", "automatable": False}
         assert any("未知校准项目" in e for e in validate_spec(data))
 
-    def test_rejects_bad_strategy(self, spec):
+    def test_rejects_points_moved_to_scheme(self, spec):
         data = json.loads(json.dumps(spec))
-        data["items"]["dc_gain"]["points"]["strategy"] = "guess"
-        assert any("strategy" in e for e in validate_spec(data))
+        data["items"]["dc_gain"]["points"] = {"strategy": "scale_list"}
+        assert any("方案字段" in e for e in validate_spec(data))
 
     def test_rejects_conformity_semantics(self, spec):
         data = json.loads(json.dumps(spec))
@@ -140,19 +196,19 @@ class TestValidateSpec:
         assert any("record_table" in e for e in validate_spec(data))
 
 
-class TestSpecLoading:
+class TestConfigLoading:
     def test_resolve_by_name(self):
-        assert resolve_spec_path(str(SPECS_DIR), "jjf1057_2026") == str(SPEC_PATH)
+        assert resolve_config_path(str(SPECS_DIR), "jjf1057_2026") == str(SPEC_PATH)
 
     def test_resolve_by_name_with_suffix(self):
-        assert resolve_spec_path(str(SPECS_DIR), "jjf1057_2026.json") == str(SPEC_PATH)
+        assert resolve_config_path(str(SPECS_DIR), "jjf1057_2026.json") == str(SPEC_PATH)
 
     def test_resolve_by_path(self):
-        assert resolve_spec_path(str(SPECS_DIR), str(SPEC_PATH)) == str(SPEC_PATH)
+        assert resolve_config_path(str(SPECS_DIR), str(SPEC_PATH)) == str(SPEC_PATH)
 
     @pytest.mark.parametrize("value", [None, "", "no_such_spec"])
     def test_resolve_missing(self, value):
-        assert resolve_spec_path(str(SPECS_DIR), value) is None
+        assert resolve_config_path(str(SPECS_DIR), value) is None
 
     def test_load_spec_returns_data(self):
         data = load_spec(str(SPEC_PATH))
@@ -160,6 +216,10 @@ class TestSpecLoading:
 
     def test_load_spec_missing_file_returns_empty(self):
         assert load_spec(str(SPECS_DIR / "nope.json")) == {}
+
+    def test_load_scheme_returns_data(self):
+        data = load_scheme(str(SCHEME_PATH))
+        assert data["spec"] == "jjf1057_2026"
 
     def test_spec_record_carries_digest_and_deviations(self, spec):
         record = spec_record(spec, str(SPEC_PATH))
@@ -169,6 +229,15 @@ class TestSpecLoading:
         assert len(record["deviations"]) == 3
         assert record["limits_semantics"]["kind"] == "reference_only"
         assert "applied" not in record, "v0.2.0 起规范是唯一口径，不再记录 applied 标志"
+
+    def test_scheme_record_carries_methods_and_digest(self, scheme):
+        record = scheme_record(scheme, str(SCHEME_PATH))
+        assert record["name"] == scheme["name"]
+        assert record["file"] == "jjf1057_2026.json"
+        assert len(record["sha256"]) == 64
+        assert record["spec"] == "jjf1057_2026"
+        assert record["items"]["dc_gain"]["primary"] == "square_amplitude"
+        assert "points" not in record["items"]["dc_gain"], "记录只保留方法选择，不复制点表"
 
 
 class TestVersionSingleSource:
@@ -187,13 +256,16 @@ class TestVersionSingleSource:
         assert not re.search(r'^version = "', text, re.MULTILINE), "版本号不应再写死在 pyproject"
 
 
-class TestCliSpecOption:
-    def test_unknown_spec_aborts_before_any_device(self):
-        result = CliRunner().invoke(cli, ["calibrate", "--spec", "no_such_spec"])
+class TestCliSchemeOption:
+    def test_unknown_scheme_aborts_before_any_device(self):
+        result = CliRunner().invoke(cli, ["calibrate", "--scheme", "no_such_scheme"])
         assert result.exit_code == 2
-        assert "找不到规范配置文件" in result.output
+        assert "找不到方案配置文件" in result.output
 
-    def test_help_mentions_spec(self):
+    def test_help_mentions_scheme_and_characteristics(self):
         result = CliRunner().invoke(cli, ["calibrate", "--help"])
         assert result.exit_code == 0
-        assert "--spec" in result.output
+        assert "--scheme" in result.output
+        assert "--characteristics" in result.output
+        assert "--profile" not in result.output
+        assert "--spec" not in result.output

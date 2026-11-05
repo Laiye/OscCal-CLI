@@ -29,38 +29,48 @@ def run_items(
     inst_calibrator,
     cmd_osc,
     cmd_calibrator,
-    profile,
+    characteristics,
     channel,
     probe,
     items,
-    points_by_item=None,
+    item_plans=None,
     on_result=None,
 ):
     """依次执行项目；单项失败只记录该项目的失败，其余项目继续执行。
 
-    `points_by_item` 是 {项目名: 校准点列表}，由 core/points.py 按规范解析得到。
+    `item_plans` 是 {项目名: 计划项}，计划项由 core/points.py 解析得到，
+    含 `points`、`methods`、`primary` 等字段；为兼容直接传点列表的旧调用，
+    值也可以是纯点列表。
     `on_result(项目名, 数据行, 异常或 None)` 在每个项目结束后调用。
     """
     pending = pending_items(list(items))
     if pending:
         raise ItemNotImplementedError(f"项目尚未实现: {', '.join(pending)}")
 
-    planned = points_by_item or {}
+    planned = item_plans or {}
     results: dict = {}
     for name in items:
         console.rule(f"[bold blue]{name}[/bold blue]")
         runner = RUNNERS[name]
         calibrator = None
+        plan = planned.get(name, {})
+        if isinstance(plan, dict):
+            points = plan.get("points", [])
+            options = plan
+        else:  # 旧式调用：{项目名: 点列表}
+            points = plan
+            options = {}
         try:
             calibrator = runner(
                 inst_osc,
                 inst_calibrator,
                 cmd_osc,
                 cmd_calibrator,
-                profile,
+                characteristics,
                 channel,
                 probe,
-                planned.get(name, []),
+                points,
+                options,
             )
             calibrator.run()
         except (OutputShutdownError, Abort):
@@ -78,29 +88,3 @@ def run_items(
         if on_result is not None:
             on_result(name, rows, None)
     return results
-
-
-def run_all(
-    inst_osc,
-    inst_calibrator,
-    cmd_osc,
-    cmd_calibrator,
-    profile,
-    channel,
-    probe=None,
-    points_by_item=None,
-    on_result=None,
-):
-    """按注册顺序执行全部已实现项目。"""
-    return run_items(
-        inst_osc,
-        inst_calibrator,
-        cmd_osc,
-        cmd_calibrator,
-        profile,
-        channel,
-        probe,
-        [name for name in ITEM_ORDER if name in RUNNERS],
-        points_by_item,
-        on_result=on_result,
-    )

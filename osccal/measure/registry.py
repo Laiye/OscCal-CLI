@@ -4,7 +4,7 @@ v0.2.0 起按 JJF 1057-2026 第 7 章重建项目集，旧项目（amp、旧法 
 delta_time、旧法 bandwidth、transient）已全部删除，**不保留别名与回退路径**。
 
 ``RUNNERS`` 与项目清单分开：清单是"规范要求什么"，RUNNERS 是"程序实现了什么"。
---spec 解析出的每个项目都能出现在计划里；只有 RUNNERS 里的项目能被真正执行。
+--scheme 解析出的每个项目都能出现在计划里；只有 RUNNERS 里的项目能被真正执行。
 """
 
 from osccal.measure.dc_gain import DcGainCalibrator

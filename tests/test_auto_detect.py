@@ -100,18 +100,20 @@ def test_normalized_duplicate_models_are_reported_as_ambiguous(tmp_path):
     assert cmd is None and profile is None
 
 
-@pytest.mark.parametrize("invalid", ["actions", "profile", "duplicate", "empty_identity"])
-def test_auto_detection_uses_runtime_validation(tmp_path, mdo3_commands, mdo3052_profile, invalid):
+@pytest.mark.parametrize("invalid", ["actions", "characteristics", "duplicate", "empty_identity"])
+def test_auto_detection_uses_runtime_validation(
+    tmp_path, mdo3_commands, mdo3052_characteristics, invalid
+):
     import copy
 
     commands = tmp_path / "commands"
     profiles = tmp_path / "profiles"
     commands.mkdir()
     profiles.mkdir()
-    cmd, profile = copy.deepcopy(mdo3_commands), copy.deepcopy(mdo3052_profile)
+    cmd, profile = copy.deepcopy(mdo3_commands), copy.deepcopy(mdo3052_characteristics)
     if invalid == "actions":
         cmd["actions"] = {}
-    if invalid == "profile":
+    if invalid == "characteristics":
         profile["vertical_div"] = "8"
     _write(commands / "a.json", cmd)
     _write(profiles / "a.json", profile)

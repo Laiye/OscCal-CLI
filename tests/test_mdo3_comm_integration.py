@@ -224,7 +224,7 @@ class TestBaseCalibratorReadMeas:
             inst_calibrator=None,
             cmd_osc=mdo3_commands,
             cmd_calibrator={},
-            profile={},
+            characteristics={},
             channel="1",
             probe=None,
         )
@@ -251,7 +251,7 @@ class TestImpedanceSetup:
             inst_calibrator=None,
             cmd_osc=mdo3_commands,
             cmd_calibrator={},
-            profile={"imp_has_50": True},
+            characteristics={"imp_has_50": True},
             channel="1",
             probe=None,
         )

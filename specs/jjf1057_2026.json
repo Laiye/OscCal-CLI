@@ -7,7 +7,7 @@
     "issued": "2026-08-21",
     "effective": "2027-02-21",
     "recall_interval_months": 12,
-    "description": "本文件只声明「规范口径」：每个校准项目用哪种取点策略、屏占比、基准频率与记录字段。硬件能力（通道数、档位集合）来自 profiles/，标准器输出能力来自 calibrators/，三者由 point resolver 合成实际执行点；解析结果（含被跳过的点及原因）写入记录 results.points_plan。",
+    "description": "本文件只声明「规范口径」：校准项目、条款号、记录表号与字段、计算公式、参考指标、偏离声明与环境条件。被校仪器的硬件能力来自 characteristics/，校准方法与取点参数来自 schemes/，标准器输出能力来自 calibrators/；三者由 point resolver 合成实际执行点，解析结果（含被跳过的点及原因）写入记录 results.points_plan。",
     "environment": {
         "temperature_c": [
             18,
@@ -111,43 +111,18 @@
             "clause": "7.3.1",
             "title": "输入阻抗",
             "automatable": true,
-            "method": "calibrator_load_measure",
             "record_table": "A.2",
             "record_fields": [
                 "通道",
                 "输入电阻",
                 "输入电容",
                 "不确定度（另行评定）"
-            ],
-            "points": {
-                "strategy": "channel_x_impedance",
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
-                "note": "每通道×每阻抗状态各一点；测前把校准仪通道阻抗设成与被测通道一致"
-            },
-            "instrument_actions": {
-                "select_resistance": [
-                    "set_load_func",
-                    "RES"
-                ],
-                "select_capacitance": [
-                    "set_load_func",
-                    "CAP"
-                ],
-                "read": [
-                    "query_load"
-                ]
-            },
-            "invalid_sentinel": 2e+35,
-            "note": "9500B 通过有源头测量，CONF:RES / CONF:CAP 切换功能、READ? 取值；未接示波器或未选中时返回 2E35，须判为无效测量。"
+            ]
         },
         "dc_gain": {
             "clause": "7.4.1 / 7.4.2 / 7.4.3",
             "title": "直流增益",
             "automatable": true,
-            "method": "three_methods",
             "record_table": "A.3",
             "record_fields": [
                 "通道",
@@ -155,42 +130,16 @@
                 "直流增益实测值",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "SQU",
-                "freq_hz": 1000,
-                "polarity": "SYMM"
-            },
-            "points": {
-                "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "screen_fraction": 0.8,
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
-                "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 挡位由 calibrators 的 SQU 输出上限自动过滤（上限 5 Vpp）"
-            },
             "formula": {
                 "std_value": "V = screen_fraction * vertical_div * scale",
                 "gain": "G = Vr / V",
                 "error_pct": "100 * (G - 1)"
-            },
-            "notes": [
-                "选定通道量程、直流耦合、直流偏置调零（规范 7.4 前置条件）",
-                "方波只取 1 kHz：9500B 方波仅在 ≤10 kHz 有指标",
-                "MDO3052 垂直 8 格，故 80% 屏 = 6.4 格"
-            ]
+            }
         },
         "dc_offset": {
             "clause": "7.5.1 / 7.5.2",
             "title": "直流偏置",
             "automatable": true,
-            "method": "two_methods",
             "record_table": "A.4",
             "record_fields": [
                 "通道",
@@ -199,24 +148,6 @@
                 "直流偏置实测值",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "DC"
-            },
-            "points": {
-                "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "impedances": [
-                    "1M"
-                ],
-                "zero_point": true,
-                "offset_nominal_divisions": 2,
-                "note": "零点：偏置 0、激励用 ±1 mV 两点插值到 0 V（9500B 最小可设幅度约 1 mV，无法直接输出 0 V）；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
-            },
             "formula": {
                 "offset_error": "δd = dr - d0（与记录字段 offset_error_v 同号）",
                 "offset_gain": "Gd = dr / d0"
@@ -226,7 +157,6 @@
             "clause": "7.6",
             "title": "频率响应、频带宽度",
             "automatable": true,
-            "method": "sine_sweep_and_half_power",
             "record_table": "A.5",
             "record_fields": [
                 "通道",
@@ -236,44 +166,15 @@
                 "频带宽度",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "SIN",
-                "screen_fraction": 0.8,
-                "impedance": "1M"
-            },
-            "points": {
-                "strategy": "bw_ratio",
-                "reference_hz": 50000,
-                "ratios": [
-                    0.05,
-                    0.1,
-                    0.2,
-                    0.3,
-                    0.5,
-                    0.7,
-                    0.9,
-                    1.0
-                ],
-                "crossing": {
-                    "target_ratio": 0.707,
-                    "interpolation": "log_frequency"
-                },
-                "note": "频点 = ratio × profile.bandwidth_hz；MDO3052（500 MHz）为 25/50/100/150/250/350/450/500 MHz，另加 50 kHz 基准，共 9 点/通道。标称带宽处 G ≥ 0.707 记作带宽 ≥ 标称；否则在相邻频点间按对数频率插值求 G=0.707 的频点"
-            },
             "formula": {
                 "response": "Gk = Vk / V0  （V0 为 50 kHz 基准幅度）",
                 "bandwidth": "G = 0.707 对应的频率；标称带宽处 G ≥ 0.707 即带宽 ≥ 标称"
-            },
-            "notes": [
-                "已按确认把比值上限收到 1.0，不再测 1.1、1.2 倍（9530 头电平正弦上限 600 MHz）",
-                "规范表 2 要求稳幅正弦平坦度 ±0.3 dB，需核对 9500B 该项指标并在记录中说明"
-            ]
+            }
         },
         "enob": {
             "clause": "7.7",
             "title": "动态有效位数",
             "automatable": true,
-            "method": "sine_lsq_fit",
             "record_table": "A.6",
             "record_fields": [
                 "通道",
@@ -283,34 +184,17 @@
                 "动态有效位数",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "SIN",
-                "peak_fraction_of_range": [
-                    0.9,
-                    1.0
-                ],
-                "impedance": "1M"
-            },
-            "points": {
-                "strategy": "derived",
-                "samples_n": 1000,
-                "integer_cycles_n": 7,
-                "require_coprime": true,
-                "note": "f = fs·n/N，fs 由 :HORizontal:SAMPLERATE? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
-            },
             "formula": {
                 "fit": "按附录 E 四参数最小二乘拟合 a(i) = E·sin(ω·i·Δt + φ) + d",
                 "noise_rms": "Er = sqrt( (1/n) Σ (y(i) - a(i))^2 )",
                 "enob": "ENOB = log2( V0 / (√12 · Er) )，V0 为通道量程"
             },
-            "pending_confirm": "式 (13)(14)(15) 的确切表达待按正文逐式核对",
-            "fallback_note": "附录 F 频域法（傅里叶分解 / SINAD）本版本未实现，程序只做时域拟合"
+            "pending_confirm": "式 (13)(14)(15) 的确切表达待按正文逐式核对"
         },
         "rise_time": {
             "clause": "7.8",
             "title": "上升时间",
             "automatable": true,
-            "method": "fast_edge",
             "record_table": "A.7",
             "record_fields": [
                 "通道",
@@ -319,33 +203,15 @@
                 "实测值",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "EDGE",
-                "screen_fraction": [
-                    0.6,
-                    0.8
-                ],
-                "impedance": "50",
-                "note": "图 9 要求输入端接匹配阻抗（50 Ω）；机型无 50 Ω 输入时退为 1 MΩ，并在记录中注明"
-            },
-            "points": {
-                "strategy": "channel_x_edge_speed",
-                "edge_speeds_s": "calibrator.probes[head].edge_rise_times",
-                "note": "每通道 × 每个可用边沿速度档一点；需 9500B 最快档（9530 为 150 ps / 500 ps）"
-            },
             "formula": {
                 "rise_time": "10%~90% 上升时间实测值",
                 "overshoot": "Sb = (顶部最大值 - 阶跃幅度) / 阶跃幅度 × 100%"
-            },
-            "notes": [
-                "MDO3052 @500 MHz 理论上升时间约 700 ps，150 ps 快沿可分辨"
-            ]
+            }
         },
         "timebase_error": {
             "clause": "7.9.1 / 7.9.2",
             "title": "时基（采集速率）误差",
             "automatable": true,
-            "method": "frequency_and_fit_methods",
             "record_table": "A.8",
             "record_fields": [
                 "通道",
@@ -353,37 +219,16 @@
                 "时基相对误差实测值",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "SIN",
-                "periods_on_screen": 3,
-                "screen_fraction_min": 0.5,
-                "impedance": "1M"
-            },
-            "points": {
-                "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [
-                    1e-08,
-                    8e-07,
-                    0.0001,
-                    0.01
-                ],
-                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值。记录长度固定为 1000 点后挡位网格随之变化：800 ns/div 会吸附为 1 µs/div，记录中保存回读的实际挡位。"
-            },
             "formula": {
                 "rel_error": "δT = (f_std - f_read) / f_std（正值 = 时基偏慢）",
                 "method_two": "按 7.7 拟合的离散角频率换算实际采集速率，式 (19)(20)"
             },
-            "pending_confirm": "式 (18)(19)(20) 的确切表达待按正文逐式核对",
-            "notes": [
-                "规范 7.9.1 用示波器频率测量功能读数，不采用 V0.1.0 的时标（MARK）间隔法",
-                "时基挡位收敛到 10 ms/div：100 ms/div 需 3 Hz 正弦，低速点对时基误差无增量价值"
-            ]
+            "pending_confirm": "式 (18)(19)(20) 的确切表达待按正文逐式核对"
         },
         "delta_v": {
             "clause": "7.11",
             "title": "ΔV（幅度）测量",
             "automatable": true,
-            "method": "auto_amplitude",
             "record_table": "A.10",
             "record_fields": [
                 "通道",
@@ -391,32 +236,12 @@
                 "标称值",
                 "实测值",
                 "不确定度（另行评定）"
-            ],
-            "stimulus": {
-                "shape": "SQU",
-                "freq_hz": 1000,
-                "impedance": "1M"
-            },
-            "points": {
-                "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "screen_fraction": 0.8
-            },
-            "deviation": "按已确认的偏离，用自动测量读数代替光标读数",
-            "notes": [
-                "垂直方向覆盖 80% 屏幕，两个以上周期居中显示"
             ]
         },
         "delta_t": {
             "clause": "7.12",
             "title": "Δt（时间）测量",
             "automatable": true,
-            "method": "auto_period",
             "record_table": "A.11",
             "record_fields": [
                 "通道",
@@ -424,33 +249,12 @@
                 "标称值",
                 "实测值",
                 "不确定度（另行评定）"
-            ],
-            "stimulus": {
-                "shape": "SQU",
-                "impedance": "1M"
-            },
-            "points": {
-                "strategy": "scale_list",
-                "horizontal_scales_s_per_div": [
-                    1e-08,
-                    8e-07,
-                    0.0001,
-                    0.01
-                ],
-                "periods_m": 2,
-                "screen_fraction": 0.8,
-                "note": "水平挡位取 MDO3052 实机支持的 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
-            },
-            "deviation": "按已确认的偏离，用自动测量读数代替光标读数",
-            "notes": [
-                "M ≥ 2 个完整周期，水平方向覆盖 80% 屏幕"
             ]
         },
         "random_noise": {
             "clause": "7.13",
             "title": "随机噪声",
             "automatable": true,
-            "method": "rms_readout_then_stddev",
             "record_table": "A.12",
             "record_fields": [
                 "通道",
@@ -458,21 +262,6 @@
                 "实测值",
                 "不确定度（另行评定）"
             ],
-            "stimulus": {
-                "shape": "NONE",
-                "coupling": "DC",
-                "offset_zero": true
-            },
-            "points": {
-                "strategy": "fixed",
-                "vertical_scale": "min(profile.vertical_scales)",
-                "sample_mode": "realtime_max_rate"
-            },
-            "requires_user_action": {
-                "pause": true,
-                "prompt": "请将 CH{channel} 输入端接入 50 Ω 匹配负载并确认后继续",
-                "note": "规范 7.13 要求输入端连接匹配负载，程序无法自动完成，暂停等待操作者确认"
-            },
             "formula": {
                 "method_one": "读幅度有效值（RMS）作为噪声",
                 "method_two": "采集数据求标准差"

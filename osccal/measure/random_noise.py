@@ -35,13 +35,20 @@ class RandomNoiseCalibrator(BaseCalibrator):
 
     title = "随机噪声（7.13）"
 
-    @staticmethod
-    def _wait_for_load(channel: str) -> None:
-        """规范要求输入端接匹配负载，程序无法代劳，必须人工确认。"""
-        console.print(
-            f"\n[yellow]请将 CH{channel} 输入端接入 50 Ω 匹配负载"
-            f"（并断开校准仪输出），确认后继续[/yellow]"
+    def _wait_for_load(self) -> None:
+        """规范要求输入端接匹配负载，程序无法代劳，必须人工确认。
+
+        提示语由方案 `requires_user_action.prompt` 提供，未声明时用内置文案。
+        """
+        action = self.options.get("requires_user_action") or {}
+        template = action.get("prompt") or (
+            "请将 CH{channel} 输入端接入 50 Ω 匹配负载（并断开校准仪输出），确认后继续"
         )
+        try:
+            text = template.format(channel=self.channel)
+        except (KeyError, IndexError):
+            text = template
+        console.print(f"\n[yellow]{text}[/yellow]")
         click.prompt("  接好负载后按回车继续", default="", show_default=False)
 
     @staticmethod
@@ -60,9 +67,9 @@ class RandomNoiseCalibrator(BaseCalibrator):
         记录长度 R 点、水平 H 格、目标采样率 f_max：时基 = R / f_max / H。
         结果吸附到机型实际支持的挡位（取不大于计算值的最近档位）。
         """
-        horizontal_div = float(self.profile.get("horizontal_div", 10))
-        max_sample_rate = float(self.profile.get("max_sample_rate_hz", 0) or 0)
-        scales = sorted(self.profile.get("horizontal_scales") or [1e-9])
+        horizontal_div = float(self.characteristics.get("horizontal_div", 10))
+        max_sample_rate = float(self.characteristics.get("max_sample_rate_hz", 0) or 0)
+        scales = sorted(self.characteristics.get("horizontal_scales") or [1e-9])
         if max_sample_rate <= 0 or "query_record_length" not in self.cmd_osc.get("actions", {}):
             return min(scales)
         try:
@@ -85,9 +92,9 @@ class RandomNoiseCalibrator(BaseCalibrator):
 
     def _measure_point(self, point: dict) -> dict:
         scale = float(point["vertical_scale"])
-        vertical_div = float(self.profile.get("vertical_div", 8))
+        vertical_div = float(self.characteristics.get("vertical_div", 8))
         full_scale = scale * vertical_div
-        max_sample_rate = float(self.profile.get("max_sample_rate_hz", 0) or 0)
+        max_sample_rate = float(self.characteristics.get("max_sample_rate_hz", 0) or 0)
 
         self._write_calibrator("set_output", "OFF")
         self._write_osc("set_vertical_scale", self.channel, scale)
@@ -143,7 +150,7 @@ class RandomNoiseCalibrator(BaseCalibrator):
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")
             return
 
-        self._wait_for_load(self.channel)
+        self._wait_for_load()
 
         table = self.make_table(
             "随机噪声校准结果",

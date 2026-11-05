@@ -11,8 +11,10 @@ import pytest
 from osccal.core.config import _load_json
 from osccal.core.config_validation import (
     validate_calibrator,
+    validate_characteristics,
     validate_commands,
-    validate_profile,
+    validate_scheme,
+    validate_spec,
 )
 
 
@@ -49,8 +51,8 @@ def _valid_commands() -> dict:
     }
 
 
-def _valid_profile() -> dict:
-    """v0.2.0 契约：Profile 只声明硬件事实，不含校准点与限值。"""
+def _valid_characteristics() -> dict:
+    """v0.3.0 契约：特征文件只声明硬件事实，不含校准点、方法与限值。"""
     return {
         "name": "n",
         "description": "d",
@@ -65,6 +67,44 @@ def _valid_profile() -> dict:
         "horizontal_scales": [1e-9, 1e-6],
         "probe_default": 1,
         "init_time": 2,
+    }
+
+
+def _valid_spec() -> dict:
+    """v0.3.0 契约：规范只声明条款、记录表、参考指标与偏离，不含取点/方法。"""
+    return {
+        "name": "JJF 测试",
+        "spec_code": "JJF-TEST",
+        "deviations": ["测试偏离"],
+        "items": {
+            "dc_gain": {
+                "clause": "7.4",
+                "title": "直流增益",
+                "automatable": True,
+                "record_table": "A.3",
+            }
+        },
+    }
+
+
+def _valid_scheme() -> dict:
+    """v0.3.0 契约：方案声明项目方法、刺激条件与取点参数。"""
+    return {
+        "name": "测试方案",
+        "description": "测试",
+        "spec": "jjf1057_2026",
+        "items": {
+            "dc_gain": {
+                "methods": ["square_amplitude", "dc_two_point"],
+                "primary": "square_amplitude",
+                "stimulus": {"shape": "SQU"},
+                "points": {
+                    "strategy": "scale_list",
+                    "scales_v_per_div": [0.1],
+                    "impedances": ["1M"],
+                },
+            }
+        },
     }
 
 
@@ -106,54 +146,190 @@ class TestMalformedCommands:
         assert any("feature" in e for e in errors)
 
 
-class TestMalformedProfile:
+class TestMalformedCharacteristics:
     def test_vertical_div_string(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["vertical_div"] = "8"
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("vertical_div" in e for e in errors)
 
     def test_deprecated_points_rejected(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["points"] = {"delta_amp": [0.001]}
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("已废弃字段" in e and "points" in e for e in errors)
 
     def test_deprecated_limits_rejected(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["calibration_limits"] = {"amp": {"lower": -2.0, "upper": 2.0}}
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("已废弃字段" in e and "calibration_limits" in e for e in errors)
 
     def test_scale_list_must_ascend(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["vertical_scales"] = [1.0, 0.1]
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("未升序" in e for e in errors)
 
     def test_scale_list_rejects_non_positive(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["horizontal_scales"] = [0, 1e-6]
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("含非正数" in e for e in errors)
 
     def test_scale_list_rejects_duplicates(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["vertical_scales"] = [0.1, 0.1]
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("重复" in e for e in errors)
 
     def test_missing_bandwidth_hz(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         del data["bandwidth_hz"]
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("bandwidth_hz" in e for e in errors)
 
     def test_channels_must_be_positive(self):
-        data = _valid_profile()
+        data = _valid_characteristics()
         data["channels"] = 0
-        errors = validate_profile(data)
+        errors = validate_characteristics(data)
         assert any("channels" in e for e in errors)
+
+
+class TestMalformedSpec:
+    def test_valid_spec(self):
+        assert validate_spec(_valid_spec()) == []
+
+    def test_rejects_scheme_fields(self):
+        data = _valid_spec()
+        data["items"]["dc_gain"]["points"] = {"strategy": "scale_list"}
+        errors = validate_spec(data)
+        assert any("方案字段" in e and "points" in e for e in errors)
+
+    def test_manual_item_requires_note(self):
+        data = _valid_spec()
+        data["items"]["visual_check"] = {
+            "clause": "7.2",
+            "title": "外观检查",
+            "automatable": False,
+            "record_table": "A.1",
+        }
+        errors = validate_spec(data)
+        assert any("note" in e for e in errors)
+
+    def test_bad_formula_type(self):
+        data = _valid_spec()
+        data["items"]["dc_gain"]["formula"] = {"gain": 1.0}
+        errors = validate_spec(data)
+        assert any("formula" in e for e in errors)
+
+    def test_bad_record_fields_type(self):
+        data = _valid_spec()
+        data["items"]["dc_gain"]["record_fields"] = "通道"
+        errors = validate_spec(data)
+        assert any("record_fields" in e for e in errors)
+
+
+class TestMalformedScheme:
+    def test_valid_scheme(self):
+        assert validate_scheme(_valid_scheme()) == []
+
+    def test_rejects_manual_item(self):
+        data = _valid_scheme()
+        data["items"]["visual_check"] = {
+            "methods": ["x"],
+            "points": {"strategy": "fixed"},
+        }
+        errors = validate_scheme(data)
+        assert any("未知或不可自动化" in e for e in errors)
+
+    def test_rejects_unimplemented_method(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["methods"] = ["rms_readout"]
+        data["items"]["dc_gain"]["primary"] = "rms_readout"
+        errors = validate_scheme(data)
+        assert any("未实现方法" in e for e in errors)
+
+    def test_requires_primary_for_multi_method_item(self):
+        data = _valid_scheme()
+        del data["items"]["dc_gain"]["primary"]
+        errors = validate_scheme(data)
+        assert any("primary" in e for e in errors)
+
+    def test_primary_must_be_in_methods(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["primary"] = "multi_point_lsq"
+        errors = validate_scheme(data)
+        assert any("primary" in e for e in errors)
+
+    def test_scale_list_requires_stimulus_shape(self):
+        data = _valid_scheme()
+        del data["items"]["dc_gain"]["stimulus"]
+        errors = validate_scheme(data)
+        assert any("stimulus.shape" in e for e in errors)
+
+    def test_scale_list_must_ascend(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["points"]["scales_v_per_div"] = [0.2, 0.1]
+        errors = validate_scheme(data)
+        assert any("未升序" in e for e in errors)
+
+    def test_derived_samples_must_be_coprime(self):
+        data = _valid_scheme()
+        data["items"] = {
+            "enob": {
+                "methods": ["time_domain_lsq"],
+                "stimulus": {"shape": "SIN"},
+                "points": {
+                    "strategy": "derived",
+                    "samples_n": 1000,
+                    "integer_cycles_n": 10,
+                    "require_coprime": True,
+                },
+            }
+        }
+        errors = validate_scheme(data)
+        assert any("不互质" in e for e in errors)
+
+    def test_timebase_has_no_primary(self):
+        data = _valid_scheme()
+        data["items"] = {
+            "timebase_error": {
+                "methods": ["frequency_readout", "waveform_fit"],
+                "primary": "frequency_readout",
+                "stimulus": {"shape": "SIN"},
+                "points": {
+                    "strategy": "scale_list",
+                    "horizontal_scales_s_per_div": [1e-6],
+                },
+            }
+        }
+        errors = validate_scheme(data)
+        assert any("并列方法" in e for e in errors)
+
+    def test_spec_reference_must_be_file_stem(self):
+        data = _valid_scheme()
+        data["spec"] = "jjf1057_2026.json"
+        errors = validate_scheme(data)
+        assert any("不含 .json" in e for e in errors)
+
+    def test_notes_must_not_be_empty(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["notes"] = []
+        errors = validate_scheme(data)
+        assert any("notes" in e for e in errors)
+
+    def test_user_action_prompt_must_not_be_blank(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["requires_user_action"] = {"pause": True, "prompt": " "}
+        errors = validate_scheme(data)
+        assert any("prompt" in e for e in errors)
+
+    def test_unknown_item_field_is_rejected(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["unknown"] = 1
+        errors = validate_scheme(data)
+        assert any("未知字段" in e for e in errors)
 
 
 class TestMalformedCalibrator:
@@ -187,7 +363,16 @@ def test_load_json_returns_errors_for_malformed(tmp_path):
     assert _load_json(str(fpath), validator=validate_commands, label="指令集") == {}
 
 
-@pytest.mark.parametrize("validator", [validate_commands, validate_profile, validate_calibrator])
+@pytest.mark.parametrize(
+    "validator",
+    [
+        validate_commands,
+        validate_characteristics,
+        validate_spec,
+        validate_scheme,
+        validate_calibrator,
+    ],
+)
 def test_validators_never_raise_on_arbitrary_input(validator):
     for bad in ({}, [], "x", None, 1, {"actions": None}):
         assert isinstance(validator(bad), list)

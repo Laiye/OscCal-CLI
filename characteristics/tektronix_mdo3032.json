@@ -1,6 +1,7 @@
 {
+    "$schema": "osccal.characteristics.v1",
     "name": "osc",
-    "description": "Tektronix MDO3032 硬件特征（MDO3000 系列，350 MHz，2 模拟通道 + 16 数字通道，8×10 格）。本文件只声明硬件事实：通道数、格线、垂直/水平档位集合、标称带宽、探头默认衰减。校准点不写在这里，由 specs/ 的规范口径与 calibrators/ 的输出能力解析得出。",
+    "description": "Tektronix MDO3032 硬件特征（MDO3000 系列，350 MHz，2 模拟通道 + 16 数字通道，8×10 格）。本文件只声明仪器特征：通道数、格线、垂直/水平档位集合、标称带宽、探头默认衰减、最高采样率。校准方法与校准点见 schemes/，规范要求见 specs/。",
     "manufacturer": "Tektronix",
     "models": [
         "MDO3032"

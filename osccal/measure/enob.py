@@ -52,9 +52,9 @@ class EnobCalibrator(BaseCalibrator):
 
     def _timebase_for_max_sample_rate(self, record_length: int) -> float:
         """反算让示波器跑到最高采样率的水平挡位（取不大于目标值的最近档位）。"""
-        horizontal_div = float(self.profile.get("horizontal_div", 10))
-        max_rate = float(self.profile.get("max_sample_rate_hz", 0) or 0)
-        scales = sorted(self.profile.get("horizontal_scales") or [1e-9])
+        horizontal_div = float(self.characteristics.get("horizontal_div", 10))
+        max_rate = float(self.characteristics.get("max_sample_rate_hz", 0) or 0)
+        scales = sorted(self.characteristics.get("horizontal_scales") or [1e-9])
         if max_rate <= 0 or record_length <= 0:
             return min(scales)
         target = record_length / max_rate / horizontal_div
@@ -67,7 +67,7 @@ class EnobCalibrator(BaseCalibrator):
         if math.gcd(samples, cycles) != 1:
             raise ValueError(f"N={samples} 与 n={cycles} 不能有公因子")
 
-        vertical_div = float(self.profile.get("vertical_div", 8))
+        vertical_div = float(self.characteristics.get("vertical_div", 8))
         full_scale = VERTICAL_SCALE * vertical_div
         amplitude = PEAK_FRACTION * full_scale
 
@@ -78,7 +78,7 @@ class EnobCalibrator(BaseCalibrator):
             self._timebase_for_max_sample_rate(record_length)
         ) or self._timebase_for_max_sample_rate(record_length)
         sample_rate = self._parse_scalar(self._query_osc("query_sample_rate"))
-        max_sample_rate = float(self.profile.get("max_sample_rate_hz", 0) or 0)
+        max_sample_rate = float(self.characteristics.get("max_sample_rate_hz", 0) or 0)
         if sample_rate <= 0:
             raise ValueError("采样率无效")
         if max_sample_rate > 0 and sample_rate < 0.9 * max_sample_rate:

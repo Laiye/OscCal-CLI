@@ -32,14 +32,14 @@ class FreqResponseCalibrator(BaseCalibrator):
 
     def _pick_vertical_scale(self) -> float:
         """按固定幅度挑一个让波形占约 80% 屏幕的垂直档位。"""
-        vertical_div = float(self.profile.get("vertical_div", 8))
-        scales = self.profile.get("vertical_scales") or [0.1]
+        vertical_div = float(self.characteristics.get("vertical_div", 8))
+        scales = self.characteristics.get("vertical_scales") or [0.1]
         want = AMPLITUDE_VPP / (TARGET_SCREEN_FRACTION * vertical_div)
         return min(scales, key=lambda scale: abs(scale - want))
 
     def _timebase_for(self, frequency_hz: float) -> float:
         """让屏上至少显示约 2 个周期；不够就压到机型最低水平档位。"""
-        scales = self.profile.get("horizontal_scales") or [1e-9]
+        scales = self.characteristics.get("horizontal_scales") or [1e-9]
         target = 0.2 / frequency_hz if frequency_hz > 0 else 1e-3
         return max(min(scales), min(max(scales), target))
 

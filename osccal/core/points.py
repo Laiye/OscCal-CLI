@@ -1,11 +1,12 @@
-"""校准点解析器：把「规范口径 + 硬件能力 + 标准器能力」合成为可执行的校准点表。
+"""校准点解析器：把「校准方案 + 规范口径 + 硬件特征 + 标准器能力」合成为可执行点表。
 
-输入三方数据，缺一不可：
-- `specs/*.json`：规范要求的取点策略、屏占比、比值、基准频率、条款号；
-- `profiles/*.json`：被校示波器的硬件事实（通道数、格线、档位集合、标称带宽）；
+输入四方数据，缺一不可：
+- `schemes/*.json`：本轮方案的方法选择、取点策略、屏占比、比值、基准频率；
+- `specs/*.json`：规范要求的条款号与参考指标（供点参数与报告使用）；
+- `characteristics/*.json`：被校示波器的硬件特征（通道数、格线、档位集合、标称带宽）；
 - `calibrators/*.json`：标准器的输出能力（电压/频率上限、探头边沿速度）。
 
-输出一份纯 JSON 可序列化的计划，含每个点的具体数值与**被跳过的点及原因**。
+输出一份纯 JSON 可序列化的计划，含每个点的具体数值、所选方法与**被跳过的点及原因**。
 解析过程不连接任何仪器，可用 `osccal plan` 离线核对。
 
 不做隐式降级：某个点如果超出标准器能力，一定记进 `skipped` 并说明理由，
@@ -25,14 +26,22 @@ SHAPE_TO_OUTPUT = {
 IMPEDANCE_LABELS = {"1M": "1 MΩ", "50": "50 Ω"}
 
 STRATEGY_DESCRIPTIONS = {
-    "explicit": "配置里的绝对点表",
-    "screen_fraction": "按屏占比换算标准值",
     "scale_list": "按垂直/水平档位列表逐档取点",
     "bw_ratio": "相对标称带宽的比例频点 + 固定基准",
     "derived": "现场读回后按规范公式计算（不在配置里写死）",
     "fixed": "固定条件点",
     "channel_x_impedance": "每通道 × 每种阻抗状态",
     "channel_x_edge_speed": "每通道 × 每个边沿速度档",
+}
+
+#: 计划表的短标签。
+STRATEGY_LABELS = {
+    "scale_list": "档位列表",
+    "bw_ratio": "带宽比例",
+    "derived": "现场计算",
+    "fixed": "固定点",
+    "channel_x_impedance": "通道×阻抗",
+    "channel_x_edge_speed": "通道×边沿",
 }
 
 
@@ -50,9 +59,9 @@ def _output_limits(calibrator: dict, shape: str, impedance: str) -> dict:
     return limits if isinstance(limits, dict) else {}
 
 
-def _impedance_supported(profile: dict, impedance: str) -> bool:
+def _impedance_supported(characteristics: dict, impedance: str) -> bool:
     if impedance == "50":
-        return bool(profile.get("imp_has_50"))
+        return bool(characteristics.get("imp_has_50"))
     return True
 
 
@@ -93,14 +102,14 @@ def _point(values: dict, **extra) -> dict:
 
 
 def _resolve_channel_x_impedance(
-    item: dict, profile: dict, channels: list[str], reference_limits: dict
+    item: dict, characteristics: dict, channels: list[str], reference_limits: dict
 ) -> dict:
     wanted = item.get("points", {}).get("impedances", ["1M", "50"])
     tolerance_limits = reference_limits.get("input_impedance") or {}
     points, skipped = [], []
     for channel in channels:
         for impedance in wanted:
-            if not _impedance_supported(profile, impedance):
+            if not _impedance_supported(characteristics, impedance):
                 skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
                 continue
             point = {"channel": channel, "impedance": impedance}
@@ -113,21 +122,23 @@ def _resolve_channel_x_impedance(
     return {"points": points, "skipped": skipped}
 
 
-def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: list[str]) -> dict:
+def _resolve_scale_list(
+    item: dict, characteristics: dict, calibrator: dict, channels: list[str]
+) -> dict:
     rule = item.get("points", {})
     shape = item.get("stimulus", {}).get("shape", "DC")
     fraction = rule.get("screen_fraction")
     vertical_scales = rule.get("scales_v_per_div")
     horizontal_scales = rule.get("horizontal_scales_s_per_div")
     wanted_impedances = rule.get("impedances", ["1M"])
-    vertical_div = _num(profile.get("vertical_div", 8))
-    horizontal_div = _num(profile.get("horizontal_div", 10))
+    vertical_div = _num(characteristics.get("vertical_div", 8))
+    horizontal_div = _num(characteristics.get("horizontal_div", 10))
 
     points: list[dict] = []
     skipped: list[dict] = []
 
     if vertical_scales is not None:
-        available = set(_num(v) for v in profile.get("vertical_scales", []))
+        available = set(_num(v) for v in characteristics.get("vertical_scales", []))
         for channel in channels:
             for scale in vertical_scales:
                 scale = _num(scale)
@@ -138,7 +149,7 @@ def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: l
                     continue
                 std = float(fraction) * vertical_div * scale if fraction is not None else None
                 for impedance in wanted_impedances:
-                    if not _impedance_supported(profile, impedance):
+                    if not _impedance_supported(characteristics, impedance):
                         skipped.append(
                             {
                                 "channel": channel,
@@ -165,7 +176,7 @@ def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: l
                         values["std_value_vpp"] = std
                     points.append(_point(values))
     elif horizontal_scales is not None:
-        available = set(_num(v) for v in profile.get("horizontal_scales", []))
+        available = set(_num(v) for v in characteristics.get("horizontal_scales", []))
         # 两种水平取点口径：多周期测量（periods_m，按屏占比铺满）与
         # 时基误差（periods_on_screen，屏上显示 N 个周期）。
         if "periods_m" in rule:
@@ -201,11 +212,13 @@ def _resolve_scale_list(item: dict, profile: dict, calibrator: dict, channels: l
     return {"points": points, "skipped": skipped}
 
 
-def _resolve_bw_ratio(item: dict, profile: dict, calibrator: dict, channels: list[str]) -> dict:
+def _resolve_bw_ratio(
+    item: dict, characteristics: dict, calibrator: dict, channels: list[str]
+) -> dict:
     rule = item.get("points", {})
     reference = _num(rule.get("reference_hz", 50000))
     ratios = [_num(r) for r in rule.get("ratios", [])]
-    bandwidth = _num(profile.get("bandwidth_hz", 0))
+    bandwidth = _num(characteristics.get("bandwidth_hz", 0))
     frequencies = [reference] + [bandwidth * ratio for ratio in ratios]
 
     points, skipped = [], []
@@ -237,13 +250,13 @@ def _resolve_derived(item: dict, channels: list[str]) -> dict:
     return {"points": points, "skipped": []}
 
 
-def _resolve_fixed(item: dict, profile: dict, channels: list[str]) -> dict:
-    scales = profile.get("vertical_scales") or []
+def _resolve_fixed(item: dict, characteristics: dict, channels: list[str]) -> dict:
+    scales = characteristics.get("vertical_scales") or []
     smallest = min(_num(v) for v in scales) if scales else None
     points = [_point({"channel": channel, "vertical_scale": smallest}) for channel in channels]
     skipped = []
     if smallest is None:
-        skipped.append({"reason": "Profile 未声明 vertical_scales"})
+        skipped.append({"reason": "特征文件未声明 vertical_scales"})
         points = []
     return {"points": points, "skipped": skipped}
 
@@ -265,42 +278,63 @@ def _resolve_edge_speed(item: dict, calibrator: dict, probe: str, channels: list
 def resolve_item(
     name: str,
     spec_item: dict,
-    profile: dict,
+    scheme_item: dict | None,
+    characteristics: dict,
     calibrator: dict,
     probe: str,
     channels: list[str],
     reference_limits: dict | None = None,
 ) -> dict:
-    """解析单个校准项目，返回 {name, clause, title, method, strategy, points, skipped}。"""
+    """解析单个校准项目。
+
+    返回 {name, clause, title, methods, primary, strategy, status, points, skipped}。
+    规范中未实现的人工项返回 manual；方案未列入的项目返回 not_in_scheme。
+    """
+    clause = spec_item.get("clause", "")
+    title = spec_item.get("title", "")
     if not spec_item.get("automatable"):
         return {
             "name": name,
-            "clause": spec_item.get("clause", ""),
-            "title": spec_item.get("title", ""),
-            "method": spec_item.get("method", ""),
+            "clause": clause,
+            "title": title,
+            "methods": [],
+            "primary": None,
             "strategy": None,
             "status": "manual",
             "points": [],
             "skipped": [{"reason": "规范定为人工执行，程序不实现"}],
         }
 
-    rule = spec_item.get("points", {})
+    if scheme_item is None:
+        return {
+            "name": name,
+            "clause": clause,
+            "title": title,
+            "methods": [],
+            "primary": None,
+            "strategy": None,
+            "status": "not_in_scheme",
+            "points": [],
+            "skipped": [{"reason": "方案未列入该项目"}],
+        }
+
+    rule = scheme_item.get("points", {})
     strategy = rule.get("strategy")
 
     if strategy == "channel_x_impedance":
         resolved = _resolve_channel_x_impedance(
-            spec_item, profile, channels, reference_limits or {}
+            scheme_item, characteristics, channels, reference_limits or {}
         )
     elif strategy == "scale_list":
-        resolved = _resolve_scale_list(spec_item, profile, calibrator, channels)
+        resolved = _resolve_scale_list(scheme_item, characteristics, calibrator, channels)
     elif strategy == "bw_ratio":
-        resolved = _resolve_bw_ratio(spec_item, profile, calibrator, channels)
+        resolved = _resolve_bw_ratio(scheme_item, characteristics, calibrator, channels)
     elif strategy == "derived":
-        resolved = _resolve_derived(spec_item, channels)
+        resolved = _resolve_derived(scheme_item, channels)
     elif strategy == "fixed":
-        resolved = _resolve_fixed(spec_item, profile, channels)
+        resolved = _resolve_fixed(scheme_item, characteristics, channels)
     elif strategy == "channel_x_edge_speed":
-        resolved = _resolve_edge_speed(spec_item, calibrator, probe, channels)
+        resolved = _resolve_edge_speed(scheme_item, calibrator, probe, channels)
     else:
         resolved = {
             "points": [],
@@ -309,9 +343,10 @@ def resolve_item(
 
     return {
         "name": name,
-        "clause": spec_item.get("clause", ""),
-        "title": spec_item.get("title", ""),
-        "method": spec_item.get("method", ""),
+        "clause": clause,
+        "title": title,
+        "methods": list(scheme_item.get("methods", [])),
+        "primary": scheme_item.get("primary"),
         "strategy": strategy,
         "status": "planned",
         "points": resolved["points"],
@@ -321,17 +356,32 @@ def resolve_item(
 
 def build_plan(
     spec: dict,
-    profile: dict,
+    scheme: dict,
+    characteristics: dict,
     calibrator: dict,
     probe: str,
     channels: list[str],
 ) -> dict:
-    """生成完整计划：逐项解析 + 汇总统计。"""
+    """生成完整计划：逐项解析 + 汇总统计。
+
+    规范里的全部 12 项都会出现在计划中：方案列入的 10 项为 planned，
+    人工项为 manual，方案未列入的为 not_in_scheme。
+    """
     items = []
     reference_limits = spec.get("reference_limits", {})
+    scheme_items = scheme.get("items", {})
     for name, spec_item in spec.get("items", {}).items():
         items.append(
-            resolve_item(name, spec_item, profile, calibrator, probe, channels, reference_limits)
+            resolve_item(
+                name,
+                spec_item,
+                scheme_items.get(name),
+                characteristics,
+                calibrator,
+                probe,
+                channels,
+                reference_limits,
+            )
         )
 
     total_points = sum(len(item["points"]) for item in items)
@@ -339,7 +389,9 @@ def build_plan(
     return {
         "spec_code": spec.get("spec_code", ""),
         "spec_effective": spec.get("effective", ""),
-        "profile_series": profile.get("series", ""),
+        "scheme_name": scheme.get("name", ""),
+        "scheme_spec": scheme.get("spec", ""),
+        "characteristics_series": characteristics.get("series", ""),
         "calibrator": calibrator.get("name", ""),
         "probe": probe,
         "channels": channels,

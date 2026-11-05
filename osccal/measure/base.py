@@ -54,20 +54,24 @@ class BaseCalibrator:
         inst_calibrator,
         cmd_osc,
         cmd_calibrator,
-        profile,
+        characteristics,
         channel,
         probe=None,
         points=None,
+        options=None,
     ):
         self.inst_osc = inst_osc
         self.inst_calibrator = inst_calibrator
         self.cmd_osc = cmd_osc
         self.cmd_calibrator = cmd_calibrator
-        self.profile = profile
+        self.characteristics = characteristics
         self.channel = str(channel)
         self.probe = probe
-        # 本轮该项目的校准点（由 core/points.py 按规范解析得到），不再是 Profile 里的点表。
+        # 本轮该项目的校准点与方案选项（来自 schemes/*.json，由 core/points.py 解析）。
         self.points = list(points or [])
+        self.options = dict(options or {})
+        self.methods = list(self.options.get("methods") or [])
+        self.primary_method = self.options.get("primary")
         self.comm_type = cmd_osc.get("type", "pyvisa")
         self.cal_type = cmd_calibrator.get("type", "pyvisa")
         self.results = []
@@ -76,6 +80,14 @@ class BaseCalibrator:
         # 指令间隔由指令集声明：少数机型背靠背连续写入会静默丢指令（实测 UPO1104X），
         # 未声明或为 0 时不节流，既有各机型时序不变。
         set_write_delay(cmd_osc.get("feature", {}).get("write_delay_ms", 0))
+
+    def method_enabled(self, name: str) -> bool:
+        """方案是否选择了某个方法。
+
+        方案未声明 methods（直接构造 runner 的测试或旧调用）视为全部启用，
+        保证默认行为与 v0.2.x 完全一致。
+        """
+        return not self.methods or name in self.methods
 
     def _get_meas_amp_scale(self) -> float:
         """幅度测量的换算系数（指令集未声明 feature.meas_amp_scale 时为 1）。
@@ -115,7 +127,7 @@ class BaseCalibrator:
         阻抗，发现不匹配立即告警（这类状态错误不会产生 SCPI 错误码）。
         """
         key = "imp_fif" if label == "50" else "imp_meg"
-        if label == "50" and not self.profile.get("imp_has_50", False):
+        if label == "50" and not self.characteristics.get("imp_has_50", False):
             raise ValueError("该机型不支持 50 Ω 输入阻抗")
         self._write_calibrator("set_output", "OFF")
         self.setup_impedance(key)
@@ -383,11 +395,11 @@ class BaseCalibrator:
     def init_devices(self):
         self._write_osc("preset")
         self._write_calibrator("preset")
-        time.sleep(self.profile.get("init_time", 2))
+        time.sleep(self.characteristics.get("init_time", 2))
 
     def setup_channel(self):
         if (
-            self.profile.get("probe_default", 1) != 1
+            self.characteristics.get("probe_default", 1) != 1
             and "set_probe_gain" in self.cmd_osc["actions"]
         ):
             self._write_osc("set_probe_gain", self.channel, 1)

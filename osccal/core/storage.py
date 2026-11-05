@@ -52,6 +52,30 @@ def spec_record(spec: dict, filepath: str) -> dict:
     }
 
 
+def scheme_record(scheme: dict, filepath: str) -> dict:
+    """记录本轮所用校准方案的标识、摘要与逐项方法选择。
+
+    方案全文不写入记录，只保留名称、文件名、内容 sha256、对应规范以及
+    每个项目选了哪些方法（便于事后判断报告里的空列是"未选"还是"失败"）。
+    """
+    snapshot = configuration_snapshot(scheme)
+    items = {
+        name: {
+            "methods": item.get("methods", []),
+            "primary": item.get("primary"),
+        }
+        for name, item in (scheme.get("items") or {}).items()
+        if isinstance(item, dict)
+    }
+    return {
+        "name": scheme.get("name", ""),
+        "file": os.path.basename(filepath),
+        "sha256": snapshot["sha256"],
+        "spec": scheme.get("spec", ""),
+        "items": items,
+    }
+
+
 def _sanitize_nonfinite(value: object) -> tuple[object, int]:
     """把 NaN/Inf 换成 JSON 的 null，返回 (新值, 被替换的个数)。
 
@@ -152,10 +176,13 @@ def save_calibration_data(
             "oscilloscope": clean_metadata.get("oscilloscope", {}),
             "calibrator": clean_metadata.get("calibrator", {}),
             "commands_file": clean_metadata.get("commands_file", ""),
-            "profile_file": clean_metadata.get("profile_file", ""),
+            "characteristics_file": clean_metadata.get(
+                "characteristics_file", clean_metadata.get("profile_file", "")
+            ),
             "calibrator_file": clean_metadata.get("calibrator_file", ""),
             "limits": clean_metadata.get("limits", {}),
             "spec": clean_metadata.get("spec", {}),
+            "scheme": clean_metadata.get("scheme", {}),
             "scpi_errors": 0,
             **clean_metadata,
             "updated_at": now.isoformat(),

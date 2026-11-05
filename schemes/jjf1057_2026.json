@@ -1,0 +1,261 @@
+{
+    "$schema": "osccal.scheme.v1",
+    "name": "JJF 1057-2026 默认校准方案",
+    "description": "按 JJF 1057-2026 第 7 章全项执行；项目方法、校准点与刺激条件集中在本文件，硬件能力见 characteristics/，标准器能力见 calibrators/，规范条款与参考指标见 specs/。",
+    "spec": "jjf1057_2026",
+    "items": {
+        "input_impedance": {
+            "methods": [
+                "calibrator_load_measure"
+            ],
+            "points": {
+                "strategy": "channel_x_impedance",
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
+                "note": "每通道×每阻抗状态各一点；测前把校准仪通道阻抗设成与被测通道一致"
+            },
+            "notes": [
+                "9500B 通过有源头测量，CONF:RES / CONF:CAP 切换功能、READ? 取值；未接示波器或未选中时返回 2E35，须判为无效测量。"
+            ]
+        },
+        "dc_gain": {
+            "methods": [
+                "square_amplitude",
+                "dc_two_point",
+                "multi_point_lsq"
+            ],
+            "primary": "square_amplitude",
+            "stimulus": {
+                "shape": "SQU",
+                "freq_hz": 1000,
+                "polarity": "SYMM"
+            },
+            "points": {
+                "strategy": "scale_list",
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
+                "screen_fraction": 0.8,
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
+                "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 挡位由 calibrators 的 SQU 输出上限自动过滤（上限 5 Vpp）"
+            },
+            "notes": [
+                "选定通道量程、直流耦合、直流偏置调零（规范 7.4 前置条件）",
+                "方波只取 1 kHz：9500B 方波仅在 ≤10 kHz 有指标",
+                "垂直格数由 characteristics.vertical_div 给出，80% 屏 = 0.8 × vertical_div 格"
+            ]
+        },
+        "dc_offset": {
+            "methods": [
+                "raw_lsq",
+                "mean_readout"
+            ],
+            "primary": "raw_lsq",
+            "stimulus": {
+                "shape": "DC"
+            },
+            "points": {
+                "strategy": "scale_list",
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
+                "impedances": [
+                    "1M"
+                ],
+                "zero_point": true,
+                "offset_nominal_divisions": 2,
+                "note": "零点：偏置 0、激励用 ±1 mV 两点插值到 0 V（9500B 最小可设幅度约 1 mV，无法直接输出 0 V）；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
+            },
+            "notes": [
+                "方法一（mean_readout）按 7.5.1 用平均值读数，激励取同号 d₀；MDO 的 MEAN 已带偏置补偿，方法一只剩残差，不作为主记录值。",
+                "方法二（raw_lsq）按 7.5.2 用原始码值拟合，作为主记录值。"
+            ]
+        },
+        "freq_response_bandwidth": {
+            "methods": [
+                "sine_sweep_half_power"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "screen_fraction": 0.8,
+                "impedance": "1M"
+            },
+            "points": {
+                "strategy": "bw_ratio",
+                "reference_hz": 50000,
+                "ratios": [
+                    0.05,
+                    0.1,
+                    0.2,
+                    0.3,
+                    0.5,
+                    0.7,
+                    0.9,
+                    1.0
+                ],
+                "crossing": {
+                    "target_ratio": 0.707,
+                    "interpolation": "log_frequency"
+                },
+                "note": "频点 = ratio × characteristics.bandwidth_hz；另加 50 kHz 基准。标称带宽处 G ≥ 0.707 记作带宽 ≥ 标称；否则在相邻频点间按对数频率插值求 G=0.707 的频点"
+            },
+            "notes": [
+                "已按确认把比值上限收到 1.0，不再测 1.1、1.2 倍（9530 头电平正弦上限 600 MHz）",
+                "规范表 2 要求稳幅正弦平坦度 ±0.3 dB，需核对 9500B 该项指标并在记录中说明"
+            ]
+        },
+        "enob": {
+            "methods": [
+                "time_domain_lsq"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "peak_fraction_of_range": [
+                    0.9,
+                    1.0
+                ],
+                "impedance": "1M"
+            },
+            "points": {
+                "strategy": "derived",
+                "samples_n": 1000,
+                "integer_cycles_n": 7,
+                "require_coprime": true,
+                "note": "f = fs·n/N，fs 由 :HORizontal:SAMPLERATE? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
+            },
+            "notes": [
+                "附录 F 频域法（傅里叶分解 / SINAD）本版本未实现，程序只做时域拟合"
+            ]
+        },
+        "rise_time": {
+            "methods": [
+                "fast_edge"
+            ],
+            "stimulus": {
+                "shape": "EDGE",
+                "screen_fraction": [
+                    0.6,
+                    0.8
+                ],
+                "impedance": "50",
+                "note": "图 9 要求输入端接匹配阻抗（50 Ω）；机型无 50 Ω 输入时退为 1 MΩ，并在记录中注明"
+            },
+            "points": {
+                "strategy": "channel_x_edge_speed",
+                "edge_speeds_s": "calibrator.probes[head].edge_rise_times",
+                "note": "每通道 × 每个可用边沿速度档一点；需 9500B 最快档（9530 为 150 ps / 500 ps）"
+            },
+            "notes": [
+                "500 MHz 机型理论上升时间约 700 ps，150 ps 快沿可分辨"
+            ]
+        },
+        "timebase_error": {
+            "methods": [
+                "frequency_readout",
+                "waveform_fit"
+            ],
+            "stimulus": {
+                "shape": "SIN",
+                "periods_on_screen": 3,
+                "screen_fraction_min": 0.5,
+                "impedance": "1M"
+            },
+            "points": {
+                "strategy": "scale_list",
+                "horizontal_scales_s_per_div": [
+                    1e-08,
+                    8e-07,
+                    0.0001,
+                    0.01
+                ],
+                "note": "水平挡位取 1-2-4-8 序列值；机型没有的挡位由 characteristics 过滤。记录长度固定为 1000 点后挡位网格随之变化，记录中保存回读的实际挡位。"
+            },
+            "notes": [
+                "规范 7.9.1 用示波器频率测量功能读数，不采用时标（MARK）间隔法",
+                "时基挡位收敛到 10 ms/div：100 ms/div 需 3 Hz 正弦，低速点对时基误差无增量价值"
+            ]
+        },
+        "delta_v": {
+            "methods": [
+                "auto_amplitude"
+            ],
+            "stimulus": {
+                "shape": "SQU",
+                "freq_hz": 1000,
+                "impedance": "1M"
+            },
+            "points": {
+                "strategy": "scale_list",
+                "scales_v_per_div": [
+                    0.01,
+                    0.1,
+                    1.0,
+                    10.0
+                ],
+                "screen_fraction": 0.8
+            },
+            "notes": [
+                "垂直方向覆盖 80% 屏幕，两个以上周期居中显示",
+                "按规范偏离声明，用自动测量读数代替光标读数"
+            ]
+        },
+        "delta_t": {
+            "methods": [
+                "auto_period"
+            ],
+            "stimulus": {
+                "shape": "SQU",
+                "impedance": "1M"
+            },
+            "points": {
+                "strategy": "scale_list",
+                "horizontal_scales_s_per_div": [
+                    1e-08,
+                    8e-07,
+                    0.0001,
+                    0.01
+                ],
+                "periods_m": 2,
+                "screen_fraction": 0.8,
+                "note": "水平挡位取 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
+            },
+            "notes": [
+                "M ≥ 2 个完整周期，水平方向覆盖 80% 屏幕",
+                "按规范偏离声明，用自动测量读数代替光标读数"
+            ]
+        },
+        "random_noise": {
+            "methods": [
+                "sample_stddev"
+            ],
+            "stimulus": {
+                "shape": "NONE",
+                "coupling": "DC",
+                "offset_zero": true
+            },
+            "points": {
+                "strategy": "fixed"
+            },
+            "requires_user_action": {
+                "pause": true,
+                "prompt": "请将 CH{channel} 输入端接入 50 Ω 匹配负载并确认后继续",
+                "note": "规范 7.13 要求输入端连接匹配负载，程序无法自动完成，暂停等待操作者确认"
+            },
+            "notes": [
+                "规范方法一（RMS 读数）本版本未实现，本方案采用方法二（采样标准差）。",
+                "置最小量程、非自动量程、直流耦合、偏置为零、实时采样且采样速率最高。"
+            ]
+        }
+    }
+}

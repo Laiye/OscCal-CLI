@@ -43,7 +43,9 @@ class CommandConfig(TypedDict, total=False):
     actions: dict[str, ActionConfig]
 
 
-class ProfileConfig(TypedDict, total=False):
+class CharacteristicsConfig(TypedDict, total=False):
+    """仪器特征（characteristics/*.json）：只声明硬件事实。"""
+
     name: str
     description: str
     manufacturer: str
@@ -86,8 +88,8 @@ class CalibratorConfig(TypedDict, total=False):
     actions: dict[str, ActionConfig]
 
 
-class SpecPointRule(TypedDict, total=False):
-    """校准点取点规则：策略 + 该策略下的参数。"""
+class SchemePointRule(TypedDict, total=False):
+    """校准点取点规则（来自 schemes/*.json）：策略 + 该策略下的参数。"""
 
     strategy: str
     screen_fraction: float
@@ -107,29 +109,32 @@ class SpecPointRule(TypedDict, total=False):
 
 
 class SpecItem(TypedDict, total=False):
-    """单个校准项目的规范口径（来自 specs/*.json）。"""
+    """单个校准项目的规范口径（来自 specs/*.json）：只声明规范要求什么。"""
 
     clause: str
     title: str
     automatable: bool
-    method: str
     record_table: str
     record_fields: list[str]
-    stimulus: dict[str, object]
-    points: SpecPointRule
     formula: dict[str, str]
     deviations: list[str]
-    invalid_sentinel: float
-    requires_user_action: dict[str, object]
     pending_confirm: str
-    fallback_note: str
     note: str
+
+
+class SchemeItem(TypedDict, total=False):
+    """单个校准项目的方案（来自 schemes/*.json）：方法 + 取点 + 刺激条件。"""
+
+    methods: list[str]
+    primary: str
+    stimulus: dict[str, object]
+    points: SchemePointRule
+    requires_user_action: dict[str, object]
     notes: list[str]
-    conditions: list[str]
 
 
 class SpecConfig(TypedDict, total=False):
-    """校准规范配置（specs/*.json）：只声明规范口径，不含硬件能力。"""
+    """校准规范配置（specs/*.json）：只声明规范口径，不含硬件能力与校准点。"""
 
     name: str
     spec_code: str
@@ -145,3 +150,12 @@ class SpecConfig(TypedDict, total=False):
     reference_limits: dict[str, object]
     items: dict[str, SpecItem]
     verification: dict[str, object]
+
+
+class SchemeConfig(TypedDict, total=False):
+    """校准方案配置（schemes/*.json）：项目方法、校准点与执行条件。"""
+
+    name: str
+    description: str
+    spec: str
+    items: dict[str, SchemeItem]

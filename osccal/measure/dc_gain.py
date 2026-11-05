@@ -25,6 +25,11 @@ POSITION_LOW = 0.1
 SWEEP_POINTS = 16
 #: 方法三每点的采集点数下限（规范要求 n ≥ 1000）。
 SWEEP_SAMPLES = 1000
+#: 方案方法键（与 core/methods.py 的 ITEM_METHODS 一致）。
+METHOD_DC_TWO_POINT = "dc_two_point"
+METHOD_SQUARE = "square_amplitude"
+METHOD_MULTI = "multi_point_lsq"
+ALL_METHODS = [METHOD_SQUARE, METHOD_DC_TWO_POINT, METHOD_MULTI]
 
 
 class DcGainCalibrator(BaseCalibrator):
@@ -140,7 +145,7 @@ class DcGainCalibrator(BaseCalibrator):
         scale = float(point["scale"])
         impedance = point.get("impedance", "1M")
         std_value = float(point["std_value_vpp"])
-        vertical_div = float(self.profile.get("vertical_div", 8))
+        vertical_div = float(self.characteristics.get("vertical_div", 8))
 
         self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, scale)
@@ -148,19 +153,44 @@ class DcGainCalibrator(BaseCalibrator):
 
         # 方法二放在最前：它依赖校准仪的方波状态最"干净"。实机发现若先跑直流类
         # 方法（一/三），随后的方波幅度读数会系统性偏高 1.9%~5.0%（且正好是
-        # 0.625% 的整数倍，属量化台阶上的偏差）。
-        gain2, error2, settle_s, spread2 = self._method_two(std_value)
-        gain1, error1, settle_m1 = self._method_one(scale, vertical_div)
-        gain3, intercept3, settle_m3 = self._method_three(scale, vertical_div)
+        # 0.625% 的整数倍，属量化台阶上的偏差）。只跑方案选中的方法。
+        gain2 = error2 = spread2 = None
+        settle_s = 0.0
+        if self.method_enabled(METHOD_SQUARE):
+            gain2, error2, settle_s, spread2 = self._method_two(std_value)
+        gain1 = error1 = None
+        settle_m1 = 0.0
+        if self.method_enabled(METHOD_DC_TWO_POINT):
+            gain1, error1, settle_m1 = self._method_one(scale, vertical_div)
+        gain3 = intercept3 = None
+        settle_m3 = 0.0
+        if self.method_enabled(METHOD_MULTI):
+            gain3, intercept3, settle_m3 = self._method_three(scale, vertical_div)
+
+        primary = self.primary_method or METHOD_SQUARE
+        primary_gain = {
+            METHOD_SQUARE: gain2,
+            METHOD_DC_TWO_POINT: gain1,
+            METHOD_MULTI: gain3,
+        }.get(primary)
+        primary_error = {
+            METHOD_SQUARE: error2,
+            METHOD_DC_TWO_POINT: error1,
+            METHOD_MULTI: None if gain3 is None else 100.0 * (gain3 - 1.0),
+        }.get(primary)
+        selected = list(self.methods) or list(ALL_METHODS)
 
         return {
             "channel": self.channel,
             "impedance": impedance,
             "scale": scale,
             "std_value_vpp": std_value,
-            "measured_vpp": gain2 * std_value,
-            "gain": gain2,
-            "error_pct": error2,
+            # 只有方波幅度法给出直接的 Vpp 读数；其余主方法没有该列
+            "measured_vpp": None if gain2 is None else gain2 * std_value,
+            "gain": primary_gain,
+            "error_pct": primary_error,
+            "primary_method": primary,
+            "methods_selected": selected,
             "gain_m1": gain1,
             "error_m1_pct": error1,
             "gain_m3": gain3,
@@ -192,8 +222,8 @@ class DcGainCalibrator(BaseCalibrator):
                 {"name": "挡位(V/div)"},
                 {"name": "方法一 G"},
                 {"name": "误差1(%)"},
-                {"name": "方法二 G"},
-                {"name": "误差2(%)"},
+                {"name": "主方法 G"},
+                {"name": "主方法误差(%)"},
                 {"name": "方法三 G"},
                 {"name": "误差3(%)"},
                 {"name": "截距 d(V)"},

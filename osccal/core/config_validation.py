@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from typing import TypeGuard
+
+from osccal.core.methods import ITEM_METHODS, NO_PRIMARY_METHODS, PRIMARY_METHODS
 
 REQUIRED_COMMAND_KEYS = {"name", "description", "type", "series", "feature", "keyword", "actions"}
 # 必需 keyword；其余 keyword（如 meas_pos_overshoot、meas_freq）按机型能力可选。
@@ -27,9 +30,9 @@ VALID_COMM_TYPES = {"pyvisa", "socket"}
 VALID_MEAS_MODES = {"merge", "split"}
 VALID_ACTION_TYPES = {"write", "query"}
 
-# profiles/ 只声明硬件事实：校准点来自 specs/，标准器能力来自 calibrators/，
-# 参考指标来自 specs.reference_limits。Profile 里不再允许出现 points / calibration_limits。
-REQUIRED_PROFILE_KEYS = {
+# characteristics/ 只声明硬件事实：校准方法与取点来自 schemes/，规范要求来自 specs/，
+# 参考指标来自 specs.reference_limits。特征文件里不允许出现 points / calibration_limits。
+REQUIRED_CHARACTERISTICS_KEYS = {
     "name",
     "description",
     "factor",
@@ -44,7 +47,7 @@ REQUIRED_PROFILE_KEYS = {
     "probe_default",
     "init_time",
 }
-DEPRECATED_PROFILE_KEYS = {
+DEPRECATED_CHARACTERISTICS_KEYS = {
     "points",
     "calibration_limits",
     "bandwidth",
@@ -55,9 +58,9 @@ DEPRECATED_PROFILE_KEYS = {
 }
 
 # ── 校准规范配置（specs/*.json）──
-# 规范只声明"口径"，硬件能力来自 profiles/、标准器能力来自 calibrators/。
+# 规范只声明"要求什么"，硬件能力来自 characteristics/、方法与点来自 schemes/。
 REQUIRED_SPEC_KEYS = {"name", "spec_code", "items", "deviations"}
-# 规范项目键 = registry 的 10 项 + 规范保留的 2 项人工项。
+# 规范保留的 12 项：程序实现的 10 项 + 2 项人工项。
 VALID_SPEC_ITEM_KEYS = {
     "visual_check",
     "input_impedance",
@@ -72,10 +75,20 @@ VALID_SPEC_ITEM_KEYS = {
     "delta_t",
     "random_noise",
 }
-# 取点策略：见 specs/ 中各项的 points.strategy。
+# 方案只能包含规范中可自动化的 10 项；人工项留在规范里，不写入方案。
+SCHEME_ITEM_KEYS = VALID_SPEC_ITEM_KEYS - {"visual_check", "self_cal_signal"}
+# 旧版 specs 里混入的执行字段：v0.3.0 起必须迁到 schemes/，不静默兼容。
+DEPRECATED_SPEC_ITEM_KEYS = {
+    "method",
+    "points",
+    "stimulus",
+    "requires_user_action",
+    "invalid_sentinel",
+    "notes",
+    "fallback_note",
+}
+# 取点策略：见 schemes/ 中各项的 points.strategy。
 VALID_POINT_STRATEGIES = {
-    "explicit",
-    "screen_fraction",
     "scale_list",
     "bw_ratio",
     "derived",
@@ -85,6 +98,17 @@ VALID_POINT_STRATEGIES = {
 }
 # 规范表 1 注明"技术指标仅供参考，不作为符合性判定依据"。
 VALID_LIMIT_SEMANTICS = {"reference_only"}
+
+# ── 校准方案配置（schemes/*.json）──
+REQUIRED_SCHEME_KEYS = {"name", "description", "spec", "items"}
+SCHEME_ITEM_FIELDS = {
+    "methods",
+    "primary",
+    "stimulus",
+    "points",
+    "requires_user_action",
+    "notes",
+}
 
 REQUIRED_CALIBRATOR_KEYS = {
     "name",
@@ -219,7 +243,7 @@ def _is_number(value: object) -> TypeGuard[int | float]:
         return False
 
 
-def _is_count(value: object) -> bool:
+def _is_count(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
@@ -403,24 +427,24 @@ def _validate_scale_list(data: dict, field: str) -> list[str]:
     return []
 
 
-def validate_profile(data: dict) -> list[str]:
-    """校验示波器 Profile：只允许声明硬件事实，返回错误列表。"""
+def validate_characteristics(data: dict) -> list[str]:
+    """校验仪器特征：只允许声明硬件事实，返回错误列表。"""
     errors: list[str] = []
     if not isinstance(data, dict):
         return ["配置必须是 JSON 对象"]
 
-    missing = REQUIRED_PROFILE_KEYS - set(data.keys())
+    missing = REQUIRED_CHARACTERISTICS_KEYS - set(data.keys())
     if missing:
         errors.append(f"缺少字段: {sorted(missing)}")
         return errors
 
     errors.extend(_validate_identity(data))
     if not isinstance(data.get("series"), str) or not data["series"].strip():
-        errors.append("Profile series 必须为非空字符串")
+        errors.append("特征 series 必须为非空字符串")
 
-    deprecated = sorted(DEPRECATED_PROFILE_KEYS & set(data.keys()))
+    deprecated = sorted(DEPRECATED_CHARACTERISTICS_KEYS & set(data.keys()))
     if deprecated:
-        errors.append(f"已废弃字段: {deprecated}（校准点取自 specs/，限值取自规范参考指标）")
+        errors.append(f"已废弃字段: {deprecated}（校准点取自 schemes/，限值取自规范参考指标）")
 
     channels = data.get("channels")
     if not _is_count(channels) or channels == 0:
@@ -518,8 +542,8 @@ _RECORD_TABLE_PATTERN = re.compile(r"^[AB]\.\d+$")
 def validate_spec(data: dict) -> list[str]:
     """校验校准规范配置（specs/*.json），返回错误列表。
 
-    只校验"口径"声明本身：条款号、取点策略、记录表号、偏离声明与参考指标语义。
-    条目实际怎么测量由对应项目实现保证，不在此处校验。
+    规范只声明"要求什么"：条款号、记录表号与字段、公式、参考指标与偏离声明。
+    取点、方法与执行条件属于方案，出现在本文件即报错并提示迁到 schemes/。
     """
     errors: list[str] = []
     if not isinstance(data, dict):
@@ -587,16 +611,227 @@ def validate_spec(data: dict) -> list[str]:
         if not isinstance(automatable, bool):
             errors.append(f"items.{key}.automatable 必须为布尔值")
             continue
-        if not automatable:
-            continue
-        points = item.get("points")
-        if not isinstance(points, dict):
-            errors.append(f"items.{key} 缺少 points 对象")
-        else:
-            strategy = points.get("strategy")
-            if strategy not in VALID_POINT_STRATEGIES:
-                errors.append(f"items.{key}.points.strategy 非法: {strategy!r}")
         record = item.get("record_table")
         if not isinstance(record, str) or not _RECORD_TABLE_PATTERN.match(record):
             errors.append(f"items.{key}.record_table 必须形如 A.3 或 B.4")
+        deprecated = sorted(DEPRECATED_SPEC_ITEM_KEYS & set(item))
+        if deprecated:
+            errors.append(f"items.{key} 含方案字段: {deprecated}（方法与校准点已移至 schemes/）")
+        if not automatable:
+            note = item.get("note")
+            if not isinstance(note, str) or not note.strip():
+                errors.append(f"items.{key} 为人工项，必须用 note 说明不实现原因")
+            continue
+        fields = item.get("record_fields")
+        if fields is not None and (
+            not isinstance(fields, list)
+            or not fields
+            or not all(isinstance(v, str) and v.strip() for v in fields)
+        ):
+            errors.append(f"items.{key}.record_fields 必须为非空字符串列表")
+        formula = item.get("formula")
+        if formula is not None and (
+            not isinstance(formula, dict)
+            or not all(
+                isinstance(k, str) and isinstance(v, str) and k and v for k, v in formula.items()
+            )
+        ):
+            errors.append(f"items.{key}.formula 必须为字符串到字符串的对象")
+    return errors
+
+
+def _positive_number_list(values: object) -> bool:
+    return (
+        isinstance(values, list)
+        and bool(values)
+        and all(_is_number(v) and v > 0 for v in values)
+        and len(values) == len(set(values))
+    )
+
+
+def _validate_scheme_points(item_key: str, points: object) -> list[str]:
+    """校验方案中单个项目的取点规则；返回错误列表。"""
+    errors: list[str] = []
+    if not isinstance(points, dict):
+        return [f"items.{item_key}.points 必须为对象"]
+    strategy = points.get("strategy")
+    if strategy not in VALID_POINT_STRATEGIES:
+        return [f"items.{item_key}.points.strategy 非法: {strategy!r}"]
+
+    impedances = points.get("impedances")
+    if impedances is not None and (
+        not isinstance(impedances, list)
+        or not impedances
+        or not all(isinstance(v, str) and v in VALID_IMPEDANCES for v in impedances)
+    ):
+        errors.append(f"items.{item_key}.points.impedances 含非法阻抗: {impedances!r}")
+
+    if strategy == "channel_x_impedance":
+        return errors
+
+    if strategy == "scale_list":
+        vertical = points.get("scales_v_per_div")
+        horizontal = points.get("horizontal_scales_s_per_div")
+        if vertical is None and horizontal is None:
+            errors.append(
+                f"items.{item_key}.points 缺少 scales_v_per_div 或 horizontal_scales_s_per_div"
+            )
+        if vertical is not None and horizontal is not None:
+            errors.append(f"items.{item_key}.points 不能同时声明垂直与水平档位列表")
+        for field, value in (
+            ("scales_v_per_div", vertical),
+            ("horizontal_scales_s_per_div", horizontal),
+        ):
+            if value is None:
+                continue
+            if not _positive_number_list(value):
+                errors.append(f"items.{item_key}.points.{field} 必须为非空、无重复的正数列表")
+            elif value != sorted(value):
+                errors.append(f"items.{item_key}.points.{field} 未升序")
+        fraction = points.get("screen_fraction")
+        if fraction is not None and (not _is_number(fraction) or not 0 < fraction <= 1):
+            errors.append(f"items.{item_key}.points.screen_fraction 必须在 (0, 1] 内")
+        for field in ("periods_m", "periods_on_screen"):
+            value = points.get(field)
+            if value is not None and (not _is_count(value) or value == 0):
+                errors.append(f"items.{item_key}.points.{field} 必须为正整数")
+        return errors
+
+    if strategy == "bw_ratio":
+        reference = points.get("reference_hz")
+        if not _is_number(reference) or reference <= 0:
+            errors.append(f"items.{item_key}.points.reference_hz 必须为有限正数")
+        ratios = points.get("ratios")
+        if not _positive_number_list(ratios):
+            errors.append(f"items.{item_key}.points.ratios 必须为非空、无重复的正数列表")
+        crossing = points.get("crossing")
+        if crossing is not None:
+            if not isinstance(crossing, dict):
+                errors.append(f"items.{item_key}.points.crossing 必须为对象")
+            elif not _is_number(crossing.get("target_ratio")) or crossing["target_ratio"] <= 0:
+                errors.append(f"items.{item_key}.points.crossing.target_ratio 必须为正数")
+        return errors
+
+    if strategy == "derived":
+        samples = points.get("samples_n")
+        cycles = points.get("integer_cycles_n")
+        if not _is_count(samples) or samples == 0:
+            errors.append(f"items.{item_key}.points.samples_n 必须为正整数")
+        if not _is_count(cycles) or cycles == 0:
+            errors.append(f"items.{item_key}.points.integer_cycles_n 必须为正整数")
+        coprime = points.get("require_coprime")
+        if coprime is not None and not isinstance(coprime, bool):
+            errors.append(f"items.{item_key}.points.require_coprime 必须为布尔值")
+        if coprime and _is_count(samples) and _is_count(cycles) and math.gcd(samples, cycles) != 1:
+            errors.append(f"items.{item_key}.points 的 samples_n 与 integer_cycles_n 不互质")
+        return errors
+
+    # channel_x_edge_speed / fixed 无额外参数；边缘速度与最小量程由特征/校准仪提供。
+    return errors
+
+
+def validate_scheme(data: dict) -> list[str]:
+    """校验校准方案配置（schemes/*.json），返回错误列表。
+
+    方案只声明"本轮怎么做"：项目方法、取点参数、刺激条件与执行提示。
+    项目是否在规范中、文案是否与规范一致，由跨文件测试与 CLI 加载顺序校验。
+    """
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return ["配置必须是 JSON 对象"]
+
+    missing = REQUIRED_SCHEME_KEYS - set(data.keys())
+    if missing:
+        errors.append(f"缺少字段: {sorted(missing)}")
+        return errors
+
+    for field in ("name", "description", "spec"):
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} 必须为非空字符串")
+    spec = data.get("spec")
+    if (
+        isinstance(spec, str)
+        and spec.strip()
+        and (spec.startswith(".") or os.sep in spec or "/" in spec or spec.endswith(".json"))
+    ):
+        errors.append("spec 必须是 specs/ 下的文件名（不含 .json 与路径）")
+
+    items = data.get("items")
+    if not isinstance(items, dict) or not items:
+        errors.append("items 必须为非空对象")
+        return errors
+
+    unknown = sorted(set(items) - SCHEME_ITEM_KEYS)
+    if unknown:
+        errors.append(f"items 含未知或不可自动化的项目: {unknown}")
+
+    for key, item in items.items():
+        if not isinstance(item, dict):
+            errors.append(f"items.{key} 必须是对象")
+            continue
+        extra = sorted(set(item) - SCHEME_ITEM_FIELDS)
+        if extra:
+            errors.append(f"items.{key} 含未知字段: {extra}")
+
+        methods = item.get("methods")
+        allowed = ITEM_METHODS.get(key, {})
+        if not isinstance(methods, list) or not methods:
+            errors.append(f"items.{key}.methods 必须为非空列表")
+            methods = []
+        elif not all(isinstance(m, str) and m for m in methods):
+            errors.append(f"items.{key}.methods 含空条目")
+            methods = [m for m in methods if isinstance(m, str)]
+        if len(methods) != len(set(methods)):
+            errors.append(f"items.{key}.methods 有重复方法")
+        unsupported = sorted(set(methods) - set(allowed))
+        if unsupported:
+            errors.append(
+                f"items.{key}.methods 含未实现方法: {unsupported}（可用: {sorted(allowed)}）"
+            )
+
+        primary = item.get("primary")
+        if key in PRIMARY_METHODS:
+            if not isinstance(primary, str) or not primary:
+                errors.append(f"items.{key}.primary 必须指定主记录方法")
+            elif primary not in methods:
+                errors.append(f"items.{key}.primary 必须是 methods 中的方法")
+        elif key in NO_PRIMARY_METHODS:
+            if "primary" in item:
+                errors.append(f"items.{key} 的两法是并列方法，不允许 primary")
+        elif "primary" in item:
+            errors.append(f"items.{key} 只有一个已实现方法，不允许 primary")
+
+        errors.extend(_validate_scheme_points(key, item.get("points")))
+
+        stimulus = item.get("stimulus")
+        if stimulus is not None and not isinstance(stimulus, dict):
+            errors.append(f"items.{key}.stimulus 必须为对象")
+            stimulus = None
+        shape = stimulus.get("shape") if isinstance(stimulus, dict) else None
+        if shape is not None and shape not in VALID_SIGNAL_SHAPES:
+            errors.append(f"items.{key}.stimulus.shape 非法: {shape!r}")
+        points = item.get("points")
+        strategy = points.get("strategy") if isinstance(points, dict) else None
+        if strategy in {"scale_list", "bw_ratio"} and shape is None:
+            errors.append(f"items.{key}.stimulus.shape 缺失（取点需要按波形核对标准器能力）")
+
+        action = item.get("requires_user_action")
+        if action is not None:
+            if not isinstance(action, dict):
+                errors.append(f"items.{key}.requires_user_action 必须为对象")
+            else:
+                if not isinstance(action.get("pause"), bool):
+                    errors.append(f"items.{key}.requires_user_action.pause 必须为布尔值")
+                prompt = action.get("prompt")
+                if not isinstance(prompt, str) or not prompt.strip():
+                    errors.append(f"items.{key}.requires_user_action.prompt 必须为非空字符串")
+
+        notes = item.get("notes")
+        if notes is not None and (
+            not isinstance(notes, list)
+            or not notes
+            or not all(isinstance(v, str) and v.strip() for v in notes)
+        ):
+            errors.append(f"items.{key}.notes 必须为非空字符串列表")
     return errors

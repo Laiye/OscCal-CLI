@@ -47,6 +47,12 @@ def _metadata() -> dict:
             "deviations": ["ΔV、Δt 采用自动测量读数。", "不含测量不确定度。"],
             "limits_semantics": {"kind": "reference_only"},
         },
+        "scheme": {
+            "name": "JJF 1057-2026 默认校准方案",
+            "file": "jjf1057_2026.json",
+            "sha256": "b" * 64,
+            "items": {"dc_gain": {"methods": ["square_amplitude"], "primary": "square_amplitude"}},
+        },
     }
 
 
@@ -194,6 +200,21 @@ class TestExport:
             if cell.value is not None
         )
         assert "最大允许误差 ±2%" in text, "参考指标文本应由记录里的规范限值渲染"
+
+    def test_info_sheet_records_scheme_methods(self, tmp_path):
+        from osccal.core.export import export_to_excel
+
+        out = tmp_path / "report.xlsx"
+        export_to_excel({"metadata": _metadata(), "results": _results()}, str(out))
+        wb = load_workbook(out)
+        try:
+            values = {
+                row[0]: row[1] for row in wb["校准信息"].iter_rows(min_row=3, values_only=True)
+            }
+            assert values["依据方案"] == "JJF 1057-2026 默认校准方案"
+            assert "方波幅度法" in values["方案方法 dc_gain"]
+        finally:
+            wb.close()
 
     def test_no_pass_fail_wording(self, tmp_path):
         from osccal.core.export import export_to_excel

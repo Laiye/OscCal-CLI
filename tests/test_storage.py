@@ -25,7 +25,7 @@ def test_same_timestamp_does_not_overwrite_and_metadata_roundtrips(data_dir, mon
         "scpi_errors": 3,
         "status": "completed_with_errors",
         "failures": {"amp": {"type": "ScpiError", "message": "读取失败"}},
-        "configurations": {"profile": storage.configuration_snapshot({"name": "测试配置"})},
+        "configurations": {"characteristics": storage.configuration_snapshot({"name": "测试配置"})},
         "extra": {"保留扩展字段": True},
     }
     first = storage.save_calibration_data({"amp": []}, metadata)
@@ -37,6 +37,26 @@ def test_same_timestamp_does_not_overwrite_and_metadata_roundtrips(data_dir, mon
     for key, value in metadata.items():
         assert loaded["metadata"][key] == value
     assert storage.load_calibration_data(second)["metadata"]["scpi_errors"] == 0
+
+
+def test_metadata_records_characteristics_and_scheme(data_dir):
+    path = storage.save_calibration_data(
+        {},
+        {
+            "characteristics_file": "tektronix_mdo3052.json",
+            "scheme": {"name": "默认方案", "file": "jjf1057_2026.json", "sha256": "abc"},
+        },
+    )
+    metadata = storage.load_calibration_data(path)["metadata"]
+    assert metadata["characteristics_file"] == "tektronix_mdo3052.json"
+    assert metadata["scheme"]["name"] == "默认方案"
+
+
+def test_old_profile_file_is_mapped_to_characteristics(data_dir):
+    """v0.2.x 记录只有 profile_file；只读展示仍应能显示特征文件。"""
+    path = storage.save_calibration_data({}, {"profile_file": "old_profile.json"})
+    metadata = storage.load_calibration_data(path)["metadata"]
+    assert metadata["characteristics_file"] == "old_profile.json"
 
 
 @pytest.mark.parametrize("failure_at", ["serialize", "flush", "replace", "interrupt"])

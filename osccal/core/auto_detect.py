@@ -1,4 +1,4 @@
-"""自动识别示波器和校准仪，匹配对应的指令集与特征配置文件。"""
+"""自动识别示波器和校准仪，匹配对应的指令集与仪器特征文件。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 from rich.console import Console
 from rich.table import Table
 
-from osccal.core.config import load_commands, load_profile
+from osccal.core.config import load_characteristics, load_commands
 from osccal.core.config_validation import manufacturer_matches, normalize_token
 
 console = Console()
@@ -172,17 +172,17 @@ def _filter_by_manufacturer(
 
 def detect_configs(
     commands_dir: str,
-    profiles_dir: str,
+    characteristics_dir: str,
     oscilloscope_idn: dict,
 ) -> tuple[dict | None, dict | None, str | None, str | None]:
-    """根据示波器 *IDN? 匹配指令集和特征配置。
+    """根据示波器 *IDN? 匹配指令集与仪器特征。
 
     匹配优先级：
       1. models 字段精确匹配（新增字段）
       2. series 字段模糊匹配（回退）
 
     Returns:
-        (cmd_osc, profile_data, cmd_filepath, profile_filepath)
+        (cmd_osc, characteristics_data, cmd_filepath, characteristics_filepath)
         匹配失败则对应位置为 None。
     """
     model = oscilloscope_idn.get("model", "")
@@ -225,53 +225,53 @@ def detect_configs(
     if not matched_cmd:
         console.print(f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的指令集")
 
-    # ── 特征配置匹配 ──
-    profile_candidates = _filter_by_manufacturer(profiles_dir, manufacturer)
+    # ── 仪器特征匹配 ──
+    characteristics_candidates = _filter_by_manufacturer(characteristics_dir, manufacturer)
 
     # 优先级 1：models 精确匹配
-    profile_models: dict[str, list[str]] = {}
-    for fname, data in profile_candidates.items():
+    characteristics_models: dict[str, list[str]] = {}
+    for fname, data in characteristics_candidates.items():
         models = data.get("models", [])
         if isinstance(models, list) and models:
-            profile_models[fname] = models
+            characteristics_models[fname] = models
 
-    matched_profile = _exact_model_match(model, profile_models)
-    if len(_matching_model_files(model, profile_models)) > 1:
-        console.print("[red]✗ 多个 Profile 精确匹配同一型号，请在手动模式显式指定配置[/red]")
+    matched_characteristics = _exact_model_match(model, characteristics_models)
+    if len(_matching_model_files(model, characteristics_models)) > 1:
+        console.print("[red]✗ 多个特征配置精确匹配同一型号，请在手动模式显式指定配置[/red]")
         return None, None, None, None
 
     # 优先级 2：series 模糊匹配（回退）
-    if not matched_profile:
-        profile_series: dict[str, str] = {}
-        for fname, data in profile_candidates.items():
+    if not matched_characteristics:
+        characteristics_series: dict[str, str] = {}
+        for fname, data in characteristics_candidates.items():
             series = data.get("series", "")
             if isinstance(series, str) and series:
-                profile_series[fname] = series
-        matched_profile = _fuzzy_match_series(model, profile_series)
+                characteristics_series[fname] = series
+        matched_characteristics = _fuzzy_match_series(model, characteristics_series)
 
-    if not matched_profile:
+    if not matched_characteristics:
         console.print(f"[yellow]⚠[/yellow] 未找到与型号 [cyan]{model}[/cyan] 匹配的特征配置")
 
     cmd_osc = None
-    profile_data = None
+    characteristics_data = None
     cmd_filepath = None
-    profile_filepath = None
+    characteristics_filepath = None
 
     if matched_cmd:
         cmd_filepath = os.path.join(commands_dir, matched_cmd)
         cmd_osc = load_commands(cmd_filepath)
-    if matched_profile:
-        profile_filepath = os.path.join(profiles_dir, matched_profile)
-        profile_data = load_profile(profile_filepath)
+    if matched_characteristics:
+        characteristics_filepath = os.path.join(characteristics_dir, matched_characteristics)
+        characteristics_data = load_characteristics(characteristics_filepath)
 
-    return cmd_osc, profile_data, cmd_filepath, profile_filepath
+    return cmd_osc, characteristics_data, cmd_filepath, characteristics_filepath
 
 
 def print_auto_detection_summary(
     idn_osc: dict,
     idn_cal: dict,
     cmd_file: str | None,
-    profile_file: str | None,
+    characteristics_file: str | None,
     cal_file: str | None,
     probe: str | None,
 ) -> None:
@@ -289,7 +289,8 @@ def print_auto_detection_summary(
     table.add_row("校准仪序列号", idn_cal.get("serial", "?"))
     table.add_row("指令集配置", os.path.basename(cmd_file) if cmd_file else "[red]未匹配[/red]")
     table.add_row(
-        "特征配置", os.path.basename(profile_file) if profile_file else "[red]未匹配[/red]"
+        "特征配置",
+        os.path.basename(characteristics_file) if characteristics_file else "[red]未匹配[/red]",
     )
     table.add_row("校准仪配置", os.path.basename(cal_file) if cal_file else "[red]未匹配[/red]")
     table.add_row("探头", probe or "（待选择）")

@@ -1,8 +1,8 @@
 """共享 pytest fixture 与辅助工具。
 
-为 3 Series MDO（MDO34/MDO32）指令集与 Profile 的单元测试提供：
+为 3 Series MDO（MDO34/MDO32）指令集与仪器特征配置的单元测试提供：
 - 项目根路径注入 sys.path，保证可直接 import osccal
-- 加载指令集 / Profile JSON 的会话级 fixture
+- 加载指令集 / 仪器特征 JSON 的会话级 fixture
 - 用于集成测试的 FakeInstrument（模拟 pyvisa 仪器，记录写入/查询指令）
 """
 
@@ -18,12 +18,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 COMMANDS_DIR = PROJECT_ROOT / "commands"
-PROFILES_DIR = PROJECT_ROOT / "profiles"
+CHARACTERISTICS_DIR = PROJECT_ROOT / "characteristics"
 CALIBRATORS_DIR = PROJECT_ROOT / "calibrators"
 
 
 # ---------------------------------------------------------------------------
-# 指令集 / Profile 加载 fixture
+# 指令集 / 仪器特征加载 fixture
 # ---------------------------------------------------------------------------
 
 
@@ -41,9 +41,9 @@ def mdo3_commands_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def mdo3052_profile() -> dict:
-    """加载 MDO3052 特征配置（v0.2.0 起只保留该机型的 Profile）。"""
-    path = PROFILES_DIR / "tektronix_mdo3052.json"
+def mdo3052_characteristics() -> dict:
+    """加载 MDO3052 仪器特征（v0.3.0 起只保留该机型的特征文件）。"""
+    path = CHARACTERISTICS_DIR / "tektronix_mdo3052.json"
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 

@@ -48,15 +48,25 @@ def configs() -> tuple[dict, dict, dict]:
     return (
         _load("tektronix_mdo.json", "commands"),
         _load("fluke_9500b.json", "calibrators"),
-        _load("tektronix_mdo3052.json", "profiles"),
+        _load("tektronix_mdo3052.json", "characteristics"),
     )
 
 
-def build(cls, configs, points, reader):
+def build(cls, configs, points, reader, options=None):
     """构造项目实例并打桩：跳过设备初始化，测量值由 reader 提供。"""
-    cmd_osc, cmd_cal, profile = configs
+    cmd_osc, cmd_cal, characteristics = configs
     osc, cal = StubInstrument(), StubInstrument()
-    instance = cls(osc, cal, cmd_osc, cmd_cal, profile, "1", "9530", points)
+    instance = cls(
+        osc,
+        cal,
+        cmd_osc,
+        cmd_cal,
+        characteristics,
+        "1",
+        "9530",
+        points,
+        options,
+    )
     instance.init_devices = lambda: None
     instance.setup_channel = lambda: None
     instance.setup_measurement = lambda key, trigger=True: None
@@ -113,6 +123,55 @@ class TestDcGainMethodOne:
         assert len(calls) == 2, "方法一两个直流点各读一次"
         assert all(call["key"] == "meas_mean" for call in calls)
         assert all(call["trigger"] is False for call in calls), "直流信号不能走触发采集"
+
+
+class TestDcGainMethodSelection:
+    """方案只选部分方法时，未选的方法不得执行，主记录值按 primary 取。"""
+
+    def _point(self):
+        return [{"channel": "1", "scale": 0.1, "impedance": "1M", "std_value_vpp": 0.64}]
+
+    def test_square_only_skips_dc_scans(self, configs):
+        options = {"methods": ["square_amplitude"], "primary": "square_amplitude"}
+        instance, _, cal = build(
+            DcGainCalibrator, configs, self._point(), lambda key, trigger=True: 0.64, options
+        )
+        instance.run()
+
+        record = instance.results[0]
+        assert record["primary_method"] == "square_amplitude"
+        assert record["gain"] == pytest.approx(1.0)
+        assert record["gain_m1"] is None
+        assert record["gain_m3"] is None
+        assert not any("SHAP DC" in cmd for cmd in cal.written), "未选的方法一/三不得输出直流"
+
+    def test_two_point_only_maps_primary(self, configs):
+        options = {"methods": ["dc_two_point"], "primary": "dc_two_point"}
+        instance, _, cal = build(
+            DcGainCalibrator, configs, self._point(), lambda key, trigger=True: 0.64, options
+        )
+        instance.run()
+
+        record = instance.results[0]
+        assert record["primary_method"] == "dc_two_point"
+        assert record["gain"] == pytest.approx(0.0)
+        assert record["gain_m1"] == pytest.approx(0.0)
+        assert record["gain_m3"] is None
+        assert record["measured_vpp"] is None
+        assert any("SHAP DC" in cmd for cmd in cal.written)
+
+    def test_multi_point_only_maps_primary(self, configs):
+        options = {"methods": ["multi_point_lsq"], "primary": "multi_point_lsq"}
+        instance, _, _ = build(
+            DcGainCalibrator, configs, self._point(), lambda key, trigger=True: 0.64, options
+        )
+        instance.run()
+
+        record = instance.results[0]
+        assert record["primary_method"] == "multi_point_lsq"
+        assert record["gain"] == pytest.approx(record["gain_m3"])
+        assert record["gain_m1"] is None
+        assert record["measured_vpp"] is None
 
 
 class TestInvalidMeasurementRetry:
@@ -186,6 +245,44 @@ class TestDcOffset:
         instance._sweep = lambda scale: next(sweeps)
         instance.run()
         assert instance.results[0]["error_pct"] == pytest.approx(1.0)
+
+    def test_raw_only_skips_mean_method(self, configs):
+        points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
+        options = {"methods": ["raw_lsq"], "primary": "raw_lsq"}
+        instance, _, _ = build(
+            DcOffsetCalibrator, configs, points, lambda key, trigger=True: 0.0, options
+        )
+        sweeps = iter([(1.0, 0.0), (1.0, -0.2)])
+        instance._sweep = lambda scale: next(sweeps)
+        called: list[float] = []
+        instance._method_one = lambda scale: called.append(scale) or (0.0, 0.0, 0.0, 0.0)
+        instance.run()
+
+        record = instance.results[0]
+        assert not called, "未选的方法一不得执行"
+        assert record["primary_method"] == "raw_lsq"
+        assert record["offset_measured_v"] == pytest.approx(0.2)
+        assert record["zero_reading_v_m1"] is None
+        assert record["gain_m1"] is None
+
+    def test_mean_only_maps_primary_without_sweeps(self, configs):
+        points = [{"channel": "1", "scale": 0.1, "impedance": "1M"}]
+        options = {"methods": ["mean_readout"], "primary": "mean_readout"}
+        instance, _, _ = build(
+            DcOffsetCalibrator, configs, points, lambda key, trigger=True: 0.0, options
+        )
+        instance._sweep = lambda scale: pytest.fail("未选方法二时不得扫描原始码值")
+        instance._method_one = lambda scale: (0.001, 0.201, 0.001, 1.005)
+        instance.run()
+
+        record = instance.results[0]
+        assert record["primary_method"] == "mean_readout"
+        assert record["zero_reading_v"] == pytest.approx(0.001)
+        assert record["offset_measured_v"] == pytest.approx(0.201)
+        assert record["offset_error_v"] == pytest.approx(0.001)
+        assert record["gain"] == pytest.approx(1.005)
+        assert record["dc_gain_zero"] is None
+        assert record["error_pct"] == pytest.approx(0.125)
 
 
 class TestFreqResponse:

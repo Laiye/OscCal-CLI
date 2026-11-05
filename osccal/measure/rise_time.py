@@ -39,7 +39,7 @@ class RiseTimeCalibrator(BaseCalibrator):
     def _measure_point(self, point: dict) -> dict:
         edge_speed = float(point["edge_rise_time_s"])
         # 图 9 要求匹配阻抗：机型有 50 Ω 时用 50 Ω，否则退为 1 MΩ 并记录
-        impedance = "50" if self.profile.get("imp_has_50", False) else "1M"
+        impedance = "50" if self.characteristics.get("imp_has_50", False) else "1M"
 
         self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)

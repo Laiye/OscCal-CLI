@@ -32,6 +32,10 @@ AMPLITUDE_VPP = 0.5
 FIT_SAMPLES = 1000
 #: 拟合频率与示波器频率读数允许的最大相对偏差；超过即判定采集时间轴不可信。
 CONSISTENCY_TOLERANCE = 0.05
+#: 方案方法键（与 core/methods.py 的 ITEM_METHODS 一致）。
+METHOD_FREQUENCY = "frequency_readout"
+METHOD_FIT = "waveform_fit"
+ALL_METHODS = [METHOD_FREQUENCY, METHOD_FIT]
 
 
 class TimebaseErrorCalibrator(BaseCalibrator):
@@ -94,13 +98,19 @@ class TimebaseErrorCalibrator(BaseCalibrator):
         time.sleep(1.0)
 
         freq_read = self._read_meas_value("meas_freq")
-        rel_error = (freq_std - freq_read) / freq_std
+        freq_selected = self.method_enabled(METHOD_FREQUENCY)
+        rel_error = (freq_std - freq_read) / freq_std if freq_selected else None
 
+        fit_selected = self.method_enabled(METHOD_FIT)
         fit_frequency = None
         rel_error_fit = None
         fit_implied = None
         fit_note = None
-        if self._has_waveform():
+        if not fit_selected:
+            fit_note = "方案未选拟合法"
+        elif not self._has_waveform():
+            fit_note = "机型不支持波形读回"
+        else:
             try:
                 # 记录长度已在采集前固定为 FIT_SAMPLES，复用刚才那次采集的记录
                 wave = self._read_waveform(FIT_SAMPLES, fresh=False)
@@ -121,7 +131,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             except (FitError, ValueError) as exc:
                 fit_note = f"波形拟合法失败: {exc}"
 
-        if fit_note:
+        if fit_note and fit_selected:
             console.print(f"[yellow]⚠ {self._format_time(scale_used)}/div：{fit_note}[/yellow]")
 
         return {
@@ -131,7 +141,9 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             "signal_freq_hz": freq_std,
             "measured_freq_hz": freq_read,
             "rel_error": rel_error,
-            "rel_ppm": rel_error * 1e6,
+            "rel_ppm": None if rel_error is None else rel_error * 1e6,
+            "primary_method": None,
+            "methods_selected": list(self.methods) or list(ALL_METHODS),
             "fit_frequency_hz": fit_frequency,
             "rel_error_fit": rel_error_fit,
             "fit_ppm": None if rel_error_fit is None else rel_error_fit * 1e6,
@@ -158,8 +170,8 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                 {"name": "时基挡位", "justify": "left"},
                 {"name": "信号频率", "justify": "left"},
                 {"name": "测得频率", "justify": "left"},
-                {"name": "相对误差(ppm)"},
-                {"name": "拟合法(ppm)"},
+                {"name": "方法一(ppm)"},
+                {"name": "方法二(ppm)"},
             ],
         )
 
@@ -173,6 +185,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                     if record["rel_error_fit"] is not None
                     else ("不适用" if record["fit_note"] else "—")
                 )
+                freq_text = "不适用" if record["rel_ppm"] is None else f"{record['rel_ppm']:.2f}"
                 self.add_result_row(
                     table,
                     [
@@ -181,7 +194,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
                         self._format_time(record["timebase_s_per_div"]) + "/div",
                         self._format_frequency(record["signal_freq_hz"]),
                         self._format_frequency(record["measured_freq_hz"]),
-                        f"{record['rel_ppm']:.2f}",
+                        freq_text,
                         fit_text,
                     ],
                 )

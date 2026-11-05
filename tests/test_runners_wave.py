@@ -41,7 +41,7 @@ def configs() -> tuple[dict, dict, dict]:
     return (
         _load("tektronix_mdo.json", "commands"),
         _load("fluke_9500b.json", "calibrators"),
-        _load("tektronix_mdo3052.json", "profiles"),
+        _load("tektronix_mdo3052.json", "characteristics"),
     )
 
 
@@ -52,10 +52,18 @@ def no_sleep(monkeypatch):
     monkeypatch.setattr(time_module, "sleep", lambda *_args, **_kwargs: None)
 
 
-def build(cls, configs, points):
-    cmd_osc, cmd_cal, profile = configs
+def build(cls, configs, points, options=None):
+    cmd_osc, cmd_cal, characteristics = configs
     instance = cls(
-        StubInstrument(), StubInstrument(), cmd_osc, cmd_cal, profile, "1", "9530", points
+        StubInstrument(),
+        StubInstrument(),
+        cmd_osc,
+        cmd_cal,
+        characteristics,
+        "1",
+        "9530",
+        points,
+        options,
     )
     instance.init_devices = lambda: None
     instance.setup_channel = lambda: None
@@ -137,6 +145,46 @@ class TestTimebaseOrder:
         record_index = next(i for i, cmd in enumerate(written) if "RECORDLENGTH" in cmd)
         scale_index = next(i for i, cmd in enumerate(written) if "HOR:SCALE" in cmd)
         assert record_index < scale_index
+
+
+class TestTimebaseMethodSelection:
+    """方案只选一种时基方法时，另一方法不得执行，报告列置空并注明。"""
+
+    def _point(self):
+        return [
+            {
+                "channel": "1",
+                "timebase_s_per_div": 1e-4,
+                "period_on_screen_s": 3.33e-4,
+                "signal_freq_hz": 3000.0,
+            }
+        ]
+
+    def test_frequency_only_skips_waveform(self, configs):
+        options = {"methods": ["frequency_readout"]}
+        instance = build(TimebaseErrorCalibrator, configs, self._point(), options)
+        instance._read_meas = lambda key, trigger=True: 3000.0
+        instance._read_waveform = lambda *args, **kwargs: pytest.fail("未选拟合法时不得读波形")
+        instance.run()
+
+        record = instance.results[0]
+        assert record["rel_ppm"] == pytest.approx(0.0, abs=1e-9)
+        assert record["fit_ppm"] is None
+        assert record["fit_note"] == "方案未选拟合法"
+        assert record["methods_selected"] == ["frequency_readout"]
+
+    def test_fit_only_marks_frequency_not_applicable(self, configs):
+        options = {"methods": ["waveform_fit"]}
+        instance = build(TimebaseErrorCalibrator, configs, self._point(), options)
+        instance._read_meas = lambda key, trigger=True: 3000.0
+        instance._read_waveform = lambda samples, fresh=True: sine_wave(3000.0, 1e-6)
+        instance.run()
+
+        record = instance.results[0]
+        assert record["rel_ppm"] is None
+        assert record["rel_error_fit"] is not None
+        assert record["fit_note"] is None
+        assert record["methods_selected"] == ["waveform_fit"]
 
 
 class TestTimebaseError:

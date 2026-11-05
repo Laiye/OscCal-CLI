@@ -37,6 +37,10 @@ SWEEP_SAMPLES = 1000
 SETTLE_SECONDS = 0.6
 #: 零点插值用的小电平（校准仪 1 MΩ 下的最小有效幅度约 1 mV）。
 ZERO_PROBE_V = 0.001
+#: 方案方法键（与 core/methods.py 的 ITEM_METHODS 一致）。
+METHOD_MEAN = "mean_readout"
+METHOD_RAW = "raw_lsq"
+ALL_METHODS = [METHOD_RAW, METHOD_MEAN]
 
 
 class DcOffsetCalibrator(BaseCalibrator):
@@ -125,7 +129,7 @@ class DcOffsetCalibrator(BaseCalibrator):
     def _measure_point(self, point: dict) -> dict:
         scale = float(point["scale"])
         impedance = point.get("impedance", "1M")
-        vertical_div = float(self.profile.get("vertical_div", 8))
+        vertical_div = float(self.characteristics.get("vertical_div", 8))
         full_scale = scale * vertical_div
         offset_nominal = OFFSET_DIV * scale
 
@@ -138,45 +142,78 @@ class DcOffsetCalibrator(BaseCalibrator):
         if "set_record_length" in self.cmd_osc.get("actions", {}):
             self._write_osc("set_record_length", SWEEP_SAMPLES)
 
-        # 零点：d₀ = 0 时原始码值拟合出的截距即零点误差
-        self._set_offset(0.0)
-        gain_zero, intercept_zero = self._sweep(scale)
-        zero_reading = -intercept_zero
+        # 方法二（原始码值拟合）：先零点、再偏置 d₀，各扫一遍。
+        raw_selected = self.method_enabled(METHOD_RAW)
+        gain_zero = intercept_zero = zero_reading = None
+        gain_offset = intercept_offset = offset_measured = None
+        offset_error = gain_d = None
+        if raw_selected:
+            # 零点：d₀ = 0 时原始码值拟合出的截距即零点误差
+            self._set_offset(0.0)
+            gain_zero, intercept_zero = self._sweep(scale)
+            zero_reading = -intercept_zero
 
-        # 偏置：d₀ ≠ 0 时截距 = −(d₀ + ε)
-        self._set_offset(offset_nominal)
-        gain_offset, intercept_offset = self._sweep(scale)
-        offset_measured = -intercept_offset
-        offset_error = offset_measured - offset_nominal
-        gain_d = offset_measured / offset_nominal if offset_nominal else float("nan")
+            # 偏置：d₀ ≠ 0 时截距 = −(d₀ + ε)
+            self._set_offset(offset_nominal)
+            gain_offset, intercept_offset = self._sweep(scale)
+            offset_measured = -intercept_offset
+            offset_error = offset_measured - offset_nominal
+            gain_d = offset_measured / offset_nominal if offset_nominal else float("nan")
 
-        zero_m1, measured_m1, error_m1, gain_m1 = self._method_one(scale)
+        # 方法一（平均值读数）：与原始码值法并列，可选。
+        mean_selected = self.method_enabled(METHOD_MEAN)
+        zero_m1 = measured_m1 = error_m1 = gain_m1 = None
+        if mean_selected:
+            zero_m1, measured_m1, error_m1, gain_m1 = self._method_one(scale)
+
+        primary = self.primary_method or METHOD_RAW
+        primary_zero = zero_reading if primary == METHOD_RAW else zero_m1
+        primary_nominal = offset_nominal
+        primary_measured = offset_measured if primary == METHOD_RAW else measured_m1
+        primary_error = offset_error if primary == METHOD_RAW else error_m1
+        primary_gain = gain_d if primary == METHOD_RAW else gain_m1
+        selected = list(self.methods) or list(ALL_METHODS)
 
         return {
             "channel": self.channel,
             "impedance": impedance,
             "scale": scale,
             "full_scale_v": full_scale,
-            "zero_reading_v": zero_reading,
-            "offset_nominal_v": offset_nominal,
-            "offset_measured_v": offset_measured,
-            "offset_error_v": offset_error,
-            "error_pct": 100.0 * offset_error / full_scale if full_scale else float("nan"),
-            "gain": gain_d,
+            "zero_reading_v": primary_zero,
+            "offset_nominal_v": primary_nominal,
+            "offset_measured_v": primary_measured,
+            "offset_error_v": primary_error,
+            "error_pct": (
+                None
+                if primary_error is None or not full_scale
+                else 100.0 * primary_error / full_scale
+            ),
+            "gain": primary_gain,
+            "primary_method": primary,
+            "methods_selected": selected,
             "dc_gain_zero": gain_zero,
             "dc_gain_offset": gain_offset,
             "zero_reading_v_m1": zero_m1,
-            "offset_nominal_v_m1": OFFSET_DIV * scale,
+            "offset_nominal_v_m1": offset_nominal if mean_selected else None,
             "offset_measured_v_m1": measured_m1,
             "offset_error_v_m1": error_m1,
-            "error_m1_pct": 100.0 * error_m1 / full_scale if full_scale else float("nan"),
+            "error_m1_pct": (
+                None if error_m1 is None or not full_scale else 100.0 * error_m1 / full_scale
+            ),
             "gain_m1": gain_m1,
             "method1_note": (
                 "方法一按 7.5.1 用平均值读数、激励取同号 d0（规范原文为 -d0，"
                 "实际会把波形推出屏幕）；MDO 的 MEAN 带偏置补偿，方法一只剩残差，"
                 "与原始码值方法的结果不可直接相加"
+                if mean_selected
+                else None
             ),
         }
+
+    @staticmethod
+    def _fmt(value: float | None, fmt: str, scale: float = 1.0) -> str:
+        """按格式输出；方案未选的方法没有读数，显示为破折号。"""
+        return "—" if value is None else format(value * scale, fmt)
 
     @ensure_output_off
     def run(self):
@@ -196,14 +233,14 @@ class DcOffsetCalibrator(BaseCalibrator):
                 {"name": "通道", "justify": "center"},
                 {"name": "阻抗", "justify": "center"},
                 {"name": "挡位(V/div)"},
-                {"name": "零点(mV)"},
-                {"name": "d₀(V)"},
-                {"name": "d_r(V)"},
+                {"name": "方法一 零点(mV)"},
+                {"name": "方法一 d₀(V)"},
+                {"name": "方法一 d_r(V)"},
                 {"name": "方法一 Δd(mV)"},
                 {"name": "方法一 G"},
-                {"name": "d_c(V)"},
-                {"name": "方法二 Δd(mV)"},
-                {"name": "方法二 G"},
+                {"name": "主方法 d_c(V)"},
+                {"name": "主方法 Δd(mV)"},
+                {"name": "主方法 G"},
             ],
         )
 
@@ -219,14 +256,14 @@ class DcOffsetCalibrator(BaseCalibrator):
                         f"CH{self.channel}",
                         "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                         f"{record['scale']:g}",
-                        f"{record['zero_reading_v_m1'] * 1e3:+.2f}",
-                        f"{record['offset_nominal_v_m1']:.4g}",
-                        f"{record['offset_measured_v_m1']:.5f}",
-                        f"{record['offset_error_v_m1'] * 1e3:+.2f}",
-                        f"{record['gain_m1']:.4f}",
-                        f"{record['offset_measured_v']:.5f}",
-                        f"{record['offset_error_v'] * 1e3:+.2f}",
-                        f"{record['gain']:.4f}",
+                        self._fmt(record["zero_reading_v_m1"], "+.2f", 1e3),
+                        self._fmt(record["offset_nominal_v_m1"], ".4g"),
+                        self._fmt(record["offset_measured_v_m1"], ".5f"),
+                        self._fmt(record["offset_error_v_m1"], "+.2f", 1e3),
+                        self._fmt(record["gain_m1"], ".4f"),
+                        self._fmt(record["offset_measured_v"], ".5f"),
+                        self._fmt(record["offset_error_v"], "+.2f", 1e3),
+                        self._fmt(record["gain"], ".4f"),
                     ],
                 )
                 progress.update(task, advance=1)

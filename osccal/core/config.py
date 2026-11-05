@@ -7,11 +7,18 @@ from rich.console import Console
 
 from osccal.core.config_validation import (
     validate_calibrator,
+    validate_characteristics,
     validate_commands,
-    validate_profile,
+    validate_scheme,
     validate_spec,
 )
-from osccal.core.types import CalibratorConfig, CommandConfig, ProfileConfig, SpecConfig
+from osccal.core.types import (
+    CalibratorConfig,
+    CharacteristicsConfig,
+    CommandConfig,
+    SchemeConfig,
+    SpecConfig,
+)
 
 console = Console()
 
@@ -78,13 +85,24 @@ def load_commands(filepath: str) -> CommandConfig:
     return cast(CommandConfig, data)
 
 
-def load_profile(filepath: str) -> ProfileConfig:
-    data = _load_json(filepath, validator=validate_profile, label="特征")
+def load_characteristics(filepath: str) -> CharacteristicsConfig:
+    data = _load_json(filepath, validator=validate_characteristics, label="特征")
     if data:
         factor = data.get("factor", "unknown")
         series = data.get("series", "unknown")
         console.print(f"  特征配置: [yellow]{factor} {series}[/yellow]")
-    return cast(ProfileConfig, data)
+    return cast(CharacteristicsConfig, data)
+
+
+def load_scheme(filepath: str) -> SchemeConfig:
+    data = _load_json(filepath, validator=validate_scheme, label="校准方案")
+    if data:
+        name = data.get("name", "unknown")
+        spec = data.get("spec", "")
+        count = len(data.get("items", {}))
+        suffix = f" | 规范: {spec}" if spec else ""
+        console.print(f"  校准方案: [yellow]{name}[/yellow] | 项目: {count}{suffix}")
+    return cast(SchemeConfig, data)
 
 
 def load_calibrator(filepath: str) -> CalibratorConfig:
@@ -106,14 +124,14 @@ def load_spec(filepath: str) -> SpecConfig:
     return cast(SpecConfig, data)
 
 
-def resolve_spec_path(specs_dir: str, name_or_path: str | None) -> str | None:
-    """把 --spec 的取值解析为规范配置文件路径：支持名称（可省 .json）或直接给路径。"""
+def resolve_config_path(directory: str, name_or_path: str | None) -> str | None:
+    """把配置名（可省 .json）或直接路径解析为配置文件路径。"""
     if not name_or_path:
         return None
     if os.path.isfile(name_or_path):
         return name_or_path
     for candidate in (name_or_path, f"{name_or_path}.json"):
-        path = os.path.join(specs_dir, candidate)
+        path = os.path.join(directory, candidate)
         if os.path.isfile(path):
             return path
     return None

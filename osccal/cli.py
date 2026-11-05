@@ -11,10 +11,11 @@ from osccal import __version__
 from osccal.core.config import (
     list_config_files,
     load_calibrator,
+    load_characteristics,
     load_commands,
-    load_profile,
+    load_scheme,
     load_spec,
-    resolve_spec_path,
+    resolve_config_path,
 )
 from osccal.core.connect import (
     close_all_connections,
@@ -109,14 +110,15 @@ def _pick_channel(channel_arg: str | None, max_channels: int = 4) -> str:
     return _select_channel(max_channels)
 
 
-def _select_items() -> str:
-    """交互式选择校准项目：项目集与顺序来自 registry，界面不再硬编码。"""
+def _select_items(available: list[str]) -> str:
+    """交互式选择校准项目：只列方案实际列入的项目，顺序来自 registry。"""
     from osccal.measure.registry import CALIBRATION_ITEMS
 
     console.print("\n[bold]选择校准项目:[/bold]")
     console.print("  [0] 全部项目")
     presets = {"0": "all"}
-    for index, item in enumerate(CALIBRATION_ITEMS, start=1):
+    selected = [item for item in CALIBRATION_ITEMS if item["name"] in available]
+    for index, item in enumerate(selected, start=1):
         console.print(f"  [{index}] {item['title']}（{item['clause']}）")
         presets[str(index)] = item["name"]
     console.print("  也可输入序号多选(逗号分隔)，如: 1,3")
@@ -157,20 +159,20 @@ def _load_commands_config(commands_dir: str, path: str | None = None):
     return load_commands(fpath), fpath
 
 
-def _load_profile_config(profiles_dir: str, path: str | None = None):
-    """加载示波器特征配置：指定路径或交互选择。返回 (配置, 文件路径)。"""
+def _load_characteristics_config(characteristics_dir: str, path: str | None = None):
+    """加载仪器特征配置：指定路径或交互选择。返回 (配置, 文件路径)。"""
     if path:
-        return load_profile(path), path
-    files = list_config_files(profiles_dir)
+        return load_characteristics(path), path
+    files = list_config_files(characteristics_dir)
     if not files:
-        console.print("[red]✗[/red] 未找到示波器特征文件")
+        console.print("[red]✗[/red] 未找到仪器特征文件")
         return {}, ""
-    console.print("\n[bold]选择示波器特征配置:[/bold]")
+    console.print("\n[bold]选择仪器特征配置:[/bold]")
     for i, f in enumerate(files):
         console.print(f"  [{i}] {f}")
     choice = _select_index(len(files))
-    fpath = os.path.join(profiles_dir, files[choice])
-    return load_profile(fpath), fpath
+    fpath = os.path.join(characteristics_dir, files[choice])
+    return load_characteristics(fpath), fpath
 
 
 # ── 连接辅助 ─────────────────────────────────────────────────────────────
@@ -297,13 +299,18 @@ def cli():
 
 @cli.command(cls=CalibrationCommand)
 @click.option("--osc", type=click.Path(exists=True), help="示波器指令集配置文件路径")
-@click.option("--profile", type=click.Path(exists=True), help="示波器特征配置文件路径")
 @click.option(
-    "--spec",
+    "--characteristics",
+    type=click.STRING,
+    default=None,
+    help="仪器特征：characteristics/ 下的名称（可省 .json）或文件路径",
+)
+@click.option(
+    "--scheme",
     type=click.STRING,
     default="jjf1057_2026",
     show_default=True,
-    help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
+    help="校准方案：schemes/ 下的名称（可省 .json）或文件路径",
 )
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
 @click.option("--channel", type=click.STRING, default=None, help="校准通道，逗号分隔（如 1,2）")
@@ -321,8 +328,8 @@ def cli():
 @click.option("--log-scpi", is_flag=True, help="打印完整 SCPI 指令日志与失败统计")
 def calibrate(
     osc,
-    profile,
-    spec,
+    characteristics,
+    scheme,
     calibrator,
     channel,
     probe,
@@ -336,7 +343,12 @@ def calibrate(
     """执行示波器校准流程"""
     from osccal.core import scpi_trace
     from osccal.core.config_validation import validate_device_identity
-    from osccal.core.storage import CalibrationRecording, configuration_snapshot, spec_record
+    from osccal.core.storage import (
+        CalibrationRecording,
+        configuration_snapshot,
+        scheme_record,
+        spec_record,
+    )
 
     scpi_trace.reset()
     scpi_trace.set_log_enabled(log_scpi)
@@ -346,13 +358,21 @@ def calibrate(
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = base_dir
     commands_dir = os.path.join(project_dir, "commands")
-    profiles_dir = os.path.join(project_dir, "profiles")
+    characteristics_dir = os.path.join(project_dir, "characteristics")
     calibrators_dir = os.path.join(project_dir, "calibrators")
     specs_dir = os.path.join(project_dir, "specs")
+    schemes_dir = os.path.join(project_dir, "schemes")
 
-    spec_filepath = resolve_spec_path(specs_dir, spec)
+    scheme_filepath = resolve_config_path(schemes_dir, scheme)
+    if scheme_filepath is None:
+        raise click.BadParameter(f"找不到方案配置文件: {scheme}", param_hint="--scheme")
+    scheme_data = load_scheme(scheme_filepath)
+    if not scheme_data:
+        raise click.UsageError("校准方案配置校验失败，已中止")
+    spec_name = scheme_data.get("spec", "")
+    spec_filepath = resolve_config_path(specs_dir, spec_name)
     if spec_filepath is None:
-        raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
+        raise click.UsageError(f"校准方案 {scheme} 引用的规范不存在: {spec_name}")
     spec_data = load_spec(spec_filepath)
     if not spec_data:
         raise click.UsageError("校准规范配置校验失败，已中止")
@@ -361,8 +381,10 @@ def calibrate(
             f"[bold]{spec_data.get('spec_code', '')}[/bold]"
             f"　实施: {spec_data.get('effective', '未注明')}"
             f"　复校间隔: {spec_data.get('recall_interval_months', '未注明')} 个月"
-            f"　偏离声明: {len(spec_data.get('deviations', []))} 条",
-            title="校准规范",
+            f"　偏离声明: {len(spec_data.get('deviations', []))} 条\n"
+            f"方案: [bold]{scheme_data.get('name', '')}[/bold]"
+            f"　项目: {len(scheme_data.get('items', {}))}",
+            title="校准规范与方案",
             expand=False,
         )
     )
@@ -449,12 +471,12 @@ def calibrate(
                 f"[green]✓[/green] 示波器: [cyan]{osc_device[0]}[/cyan] → {osc_device[1].get('manufacturer', '?')} {osc_device[1].get('model', '?')}"
             )
 
-            # 匹配示波器指令集和特征配置
-            cmd_osc, profile_data, cmd_filepath, profile_filepath = detect_configs(
-                commands_dir, profiles_dir, osc_device[1]
+            # 匹配示波器指令集和仪器特征
+            cmd_osc, characteristics_data, cmd_filepath, characteristics_filepath = detect_configs(
+                commands_dir, characteristics_dir, osc_device[1]
             )
 
-            if not cmd_osc or not profile_data:
+            if not cmd_osc or not characteristics_data:
                 raise click.UsageError("✗ 自动匹配配置失败")
 
             # 校准仪配置（--calibrator 优先，否则自动加载首个）
@@ -481,7 +503,7 @@ def calibrate(
                 osc_device[1],
                 cal_device[1],
                 cmd_filepath,
-                profile_filepath,
+                characteristics_filepath,
                 cal_filepath,
                 probe,
             )
@@ -507,11 +529,20 @@ def calibrate(
             if not cmd_osc:
                 raise click.UsageError("✗ 加载示波器指令集失败")
 
-            profile_data, profile_filepath = _load_profile_config(profiles_dir, profile)
-            if not profile_data:
-                raise click.UsageError("✗ 加载示波器特征配置失败")
+            characteristics_path = None
+            if characteristics:
+                characteristics_path = resolve_config_path(characteristics_dir, characteristics)
+                if characteristics_path is None:
+                    raise click.BadParameter(
+                        f"找不到特征文件: {characteristics}", param_hint="--characteristics"
+                    )
+            characteristics_data, characteristics_filepath = _load_characteristics_config(
+                characteristics_dir, characteristics_path
+            )
+            if not characteristics_data:
+                raise click.UsageError("✗ 加载仪器特征配置失败")
 
-            channel = _pick_channel(channel, profile_data.get("channels", 4))
+            channel = _pick_channel(channel, characteristics_data.get("channels", 4))
 
             console.print("\n[bold]连接设备...[/bold]")
             resources = _list_resources_safely()
@@ -531,30 +562,11 @@ def calibrate(
         while True:
             # 通道选择
             if channel is None:
-                channel = _select_channel(profile_data.get("channels", 2))
+                channel = _select_channel(characteristics_data.get("channels", 2))
             channel_list = [c.strip() for c in channel.split(",") if c.strip()]
 
-            # 项目选择
-            if items is None:
-                items = _select_items()
-            requested = [i.strip() for i in items.split(",") if i.strip()]
-            requested_all = "all" in requested
-            item_list = (
-                [name for name in ITEM_ORDER if name in RUNNERS] if requested_all else requested
-            )
-            if not item_list:
-                available = "、".join(sorted(RUNNERS)) or "无"
-                raise click.UsageError(f"没有可执行的项目（当前已实现: {available}）")
-
-            unimplemented = [name for name in item_list if name not in RUNNERS]
-            if unimplemented:
-                available = "、".join(sorted(RUNNERS)) or "无"
-                raise click.UsageError(
-                    "以下项目尚未实现: " + "、".join(unimplemented) + f"\n当前已实现: {available}"
-                )
-
             errors = validate_device_identity(cmd_osc, idn_osc, "示波器指令集")
-            errors.extend(validate_device_identity(profile_data, idn_osc, "示波器 Profile"))
+            errors.extend(validate_device_identity(characteristics_data, idn_osc, "示波器特征"))
             errors.extend(validate_device_identity(cmd_calibrator, idn_cal, "校准仪"))
             if inst_osc is inst_calibrator or (
                 resource_cal and resource_osc and resource_cal.upper() == resource_osc.upper()
@@ -563,31 +575,54 @@ def calibrate(
             if errors:
                 raise click.UsageError("执行前检查失败：\n" + "\n".join(errors))
 
-            # 按规范解析本轮实际要跑的点（每个通道一份），并提示被跳过的点。
-            points_by_channel: dict[str, dict[str, list]] = {}
+            # 按方案解析本轮实际要跑的点（每个通道一份），并提示被跳过的点。
+            plans_by_channel: dict[str, dict[str, dict]] = {}
             skipped_notes: list[dict] = []
             planned_items: set[str] = set()
             for ch in channel_list:
-                plan = build_plan(spec_data, profile_data, cmd_calibrator, probe, [ch])
-                planned_items = {item["name"] for item in plan["items"]}
-                points_by_channel[ch] = {item["name"]: item["points"] for item in plan["items"]}
-                for item in plan["items"]:
-                    if item["name"] not in item_list:
-                        continue
-                    for skip in item["skipped"]:
-                        skipped_notes.append(
-                            {"item": item["title"], "reason": skip.get("reason", "")}
-                        )
+                plan = build_plan(
+                    spec_data, scheme_data, characteristics_data, cmd_calibrator, probe, [ch]
+                )
+                planned = {
+                    item["name"]: item for item in plan["items"] if item["status"] == "planned"
+                }
+                plans_by_channel[ch] = planned
+                planned_items.update(planned)
             if not planned_items:
-                raise click.UsageError("校准规范未解析出任何校准项目，请检查 --spec")
-            if requested_all:
-                # all = 规范里所有已实现的项目；规范未覆盖的项目不报错、只不执行
-                item_list = [name for name in item_list if name in planned_items]
-                if not item_list:
-                    raise click.UsageError("所选规范未包含任何已实现项目，请检查 --spec")
+                raise click.UsageError("校准方案未解析出任何校准项目，请检查 --scheme")
+            available_items = [name for name in ITEM_ORDER if name in planned_items]
+
+            # 项目选择
+            if items is None:
+                items = _select_items(available_items)
+            requested = [i.strip() for i in items.split(",") if i.strip()]
+            requested_all = "all" in requested
+            item_list = available_items if requested_all else requested
+            if not item_list:
+                available = "、".join(sorted(available_items)) or "无"
+                raise click.UsageError(f"没有可执行的项目（当前方案: {available}）")
+
+            unimplemented = [name for name in item_list if name not in RUNNERS]
+            if unimplemented:
+                available = "、".join(sorted(RUNNERS)) or "无"
+                raise click.UsageError(
+                    "以下项目尚未实现: " + "、".join(unimplemented) + f"\n当前已实现: {available}"
+                )
+
             missing_items = [name for name in item_list if name not in planned_items]
             if missing_items:
-                raise click.UsageError("以下项目不在所选规范中: " + "、".join(missing_items))
+                raise click.UsageError("以下项目不在所选方案中: " + "、".join(missing_items))
+
+            seen_skips: set[tuple[str, str]] = set()
+            for planned in plans_by_channel.values():
+                for name in item_list:
+                    item = planned[name]
+                    for skip in item["skipped"]:
+                        key = (item["title"], str(skip.get("reason", "")))
+                        if key in seen_skips:
+                            continue
+                        seen_skips.add(key)
+                        skipped_notes.append({"item": item["title"], "reason": key[1]})
             for note in skipped_notes:
                 console.print(f"[yellow]·[/yellow] {note['item']} 跳过：{note['reason']}")
 
@@ -598,14 +633,19 @@ def calibrate(
                 "oscilloscope": idn_osc if isinstance(idn_osc, dict) else {},
                 "calibrator": idn_cal if isinstance(idn_cal, dict) else {},
                 "commands_file": os.path.basename(cmd_filepath) if cmd_filepath else "",
-                "profile_file": os.path.basename(profile_filepath) if profile_filepath else "",
+                "characteristics_file": (
+                    os.path.basename(characteristics_filepath) if characteristics_filepath else ""
+                ),
                 "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
                 "limits": spec_data.get("reference_limits", {}),
                 "spec": spec_record(spec_data, spec_filepath),
-                "bandwidth_hz": profile_data.get("bandwidth_hz", 0),
+                "scheme": scheme_record(scheme_data, scheme_filepath),
+                "bandwidth_hz": characteristics_data.get("bandwidth_hz", 0),
                 "points_plan": {
-                    ch: {name: len(points) for name, points in items_map.items()}
-                    for ch, items_map in points_by_channel.items()
+                    ch: {
+                        name: len(planned[name]["points"]) for name in item_list if name in planned
+                    }
+                    for ch, planned in plans_by_channel.items()
                 },
                 "skipped_points": skipped_notes,
                 "status": "in_progress",
@@ -614,8 +654,9 @@ def calibrate(
                 "failures": {},
                 "configurations": {
                     "commands": configuration_snapshot(cmd_osc),
-                    "profile": configuration_snapshot(profile_data),
+                    "characteristics": configuration_snapshot(characteristics_data),
                     "calibrator": configuration_snapshot(cmd_calibrator),
+                    "scheme": configuration_snapshot(scheme_data),
                 },
             }
             recording = CalibrationRecording(metadata, round_start_errors)
@@ -638,11 +679,11 @@ def calibrate(
                         inst_calibrator,
                         cmd_osc,
                         cmd_calibrator,
-                        profile_data,
+                        characteristics_data,
                         ch,
                         probe,
                         item_list,
-                        points_by_channel.get(ch, {}),
+                        item_plans=plans_by_channel.get(ch, {}),
                         on_result=record_result,
                     )
                 metadata["status"] = (
@@ -688,71 +729,101 @@ def calibrate(
 
 @cli.command()
 @click.option(
-    "--spec",
+    "--scheme",
     type=click.STRING,
     default="jjf1057_2026",
-    help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
+    show_default=True,
+    help="校准方案：schemes/ 下的名称（可省 .json）或文件路径",
 )
 @click.option(
-    "--profile",
+    "--characteristics",
     type=click.STRING,
     default="tektronix_mdo3052",
     show_default=True,
-    help="示波器 Profile：profiles/ 下的名称（可省 .json）或文件路径",
+    help="仪器特征：characteristics/ 下的名称（可省 .json）或文件路径",
 )
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置路径")
 @click.option("--probe", type=click.STRING, default="9530", help="校准仪探头型号")
 @click.option("--channel", type=click.STRING, default="1,2", help="通道，逗号分隔（如 1,2）")
 @click.option("--json", "json_out", type=click.Path(), default=None, help="同时写出计划 JSON")
-def plan(spec, profile, calibrator, probe, channel, json_out):
+def plan(scheme, characteristics, calibrator, probe, channel, json_out):
     """只解析校准点表，不连接任何仪器。"""
     import json
 
-    from osccal.core.points import STRATEGY_DESCRIPTIONS, build_plan
+    from osccal.core.methods import describe_methods_short
+    from osccal.core.points import STRATEGY_LABELS, build_plan
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     specs_dir = os.path.join(base_dir, "specs")
-    profiles_dir = os.path.join(base_dir, "profiles")
+    schemes_dir = os.path.join(base_dir, "schemes")
+    characteristics_dir = os.path.join(base_dir, "characteristics")
     calibrators_dir = os.path.join(base_dir, "calibrators")
 
     console.print(Panel("[bold blue]校准点表解析[/bold blue]（离线，不连接仪器）", expand=False))
 
-    spec_path = resolve_spec_path(specs_dir, spec)
+    scheme_path = resolve_config_path(schemes_dir, scheme)
+    if scheme_path is None:
+        raise click.BadParameter(f"找不到方案配置文件: {scheme}", param_hint="--scheme")
+    scheme_data = load_scheme(scheme_path)
+    if not scheme_data:
+        raise click.UsageError("校准方案配置校验失败，已中止")
+
+    spec_name = scheme_data.get("spec", "")
+    spec_path = resolve_config_path(specs_dir, spec_name)
     if spec_path is None:
-        raise click.BadParameter(f"找不到规范配置文件: {spec}", param_hint="--spec")
+        raise click.UsageError(f"校准方案 {scheme} 引用的规范不存在: {spec_name}")
     spec_data = load_spec(spec_path)
     if not spec_data:
         raise click.UsageError("校准规范配置校验失败，已中止")
 
-    profile_path = resolve_spec_path(profiles_dir, profile)
-    if profile_path is None:
-        raise click.BadParameter(f"找不到 Profile 文件: {profile}", param_hint="--profile")
+    characteristics_path = resolve_config_path(characteristics_dir, characteristics)
+    if characteristics_path is None:
+        raise click.BadParameter(
+            f"找不到特征文件: {characteristics}", param_hint="--characteristics"
+        )
     calibrator_path = calibrator or _first_config(calibrators_dir, "校准仪")
     if calibrator_path is None:
         raise click.UsageError("缺少校准仪配置")
 
-    profile_data = load_profile(profile_path)
+    characteristics_data = load_characteristics(characteristics_path)
     calibrator_data = load_calibrator(calibrator_path)
-    if not profile_data or not calibrator_data:
-        raise click.UsageError("Profile 或校准仪配置加载失败")
+    if not characteristics_data or not calibrator_data:
+        raise click.UsageError("特征或校准仪配置加载失败")
 
     channels = [c.strip() for c in channel.split(",") if c.strip()]
-    plan_data = build_plan(spec_data, profile_data, calibrator_data, probe, channels)
+    plan_data = build_plan(
+        spec_data, scheme_data, characteristics_data, calibrator_data, probe, channels
+    )
 
-    table = Table(title=f"校准点表　{plan_data['spec_code']}　{plan_data['profile_series']}")
-    table.add_column("条款")
-    table.add_column("校准项目")
-    table.add_column("取点策略")
-    table.add_column("点数", justify="right")
-    table.add_column("跳过", justify="right")
+    table = Table(
+        title=(
+            f"校准点表　{plan_data['spec_code']}　"
+            f"{plan_data['characteristics_series']}　{plan_data['scheme_name']}"
+        )
+    )
+    table.add_column("条款", min_width=6)
+    table.add_column("校准项目", min_width=12)
+    table.add_column("方法", min_width=15)
+    table.add_column("取点策略", min_width=9)
+    table.add_column("点数", justify="right", min_width=3)
+    table.add_column("跳过", justify="right", min_width=3)
     for item in plan_data["items"]:
-        strategy = item["strategy"] or "人工"
+        strategy = item["strategy"]
+        clause_text = item["clause"].split(" / ")[0]
+        if item["status"] == "manual":
+            strategy_text = "人工"
+            methods_text = "—"
+        elif item["status"] == "not_in_scheme":
+            strategy_text = "方案未列入"
+            methods_text = "—"
+        else:
+            strategy_text = STRATEGY_LABELS.get(strategy, strategy or "—")
+            methods_text = describe_methods_short(item["name"], item["methods"], item["primary"])
         table.add_row(
-            item["clause"],
+            clause_text,
             item["title"],
-            f"{strategy}（{STRATEGY_DESCRIPTIONS.get(strategy, '')}）"
-            if item["strategy"]
-            else "人工",
+            methods_text,
+            strategy_text,
             str(len(item["points"])),
             str(len(item["skipped"])),
         )
@@ -763,6 +834,8 @@ def plan(spec, profile, calibrator, probe, channel, json_out):
     )
 
     for item in plan_data["items"]:
+        if item["status"] != "planned":
+            continue
         for skip in item["skipped"]:
             detail = " ".join(f"{k}={v}" for k, v in skip.items() if k != "reason")
             console.print(
@@ -946,6 +1019,9 @@ def _display_calibration_data(data: dict):
         info_table.add_row(f"失败项目 {name}", failure.get("message", ""))
     info_table.add_row("通道", f"CH{metadata.get('channel', '')}")
     info_table.add_row("探头", metadata.get("probe", ""))
+    characteristics_file = metadata.get("characteristics_file") or metadata.get("profile_file")
+    if characteristics_file:
+        info_table.add_row("特征配置", characteristics_file)
 
     osc = metadata.get("oscilloscope", {})
     info_table.add_row("示波器", f"{osc.get('manufacturer', '')} {osc.get('model', '')}")
@@ -1020,6 +1096,12 @@ def _display_calibration_data(data: dict):
             f"[dim]依据规范：{spec.get('name', '')}（{spec.get('spec_code', '')}），"
             f"配置文件 {spec.get('file', '')}[/dim]"
         )
+    scheme = metadata.get("scheme") or {}
+    if scheme:
+        console.print(
+            f"[dim]依据方案：{scheme.get('name', '')}，配置文件 {scheme.get('file', '')}[/dim]"
+        )
+    if spec:
         for deviation in spec.get("deviations", []):
             console.print(f"[dim]偏离声明：{deviation}[/dim]")
 

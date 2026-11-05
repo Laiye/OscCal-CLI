@@ -39,7 +39,7 @@ def _calibrator(channel: str = "2") -> BaseCalibrator:
         StubInstrument(),
         _load("commands/tektronix_mdo.json"),
         _load("calibrators/fluke_9500b.json"),
-        _load("profiles/tektronix_mdo3052.json"),
+        _load("characteristics/tektronix_mdo3052.json"),
         channel,
         "9530",
     )
