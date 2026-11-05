@@ -256,3 +256,33 @@ class TestShow:
         result = CliRunner().invoke(cli, ["show", "--file", str(path)])
         assert result.exit_code == 0, result.output
         assert "未知校准项目" in result.output
+
+    def test_skipped_points_visible_in_show_and_excel(self, tmp_path):
+        from osccal.core.export import export_to_excel
+
+        metadata = _metadata()
+        metadata["skipped_points"] = [{"item": "直流增益", "reason": "标准值超出 50 Ω 上限"}]
+        data = {"metadata": metadata, "results": _results()}
+        path = tmp_path / "skipped.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+        shown = CliRunner().invoke(cli, ["show", "--file", str(path)])
+        assert shown.exit_code == 0, shown.output
+        assert "跳过的校准点" in shown.output
+        assert "标准值超出 50 Ω 上限" in shown.output
+
+        output = tmp_path / "skipped.xlsx"
+        export_to_excel(data, str(output))
+        wb = load_workbook(output)
+        try:
+            text = " ".join(
+                str(cell.value)
+                for ws in wb.worksheets
+                for row in ws.iter_rows()
+                for cell in row
+                if cell.value is not None
+            )
+        finally:
+            wb.close()
+        assert "跳过点 1" in text
+        assert "标准值超出 50 Ω 上限" in text

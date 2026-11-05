@@ -75,7 +75,6 @@ ITEM_CONFIGS = {
             "error_pct",
             "tolerance_pct",
         ],
-        "error_col": 6,
         "precision": ITEM_PRECISION["input_impedance"],
         "reference": "50 Ω ±1%，1 MΩ ±0.5%",
     },
@@ -111,7 +110,6 @@ ITEM_CONFIGS = {
             "error_m3_pct",
             "intercept_m3_v",
         ],
-        "error_col": 7,
         "precision": ITEM_PRECISION["dc_gain"],
         "reference": "最大允许误差 ±1%",
     },
@@ -145,7 +143,6 @@ ITEM_CONFIGS = {
             "offset_error_v_m1",
             "gain_m1",
         ],
-        "error_col": 8,
         "precision": ITEM_PRECISION["dc_offset"],
         "reference": "最大允许误差 ±(1%×满量程)",
     },
@@ -153,7 +150,6 @@ ITEM_CONFIGS = {
         "title": "A.5 频率响应、频带宽度",
         "columns": ["序号", "通道", "频率(Hz)", "幅值(Vpp)", "相对响应 G", "备注"],
         "keys": ["index", "channel", "frequency_hz", "amplitude_vpp", "response", "note"],
-        "error_col": None,
         "precision": ITEM_PRECISION["freq_response_bandwidth"],
         "reference": "带内幅度波动 ±3 dB 以内；半功率点 0.707",
         "filter_key": "summary",
@@ -180,7 +176,6 @@ ITEM_CONFIGS = {
             "enob",
             "note",
         ],
-        "error_col": None,
         "precision": ITEM_PRECISION["enob"],
         "reference": "12 bits",
     },
@@ -195,7 +190,6 @@ ITEM_CONFIGS = {
             "overshoot_pct",
             "amplitude_vpp",
         ],
-        "error_col": None,
         "precision": ITEM_PRECISION["rise_time"],
         "reference": "规范仅规定可测下限 >10 ps",
     },
@@ -219,7 +213,6 @@ ITEM_CONFIGS = {
             "rel_ppm",
             "fit_ppm",
         ],
-        "error_col": None,
         "precision": ITEM_PRECISION["timebase_error"],
         "reference": "最大允许误差 ±1×10⁻⁶ ~ ±5×10⁻⁹",
     },
@@ -243,7 +236,6 @@ ITEM_CONFIGS = {
             "measured_vpp",
             "error_pct",
         ],
-        "error_col": 6,
         "precision": ITEM_PRECISION["delta_v"],
         "reference": "最大允许误差 ±(1%×读值±1 个量化阶梯)",
     },
@@ -267,7 +259,6 @@ ITEM_CONFIGS = {
             "time_measured_s",
             "error_pct",
         ],
-        "error_col": 6,
         "precision": ITEM_PRECISION["delta_t"],
         "reference": "最大允许误差 ±(0.2%×读值+1 个量化间隔)",
     },
@@ -291,7 +282,6 @@ ITEM_CONFIGS = {
             "noise_v",
             "error_pct",
         ],
-        "error_col": None,
         "precision": ITEM_PRECISION["random_noise"],
         "reference": "±(0.1%×满量程)",
     },
@@ -302,7 +292,6 @@ EXCEL_ITEM_CONFIGS = {
         "title": config["title"],
         "headers": config["columns"],
         "keys": config["keys"],
-        "error_col": config["error_col"],
         "precision": config["precision"],
         "reference": config["reference"],
         "filter_key": config.get("filter_key"),
@@ -399,6 +388,11 @@ def reference_text(name: str, limits: dict | None) -> str:
         return fallback if value is None else f"±{value:g}%×满量程"
 
     return fallback
+
+
+def base_item_name(result_key: str) -> str:
+    """把多通道结果键 `<item>_ch<N>` 还原为项目名。"""
+    return result_key.split("_ch")[0]
 
 
 def row_values(config: dict, row: dict) -> list:

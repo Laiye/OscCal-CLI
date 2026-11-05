@@ -306,7 +306,7 @@ def cli():
     help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
 )
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置文件路径")
-@click.option("--channel", type=click.STRING, default=None, help="校准通道，逗号分隔 (1,2,3,4)")
+@click.option("--channel", type=click.STRING, default=None, help="校准通道，逗号分隔（如 1,2）")
 @click.option("--probe", type=click.STRING, default=None, help="校准仪探头型号 (9560/9550/9530)")
 @click.option(
     "--items",
@@ -600,7 +600,6 @@ def calibrate(
                 "commands_file": os.path.basename(cmd_filepath) if cmd_filepath else "",
                 "profile_file": os.path.basename(profile_filepath) if profile_filepath else "",
                 "calibrator_file": os.path.basename(cal_filepath) if cal_filepath else "",
-                "simulated": False,
                 "limits": spec_data.get("reference_limits", {}),
                 "spec": spec_record(spec_data, spec_filepath),
                 "bandwidth_hz": profile_data.get("bandwidth_hz", 0),
@@ -694,10 +693,16 @@ def calibrate(
     default="jjf1057_2026",
     help="校准规范配置：specs/ 下的名称（可省 .json）或文件路径",
 )
-@click.option("--profile", type=click.Path(exists=True), help="示波器 Profile 路径")
+@click.option(
+    "--profile",
+    type=click.STRING,
+    default="tektronix_mdo3052",
+    show_default=True,
+    help="示波器 Profile：profiles/ 下的名称（可省 .json）或文件路径",
+)
 @click.option("--calibrator", type=click.Path(exists=True), help="校准仪配置路径")
 @click.option("--probe", type=click.STRING, default="9530", help="校准仪探头型号")
-@click.option("--channel", type=click.STRING, default="1,2", help="通道，逗号分隔")
+@click.option("--channel", type=click.STRING, default="1,2", help="通道，逗号分隔（如 1,2）")
 @click.option("--json", "json_out", type=click.Path(), default=None, help="同时写出计划 JSON")
 def plan(spec, profile, calibrator, probe, channel, json_out):
     """只解析校准点表，不连接任何仪器。"""
@@ -719,10 +724,12 @@ def plan(spec, profile, calibrator, probe, channel, json_out):
     if not spec_data:
         raise click.UsageError("校准规范配置校验失败，已中止")
 
-    profile_path = profile or _first_config(profiles_dir, "Profile")
+    profile_path = resolve_spec_path(profiles_dir, profile)
+    if profile_path is None:
+        raise click.BadParameter(f"找不到 Profile 文件: {profile}", param_hint="--profile")
     calibrator_path = calibrator or _first_config(calibrators_dir, "校准仪")
-    if profile_path is None or calibrator_path is None:
-        raise click.UsageError("缺少 Profile 或校准仪配置")
+    if calibrator_path is None:
+        raise click.UsageError("缺少校准仪配置")
 
     profile_data = load_profile(profile_path)
     calibrator_data = load_calibrator(calibrator_path)
@@ -949,9 +956,19 @@ def _display_calibration_data(data: dict):
 
     console.print(info_table)
 
+    skipped_points = metadata.get("skipped_points", [])
+    if skipped_points:
+        skipped_table = Table(title="跳过的校准点", show_lines=True)
+        skipped_table.add_column("项目", style="cyan")
+        skipped_table.add_column("原因")
+        for note in skipped_points:
+            skipped_table.add_row(str(note.get("item", "")), str(note.get("reason", "")))
+        console.print(skipped_table)
+
     from osccal.core.table_configs import (
         ITEM_CONFIGS,
         LIMITS_DISCLAIMER,
+        base_item_name,
         reference_text,
         row_values,
         select_rows,
@@ -965,7 +982,7 @@ def _display_calibration_data(data: dict):
     for item_name, rows in results.items():
         if not rows or item_name in failed_keys:
             continue
-        base_name = item_name.split("_ch")[0]
+        base_name = base_item_name(item_name)
         grouped.setdefault(base_name, []).extend(rows)
 
     for base_name, rows in grouped.items():

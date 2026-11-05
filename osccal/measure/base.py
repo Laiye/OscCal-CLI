@@ -77,11 +77,6 @@ class BaseCalibrator:
         # 未声明或为 0 时不节流，既有各机型时序不变。
         set_write_delay(cmd_osc.get("feature", {}).get("write_delay_ms", 0))
 
-    def _get_measurement_averages(self) -> int:
-        """本次测量使用的平均次数（Profile 未声明时为 16，保持既有行为）。"""
-        averages = self.profile.get("averages", 16)
-        return averages if isinstance(averages, int) and averages >= 2 else 16
-
     def _get_meas_amp_scale(self) -> float:
         """幅度测量的换算系数（指令集未声明 feature.meas_amp_scale 时为 1）。
 
@@ -113,10 +108,6 @@ class BaseCalibrator:
         else:
             self._write_osc("set_trigger_level", level)
 
-    def _get_limits(self, item_name):
-        """参考指标来自规范（specs/*.json），Profile 不再持有判据。"""
-        return None
-
     def _apply_impedance(self, label: str) -> None:
         """把示波器与校准仪的输入阻抗同时切到 1 MΩ 或 50 Ω。
 
@@ -130,41 +121,6 @@ class BaseCalibrator:
         self.setup_impedance(key)
         self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][key])
         self._verify_impedance(label)
-
-    def _setup_signal_impedance(self, shape, preferred_osc_impedance="1M"):
-        rules = self.cmd_calibrator.get("impedance_rules", {})
-        probe = self.probe or "9550"
-        probe_rules = rules.get(probe, {})
-        supported = probe_rules.get(shape, None)
-
-        if supported is None:
-            raise ValueError(
-                f"探头 {probe} 不支持 {shape} 信号模式。"
-                f"探头 {probe} 支持的模式: {list(probe_rules.keys())}"
-            )
-
-        if preferred_osc_impedance in supported:
-            actual_osc_imp = preferred_osc_impedance
-        else:
-            actual_osc_imp = supported[0]
-            console.print(
-                f"[yellow]⚠ 探头{probe}在{shape}模式下不支持{preferred_osc_impedance}Ω输出，"
-                f"已自动切换为{actual_osc_imp}Ω（示波器与校准仪均切换）[/yellow]"
-            )
-
-        imp_key = "imp_meg" if actual_osc_imp == "1M" else "imp_fif"
-
-        if self.profile.get("imp_has_50", False):
-            self.setup_impedance(imp_key)
-        elif imp_key == "imp_fif":
-            console.print(
-                f"[red]⚠ 示波器不支持50Ω输入，但探头{probe}在{shape}模式下只能输出50Ω，"
-                f"存在阻抗不匹配，测量结果可能不准确[/red]"
-            )
-
-        self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][imp_key])
-        self._verify_impedance(actual_osc_imp)
-        return imp_key
 
     @staticmethod
     def _impedance_is_high(raw: str) -> bool | None:
@@ -218,19 +174,6 @@ class BaseCalibrator:
                 if actual is not None and actual != expected_meg:
                     console.print(f"[red]⚠ 校准仪阻抗与设定不符（应 {want}）：{raw}[/red]")
 
-    def _get_probe_edge_rise_times(self):
-        probe = self.probe or "9550"
-        probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
-        return probe_info.get("edge_rise_times", [150e-12])
-
-    def _get_probe_max_frequency_hz(self) -> float:
-        probe = self.probe or "9550"
-        probe_info = self.cmd_calibrator.get("probes", {}).get(probe, {})
-        max_freq = probe_info.get("max_frequency_hz", 0)
-        if max_freq <= 0:
-            return 600e6
-        return float(max_freq)
-
     def _read_meas(self, meas_keyword, trigger: bool = True):
         actual_keyword = self.cmd_osc["keyword"][meas_keyword]
         last_error = None
@@ -279,10 +222,11 @@ class BaseCalibrator:
             time.sleep(interval)
             waited += interval
             latest = self._read_meas(meas_keyword, trigger=trigger)
-            denominator = max(abs(latest), 1e-12)
+            least = abs(latest)
+            denominator = max(least, 1e-12)
             spread = abs(latest - value) / denominator * 100.0
             value = latest
-            if spread <= tolerance * 100.0 and abs(latest) > 0:
+            if spread <= tolerance * 100.0:
                 return value, spread, waited
         return value, spread, waited
 
@@ -415,61 +359,6 @@ class BaseCalibrator:
             if length > 0:
                 return min(samples, length)
         return samples
-
-    def _adjust_vertical_position(self, scale):
-        if self.profile.get("skip_vertical_adjust", False):
-            return
-        if "set_vertical_position" not in self.cmd_osc["actions"]:
-            return
-        keywords = self.cmd_osc.get("keyword", {})
-        has_max = "meas_max" in keywords
-        has_min = "meas_min" in keywords
-        if not has_max or not has_min:
-            console.print(
-                "[yellow]⚠ 指令集缺少 meas_max/meas_min 关键字，跳过垂直位置自动调整[/yellow]"
-            )
-            return
-
-        self._write_osc("set_vertical_position", self.channel, 0.0)
-        if scale > 0.002:
-            return
-        vertical_div = self.profile.get("vertical_div", 8)
-        half_div = vertical_div / 2.0
-        # 整屏电压与允许的最大位移（本调整只为把略微超出格线的波形挪回格内）
-        screen = vertical_div * scale
-        max_shift = half_div * scale
-        position = 0.0
-        for _ in range(5):
-            max_val = self._read_meas("meas_max")
-            min_val = self._read_meas("meas_min")
-            # 波形远超整屏时（例如挡位与信号不匹配，或刚换挡读到尚未刷新的旧数据），
-            # 按超屏量换算出的位移会大到把波形整个推出屏幕——实机出现过算出 -45.6 V
-            # 偏移，之后所有测量都返回无效值。这种情况属于挡位问题而非位置问题，
-            # 直接跳过自动调整，避免把可恢复的读数问题变成整项失败。
-            if abs(max_val) > 2 * screen or abs(min_val) > 2 * screen:
-                console.print(
-                    f"[yellow]⚠ 波形远超当前挡位量程"
-                    f"（max={max_val:.4g} V, min={min_val:.4g} V，整屏 {screen:.4g} V），"
-                    f"跳过垂直位置自动调整[/yellow]"
-                )
-                return
-            top_limit = half_div * scale
-            bottom_limit = -half_div * scale
-            need_adjust = False
-            if max_val > top_limit:
-                overshoot = (max_val - top_limit) / scale
-                position -= overshoot * 0.6
-                need_adjust = True
-            if min_val < bottom_limit:
-                undershoot = (bottom_limit - min_val) / scale
-                position += undershoot * 0.6
-                need_adjust = True
-            if not need_adjust:
-                break
-            # 先按既有精度取整，再限幅：保证写入的偏移绝不超过半屏电压
-            position = max(-max_shift, min(max_shift, round(position, 2)))
-            self._write_osc("set_vertical_position", self.channel, position)
-            time.sleep(0.5)
 
     def _write_osc(self, action_name, *args):
         action = self.cmd_osc["actions"][action_name]

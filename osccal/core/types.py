@@ -24,6 +24,7 @@ class FeatureConfig(TypedDict, total=False):
     get_value: str
     set_meas: str
     meas_amp_scale: float
+    write_delay_ms: float
 
 
 # 关键字映射：keyword 名 -> SCPI 助记符
@@ -42,19 +43,6 @@ class CommandConfig(TypedDict, total=False):
     actions: dict[str, ActionConfig]
 
 
-class CalibrationLimits(TypedDict, total=False):
-    lower: float
-    upper: float
-    min_mhz: float
-
-
-class PointsConfig(TypedDict, total=False):
-    bandwidth: list[float]
-    delta_amp: list[float]
-    dc_gain: list[float]
-    delta_time: list[float]
-
-
 class ProfileConfig(TypedDict, total=False):
     name: str
     description: str
@@ -68,16 +56,10 @@ class ProfileConfig(TypedDict, total=False):
     horizontal_div: int
     probe_default: int
     init_time: float
-    averages: int
     bandwidth_hz: float
+    max_sample_rate_hz: float
     vertical_scales: list[float]
     horizontal_scales: list[float]
-    calibration_limits: dict[str, CalibrationLimits]
-    points: PointsConfig
-    bandwidth: float
-    bd_step: float
-    bd_scan: str
-    skip_vertical_adjust: bool
 
 
 class ProbeConfig(TypedDict, total=False):
@@ -120,6 +102,8 @@ class SpecPointRule(TypedDict, total=False):
     periods_on_screen: int
     zero_point: bool
     offset_nominal_divisions: int
+    require_coprime: bool
+    crossing: dict[str, object]
 
 
 class SpecItem(TypedDict, total=False):
@@ -138,8 +122,10 @@ class SpecItem(TypedDict, total=False):
     invalid_sentinel: float
     requires_user_action: dict[str, object]
     pending_confirm: str
+    fallback_note: str
     note: str
     notes: list[str]
+    conditions: list[str]
 
 
 class SpecConfig(TypedDict, total=False):
@@ -158,3 +144,4 @@ class SpecConfig(TypedDict, total=False):
     limits_semantics: dict[str, str]
     reference_limits: dict[str, object]
     items: dict[str, SpecItem]
+    verification: dict[str, object]

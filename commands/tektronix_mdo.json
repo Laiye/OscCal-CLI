@@ -66,8 +66,6 @@
         "meas_freq": "FREQ",
         "meas_mean": "MEAN",
         "meas_pos_overshoot": "POV",
-        "meas_max": "MAX",
-        "meas_min": "MIN",
         "acquire_stop_after_single": "SEQ",
         "acquire_stop_after_run_stop": "RUNST",
         "acquire_state_run": "RUN",

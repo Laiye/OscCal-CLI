@@ -31,7 +31,7 @@ jobs:
         run: ruff check .
 
       - name: Format check (ruff)
-        run: ruff format --check osccal tests simulate_calibrate.py
+        run: ruff format --check osccal tests
 
       - name: Type check (mypy)
         run: mypy

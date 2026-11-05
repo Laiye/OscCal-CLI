@@ -94,9 +94,10 @@ class CalibrationRecording:
 
     def checkpoint(self):
         self.metadata["scpi_errors"] = scpi_trace.failure_count() - self.start_errors
+        first_save = self.filepath is None
         try:
             self.filepath = save_calibration_data(
-                self.results, self.metadata, filepath=self.filepath
+                self.results, self.metadata, filepath=self.filepath, quiet=not first_save
             )
         except BaseException:
             self.save_failed = True
@@ -116,8 +117,17 @@ class CalibrationRecording:
         self.checkpoint()
 
 
-def save_calibration_data(cal_results: dict, metadata: dict, *, filepath: str | None = None) -> str:
-    """原子保存结果；传入已有路径时更新同一轮校准的阶段记录。"""
+def save_calibration_data(
+    cal_results: dict,
+    metadata: dict,
+    *,
+    filepath: str | None = None,
+    quiet: bool = False,
+) -> str:
+    """原子保存结果；传入已有路径时更新同一轮校准的阶段记录。
+
+    `quiet=True` 时不打印保存路径（同一轮后续 checkpoint 用，避免每项刷屏）。
+    """
     now = datetime.now()
     if filepath is None:
         timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
@@ -144,7 +154,6 @@ def save_calibration_data(cal_results: dict, metadata: dict, *, filepath: str | 
             "commands_file": clean_metadata.get("commands_file", ""),
             "profile_file": clean_metadata.get("profile_file", ""),
             "calibrator_file": clean_metadata.get("calibrator_file", ""),
-            "simulated": clean_metadata.get("simulated", False),
             "limits": clean_metadata.get("limits", {}),
             "spec": clean_metadata.get("spec", {}),
             "scpi_errors": 0,
@@ -174,7 +183,8 @@ def save_calibration_data(cal_results: dict, metadata: dict, *, filepath: str | 
         if temporary_path is not None and os.path.exists(temporary_path):
             os.unlink(temporary_path)
 
-    console.print(f"[green]✓[/green] 校准数据已保存: [cyan]{filepath}[/cyan]")
+    if not quiet:
+        console.print(f"[green]✓[/green] 校准数据已保存: [cyan]{filepath}[/cyan]")
     return filepath
 
 

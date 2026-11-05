@@ -236,15 +236,6 @@ class TestBaseCalibratorReadMeas:
         # 验证 keyword 被正确解析为 AMPlitude
         assert "MEASUrement:IMMed:TYPe AMPlitude" in fake_osc.written
 
-    def test_read_meas_max_for_vertical_adjust(self, mdo3_commands, fake_osc):
-        """_adjust_vertical_position 依赖的 meas_max/meas_min keyword 可用。"""
-        cal = self._make_calibrator(mdo3_commands, fake_osc)
-        # 应不抛 KeyError
-        cal._read_meas("meas_max")
-        cal._read_meas("meas_min")
-        assert "MEASUrement:IMMed:TYPe MAXimum" in fake_osc.written
-        assert "MEASUrement:IMMed:TYPe MINimum" in fake_osc.written
-
 
 # ===========================================================================
 # 阻抗设置链路（base.setup_impedance）

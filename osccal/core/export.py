@@ -17,6 +17,7 @@ from osccal.core.table_configs import (
 )
 from osccal.core.table_configs import (
     LIMITS_DISCLAIMER,
+    base_item_name,
     reference_text,
     row_values,
     select_rows,
@@ -42,7 +43,7 @@ def export_to_excel(data: dict, output_path: str) -> str:
     for item_name, rows in results.items():
         if not rows or item_name in failed_keys:
             continue
-        base_name = item_name.split("_ch")[0]
+        base_name = base_item_name(item_name)
         grouped.setdefault(base_name, []).extend(rows)
 
     for base_name, rows in grouped.items():
@@ -118,6 +119,9 @@ def _create_info_sheet(wb, metadata):
     deviations = spec.get("deviations", []) if spec else []
     for index, deviation in enumerate(deviations, start=1):
         info_items.append((f"偏离声明 {index}", deviation))
+
+    for index, note in enumerate(metadata.get("skipped_points", []), start=1):
+        info_items.append((f"跳过点 {index}", f"{note.get('item', '')}：{note.get('reason', '')}"))
 
     for label, value in info_items:
         ws.cell(row=row, column=1, value=label).font = label_font

@@ -38,9 +38,10 @@
 | 有源探头 | **9530**（600 MHz，边沿 150 ps / 500 ps） | 已实机验证，10 项全部使用 |
 | 有源探头 | 9550（25 ps）、9560（6.4 GHz，70 ps） | 配置已声明，**未实机验证** |
 
-> `profiles/` 目前只有 MDO3052 / MDO3032 两份。`commands/` 下保留的其他品牌指令集
-> （Rigol、Siglent、UNI-T、ZLG、Tektronix 老系列）属于 V0.1.0 遗留，**没有对应的
-> v0.2.0 profile，`--auto` 无法匹配、也不能执行**；补齐 profile 并完成实机验证后才算支持。
+> `profiles/` 目前只有 MDO3052 / MDO3032 两份；`commands/` 只保留
+> `tektronix_mdo.json`（MDO3052/3032 使用）与 `tektronix_mdo3.json`
+> （3 Series MDO 方言，暂无 profile）。其余机型需按新契约补 `commands + profile`
+> 并完成实机验证后才算支持。
 
 ### 1.2 校准项目
 
@@ -422,7 +423,7 @@ data/           # 运行产物（gitignore）
 
 ```bash
 .venv\Scripts\ruff check .                                  # Windows
-.venv\Scripts\ruff format --check osccal tests simulate_calibrate.py
+.venv\Scripts\ruff format --check osccal tests
 .venv\Scripts\mypy
 .venv\Scripts\pytest
 ```
@@ -431,7 +432,7 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 `mypy` 只检查 `pyproject.toml` 里列出的 4 个模块；`ruff format` 不覆盖
 `commands/ profiles/ calibrators/`（JSON 目录）。
 
-### 9.2 测试范围（约 466 个用例，以 CI 为准）
+### 9.2 测试范围（约 442 个用例，以 CI 为准）
 
 | 文件 | 覆盖 |
 |---|---|
@@ -461,7 +462,7 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 - **9500B 不能输出 0 V**（`SOUR:VOLT 0` 与 0.5 mV 都会被静默丢弃，最小约 1 mV），零点用 ±1 mV 两点插值；
 - **随机噪声需人工接 50 Ω 匹配负载**，程序会暂停等待确认；
 - **不含测量不确定度**，不能直接作为校准证书的完整结果；
-- **其他品牌/型号没有 v0.2.0 profile**，`commands/` 中的遗留指令集不能执行；
+- **其他品牌/型号没有 v0.2.0 profile**，也不提供模拟仪器脚本；新增机型需补 `commands + profile` 并实机验证；
 - **上升时间重复性最弱**：单次采集散布约 ±52 ps，已用 10 次平均降到约 ±17 ps；
 - **时基频率法受示波器频率读数位数限制**（约百~千 ppm）；7.9.1 频率法与 7.9.2 拟合法
   并列记录、不指定唯一判定值；

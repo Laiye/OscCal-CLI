@@ -13,16 +13,10 @@ from osccal.core.config_validation import manufacturer_matches, normalize_token
 
 console = Console()
 
-# ── 品牌 → 文件名前缀映射（回退用） ─────────────────────────────────────
+# ── 品牌 → 文件名前缀映射（回退用；v0.2.0 只支持泰克 MDO） ─────────────
 _BRAND_KEYWORDS: dict[str, str] = {
     "TEKTRONIX": "tektronix",
     "TEK": "tektronix",
-    "RIGOL": "rigol",
-    "SIGLENT": "siglent",
-    "UNI-T": "unit",
-    "UNIT": "unit",
-    "ZLG": "zlg",
-    "ZHIYUAN": "zlg",
 }
 
 

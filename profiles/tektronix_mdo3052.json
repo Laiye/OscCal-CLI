@@ -14,7 +14,6 @@
     "horizontal_div": 10,
     "probe_default": 1,
     "init_time": 2,
-    "averages": 16,
     "vertical_scales": [
         0.001,
         0.002,

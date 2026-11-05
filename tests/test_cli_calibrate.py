@@ -52,7 +52,7 @@ def fake_env(monkeypatch) -> dict:
         text = ",".join([idn["manufacturer"], idn["model"], idn["serial"], idn["firmware"]])
         return FakeInst(text), idn
 
-    def fake_save(results, metadata, *, filepath=None):
+    def fake_save(results, metadata, *, filepath=None, quiet=False):
         saved["results"] = results
         saved["metadata"] = metadata
         return ""

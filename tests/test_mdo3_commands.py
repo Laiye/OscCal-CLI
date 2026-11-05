@@ -63,12 +63,12 @@ REQUIRED_ACTIONS = {
     "preset",  # base.init_devices
     "set_channel",  # base.setup_channel
     "set_trigger_source",  # base.setup_channel / bandwidth
-    "set_vertical_scale",  # amp/dc_gain/bandwidth/delta_time/transient
-    "set_vertical_position",  # base._adjust_vertical_position / transient
-    "set_horizontal_scale",  # amp/bandwidth/delta_time/transient
-    "set_acquisition_mode",  # amp/dc_gain/bandwidth
-    "set_number_of_acquisitions",  # amp/dc_gain/bandwidth
-    "set_trigger_level",  # transient
+    "set_vertical_scale",  # dc_gain/dc_offset/delta_v/freq_response
+    "set_vertical_position",  # dc_gain/dc_offset/rise_time 的零点定位
+    "set_horizontal_scale",  # dc_gain/timebase/delta_t
+    "set_acquisition_mode",  # enob/random_noise
+    "set_number_of_acquisitions",  # 指令集能力声明
+    "set_trigger_level",  # base._nudge_trigger_level / rise_time
     "set_meas_source",  # comm.scpi_setup_measurement (merge)
     "set_meas_type",  # comm.scpi_setup_measurement (merge)
     "get_value",  # comm.read_measurement (merge)
@@ -138,17 +138,15 @@ class TestMdo3Actions:
 # ===========================================================================
 
 REQUIRED_KEYWORDS = {
-    "imp_fif",  # base._setup_signal_impedance
-    "imp_meg",  # base._setup_signal_impedance
-    "acquisition_mode_average",  # amp/dc_gain/bandwidth
-    "meas_amp",  # amp/bandwidth
-    "meas_period",  # delta_time
-    "meas_mean",  # dc_gain
-    "meas_risetime",  # transient
-    "meas_pos_overshoot",  # transient
-    "meas_max",  # base._adjust_vertical_position
-    "meas_min",  # base._adjust_vertical_position
-    "acquire_stop_after_single",  # transient
+    "imp_fif",  # base._apply_impedance
+    "imp_meg",  # base._apply_impedance
+    "acquisition_mode_average",  # 指令集能力声明
+    "meas_amp",  # dc_gain/delta_v/freq_response
+    "meas_period",  # delta_t
+    "meas_mean",  # dc_gain/dc_offset
+    "meas_risetime",  # rise_time
+    "meas_pos_overshoot",  # rise_time（可选）
+    "acquire_stop_after_single",  # base._run_single_acquisition
 }
 
 
@@ -182,8 +180,6 @@ class TestMdo3Keywords:
             ("meas_freq", "FREQuency"),
             ("meas_mean", "MEAN"),
             ("meas_pos_overshoot", "POVershoot"),
-            ("meas_max", "MAXimum"),
-            ("meas_min", "MINimum"),
         ],
     )
     def test_measurement_keywords_match_manual(self, mdo3_commands, kw_key, expected):

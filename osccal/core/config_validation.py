@@ -21,8 +21,6 @@ REQUIRED_KEYWORDS = {
     "meas_period",
     "meas_mean",
     "meas_risetime",
-    "meas_max",
-    "meas_min",
     "acquire_stop_after_single",
 }
 VALID_COMM_TYPES = {"pyvisa", "socket"}
@@ -46,12 +44,20 @@ REQUIRED_PROFILE_KEYS = {
     "probe_default",
     "init_time",
 }
-DEPRECATED_PROFILE_KEYS = {"points", "calibration_limits", "bandwidth", "bd_step", "bd_scan"}
+DEPRECATED_PROFILE_KEYS = {
+    "points",
+    "calibration_limits",
+    "bandwidth",
+    "bd_step",
+    "bd_scan",
+    "averages",
+    "skip_vertical_adjust",
+}
 
 # ── 校准规范配置（specs/*.json）──
 # 规范只声明"口径"，硬件能力来自 profiles/、标准器能力来自 calibrators/。
 REQUIRED_SPEC_KEYS = {"name", "spec_code", "items", "deviations"}
-# 规范项目键：既允许规范自身的条目名，也允许与 registry 同名的项目键。
+# 规范项目键 = registry 的 10 项 + 规范保留的 2 项人工项。
 VALID_SPEC_ITEM_KEYS = {
     "visual_check",
     "input_impedance",
@@ -65,10 +71,6 @@ VALID_SPEC_ITEM_KEYS = {
     "delta_v",
     "delta_t",
     "random_noise",
-    "amp",
-    "delta_time",
-    "bandwidth",
-    "transient",
 }
 # 取点策略：见 specs/ 中各项的 points.strategy。
 VALID_POINT_STRATEGIES = {
@@ -138,13 +140,8 @@ CAL_ACTION_ARITIES = {
     "set_mark_period": 1,
     "set_edge_speed": 1,
 }
-ITEM_SIGNALS = {
-    "amp": "SQU",
-    "dc_gain": "DC",
-    "delta_time": "MARK",
-    "bandwidth": "SIN",
-    "transient": "EDGE",
-}
+#: 标准器阻抗规则允许的信号形态（DC/SQU/SIN/EDGE/MARK；NONE 表示无输出）
+VALID_SIGNAL_SHAPES = {"DC", "SQU", "MARK", "SIN", "EDGE", "NONE"}
 
 
 _MANUFACTURER_ALIASES = {"TEK": "TEKTRONIX", "ZHIYUAN": "ZLG"}
@@ -210,66 +207,6 @@ def validate_device_identity(config: dict, idn: dict, label: str) -> list[str]:
         supported = [v for v in series if isinstance(v, str) and v.strip()]
         if not any(model_matches(v, model) for v in supported):
             errors.append(f"校准仪型号 {model} 与配置不匹配（配置支持: {', '.join(supported)}）")
-    return errors
-
-
-def validate_selection(
-    cmd: dict,
-    profile: dict,
-    calibrator: dict,
-    channels: list[str],
-    items: list[str],
-    probe: str | None,
-    bandwidth: float,
-    bd_step: float,
-) -> list[str]:
-    """检查本轮通道、项目、探头及设备能力，供 CLI 在执行前统一调用。"""
-    errors = []
-    max_channels = profile.get("channels", 4)
-    if not channels or any(
-        not c.isdecimal() or c != str(int(c)) or not 1 <= int(c) <= max_channels for c in channels
-    ):
-        errors.append(f"通道必须为 1 至 {max_channels} 的整数")
-    if len(channels) != len(set(channels)):
-        errors.append("不能重复选择通道")
-    if not items or any(i not in (*ITEM_SIGNALS, "all") for i in items):
-        errors.append("存在未知或空的校准项目")
-    if len(items) != len(set(items)) or ("all" in items and len(items) != 1):
-        errors.append("项目不能重复，all 不能与其他项目混用")
-    selected = list(ITEM_SIGNALS) if "all" in items else items
-    if not _is_number(bandwidth) or bandwidth < 50e3:
-        errors.append("带宽起点必须为至少 50 kHz 的有限数值")
-    if not _is_number(bd_step) or bd_step < 1:
-        errors.append("带宽步进必须为至少 1 Hz 的有限数值")
-    if probe not in calibrator.get("probes", {}):
-        errors.append(f"未知探头: {probe}")
-        return errors
-    rules = calibrator.get("impedance_rules", {}).get(probe, {})
-    for item in selected:
-        shape = ITEM_SIGNALS.get(item)
-        if shape is None:
-            continue
-        supported = rules.get(shape, [])
-        if not supported:
-            errors.append(f"探头 {probe} 不支持项目 {item} 所需的 {shape} 模式")
-        elif not profile.get("imp_has_50", False) and "1M" not in supported:
-            errors.append(f"项目 {item} 存在阻抗不匹配：示波器仅支持 1MΩ，探头仅支持 50Ω")
-    if profile.get("imp_has_50") and "set_impedance" not in cmd["actions"]:
-        errors.append("Profile 支持 50Ω，但指令集缺少 set_impedance")
-    if profile.get("probe_default", 1) != 1 and "set_probe_gain" not in cmd["actions"]:
-        errors.append("默认探头倍率不是 1，但指令集缺少 set_probe_gain")
-    if "transient" in selected:
-        missing = {"set_vertical_position", "set_trigger_level", "set_acquire_stop_after"} - cmd[
-            "actions"
-        ].keys()
-        if missing:
-            errors.append(f"瞬态项目缺少 action: {sorted(missing)}")
-    if "bandwidth" in selected:
-        max_freq = calibrator["probes"][probe].get("max_frequency_hz", 0)
-        if not _is_number(bandwidth) or not 50e3 <= bandwidth <= max_freq:
-            errors.append("带宽起点须在 50 kHz 至探头最高频率之间")
-    if calibrator.get("type") != "pyvisa":
-        errors.append("当前 CLI 校准仪连接仅支持 pyvisa")
     return errors
 
 
@@ -501,12 +438,6 @@ def validate_profile(data: dict) -> list[str]:
     bandwidth = data.get("bandwidth_hz")
     if not _is_number(bandwidth) or bandwidth <= 0:
         errors.append("bandwidth_hz 必须为有限正数")
-    if "averages" in data and (
-        not _is_count(data["averages"]) or not 2 <= data["averages"] <= 4096
-    ):
-        errors.append("averages 必须为 2~4096 的整数")
-    if "skip_vertical_adjust" in data and not isinstance(data["skip_vertical_adjust"], bool):
-        errors.append("skip_vertical_adjust 必须为布尔值")
 
     errors.extend(_validate_scale_list(data, "vertical_scales"))
     errors.extend(_validate_scale_list(data, "horizontal_scales"))
@@ -556,7 +487,7 @@ def validate_calibrator(data: dict) -> list[str]:
             errors.append(f"探头 {probe} 无任何模式规则")
             continue
         for shape, supported in rules.items():
-            if shape not in tuple(ITEM_SIGNALS.values()):
+            if shape not in VALID_SIGNAL_SHAPES:
                 errors.append(f"{probe}/{shape} 信号模式非法")
             if not isinstance(supported, list) or not supported:
                 errors.append(f"{probe}/{shape} 规则为空")
