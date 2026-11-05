@@ -6,7 +6,7 @@
 
 | 项 | 当前状态 |
 |---|---|
-| 版本 | **v0.2.0**（相对 V0.1.0 完全重写，无兼容层） |
+| 版本 | **v0.2.1**（v0.2.0 重写后的补丁版，无兼容层） |
 | 依据规范 | JJF 1057-2026，2027-02-21 实施，复校间隔 12 个月 |
 | 实机验证过的硬件 | Tektronix MDO3052 + Fluke 9500B（9530 头） |
 | 实机验证 | 2026-10-23 全量 10/10 项；2026-11-04/05 按当前代码复核 10/10 项；结论见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
@@ -101,7 +101,7 @@ PowerShell 提示"禁止运行脚本"时，先执行
 ```bash
 pip show osccal                 # Editable project location 应指向本仓库
 where.exe osccal                # Windows；Linux/macOS 用 which
-osccal --version                # osccal, version 0.2.0
+osccal --version                # osccal, version 0.2.1
 ```
 
 > 仅看 `osccal --version` 不足以证明装对：激活虚拟环境只是把 `.venv\Scripts` 插到 PATH 最前，
@@ -469,17 +469,20 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 - 指令集缺少某项可选 action 时，对应设置会被跳过而不报错（执行前能力完整性检查尚未接入）；
 - MDO3052 只有 2 个模拟通道；水平档位为 1-2-4-8 量化序列、垂直档位为 1-2-5，
   请求不存在的档位会被吸附，记录里保存的是回读的实际值；
-- 记录中的 `metadata.skipped_points` 目前只在 JSON 中，`show` 与 Excel 不展示（后续版本补充）。
+- 记录中的 `metadata.skipped_points` 会显示在 `show` 的"跳过的校准点"表和 Excel 校准信息表中。
 
 ## 11. 版本与兼容性
 
+- **v0.2.1**：v0.2.0 的补丁版，记录格式保持兼容。包含 P0 修复（空跑、单项容错、NaN）、
+  P1 口径完善（时基两法并列、直流增益收敛判据、报告方法列、参考指标单一来源）、
+  P2 清理（删除模拟器与遗留指令集、死代码/废弃字段），并按当前代码完成 10 项实机复核。
 - **v0.2.0**：按 JJF 1057-2026 重建。项目集、点表、记录字段、报告表名全部换新；
   旧项目（`amp`、`delta_time`、`bandwidth`、`transient`）与旧 profile 已删除，
   **不保留别名、不做回退**。
 - **V0.1.0（标签）**：旧版本行为，需要旧口径时 `git checkout V0.1.0`。
-- 旧 JSON 记录仍能被 v0.2.0 读取，但其中的旧项目名不在 `ITEM_CONFIGS` 里，
+- 旧 JSON 记录仍能被 v0.2.x 读取，但其中的旧项目名不在 `ITEM_CONFIGS` 里，
   `show`/`export` 会跳过并提示"未知校准项目"；要看完整旧记录请检出 `V0.1.0`。
-- 记录字段与报告表名在 v0.2.0 全部换新；后续小版本升级也暂不承诺记录格式向前兼容。
+- v0.2.1 起小版本升级保持记录可读；报告列可能增补，旧字段不删除。
 
 ## License
 
