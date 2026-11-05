@@ -237,6 +237,19 @@ class TestEnob:
         assert 8.0 < record["enob"] < 11.0
         assert record["rms_error_v"] == pytest.approx(0.0006, rel=0.5)
 
+    def test_uses_point_impedance(self, configs):
+        point = {
+            "channel": "1",
+            "impedance": "50",
+            "samples_n": 1000,
+            "integer_cycles_n": 7,
+        }
+        instance = build(EnobCalibrator, configs, [point])
+        instance._query_osc = lambda action, *args: "5.0E+09"
+        instance._read_waveform = lambda samples: self._sine_wave(35e6, 5e9, samples)
+        record = instance._measure_point(point)
+        assert record["impedance"] == "50"
+
     def test_rejects_non_coprime_counts(self, configs):
         points = [{"channel": "1", "samples_n": 1000, "integer_cycles_n": 5}]
         instance = build(EnobCalibrator, configs, points)

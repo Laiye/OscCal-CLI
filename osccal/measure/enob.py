@@ -66,6 +66,7 @@ class EnobCalibrator(BaseCalibrator):
         cycles = int(point.get("integer_cycles_n") or DEFAULT_CYCLES)
         if math.gcd(samples, cycles) != 1:
             raise ValueError(f"N={samples} 与 n={cycles} 不能有公因子")
+        impedance = point.get("impedance", "1M")
 
         vertical_div = float(self.characteristics.get("vertical_div", 8))
         full_scale = VERTICAL_SCALE * vertical_div
@@ -88,7 +89,7 @@ class EnobCalibrator(BaseCalibrator):
             )
         frequency = sample_rate * cycles / samples
 
-        self._apply_impedance("1M")
+        self._apply_impedance(impedance)
         self._write_osc("set_vertical_scale", self.channel, VERTICAL_SCALE)
         self._write_osc("set_coupling", self.channel, "DC")
         if "set_vertical_position" in self.cmd_osc["actions"]:
@@ -107,6 +108,7 @@ class EnobCalibrator(BaseCalibrator):
 
         record = {
             "channel": self.channel,
+            "impedance": impedance,
             "vertical_scale": VERTICAL_SCALE,
             "full_scale_v": full_scale,
             "sample_rate_sa_s": sample_rate,
@@ -158,6 +160,7 @@ class EnobCalibrator(BaseCalibrator):
             [
                 {"name": "序号"},
                 {"name": "通道", "justify": "center"},
+                {"name": "阻抗", "justify": "center"},
                 {"name": "量程(V)"},
                 {"name": "信号频率", "justify": "left"},
                 {"name": "信号幅度(Vpp)"},
@@ -178,6 +181,7 @@ class EnobCalibrator(BaseCalibrator):
                     [
                         index,
                         f"CH{self.channel}",
+                        "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                         f"{record['full_scale_v']:g}",
                         self._format_frequency(record["signal_freq_hz"]),
                         f"{record['signal_amplitude_vpp']:.4g}",

@@ -44,7 +44,7 @@ ITEM_PRECISION = {
         ("dec", 4),
     ],
     "freq_response_bandwidth": [None, None, ("sig", 4), ("sig", 4), ("dec", 4), None],
-    "enob": [None, None, ("sig", 3), ("sig", 4), ("sig", 3), ("sig", 3), ("dec", 2), None],
+    "enob": [None, None, None, ("sig", 3), ("sig", 4), ("sig", 3), ("sig", 3), ("dec", 2), None],
     "rise_time": [None, None, ("sig", 3), ("sig", 4), ("dec", 2), ("sig", 3)],
     "timebase_error": [None, None, ("sig", 3), ("sig", 4), ("sig", 4), ("dec", 2), ("dec", 2)],
     "delta_v": [None, None, None, ("sig", 3), ("sig", 3), ("sig", 3), ("dec", 3)],
@@ -159,6 +159,7 @@ ITEM_CONFIGS = {
         "columns": [
             "序号",
             "通道",
+            "阻抗",
             "量程(V)",
             "信号频率(Hz)",
             "信号幅度(Vpp)",
@@ -169,6 +170,7 @@ ITEM_CONFIGS = {
         "keys": [
             "index",
             "channel",
+            "impedance",
             "full_scale_v",
             "signal_freq_hz",
             "signal_amplitude_vpp",
@@ -397,7 +399,13 @@ def base_item_name(result_key: str) -> str:
 
 def row_values(config: dict, row: dict) -> list:
     """按 `keys` 从记录行取值；缺失字段返回空串而不是崩溃。"""
-    return [row.get(key, "") for key in config["keys"]]
+    values = []
+    for key in config["keys"]:
+        value = row.get(key, "")
+        if key == "impedance" and isinstance(value, str):
+            value = {"1M": "1 MΩ", "50": "50 Ω"}.get(value, value)
+        values.append(value)
+    return values
 
 
 def select_rows(config: dict, rows: list) -> list[dict]:

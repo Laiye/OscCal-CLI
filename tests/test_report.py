@@ -126,6 +126,12 @@ class TestTableConfigs:
         assert values[1] == "1"
         assert values[2:] == [""] * 11
 
+    def test_row_values_formats_impedance_labels(self):
+        values = row_values(ITEM_CONFIGS["delta_v"], {"impedance": "50"})
+        assert values[2] == "50 Ω"
+        values = row_values(ITEM_CONFIGS["delta_v"], {"impedance": "1M"})
+        assert values[2] == "1 MΩ"
+
     def test_select_rows_filters_summary(self):
         rows = _results()["freq_response_bandwidth"]
         selected = select_rows(ITEM_CONFIGS["freq_response_bandwidth"], rows)

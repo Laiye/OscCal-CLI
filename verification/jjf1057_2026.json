@@ -85,14 +85,14 @@
             "status": "deviation",
             "verified_at": "2026-11-05",
             "reference": "最大允许误差 ±1% × 满量程（参考）",
-            "points": 4,
+            "points": 7,
             "measured": {
-                "zero_reading_mv": "-0.99 ~ +58.92",
-                "method1_offset_error_mv": "-2.80 ~ +2.00",
-                "method1_gain": "0.9986 ~ 1.0068",
-                "method2_offset_error_mv": "-36.45 ~ -0.20",
-                "method2_gain": "0.9898 ~ 0.9994",
-                "worst_error_percent_fs": 0.255
+                "zero_reading_mv": "-1.72 ~ +23.00",
+                "method1_offset_error_mv": "+0.25 ~ +10.80",
+                "method1_gain": "1.0005 ~ 1.0156",
+                "method2_offset_error_mv": "-94.00 ~ -0.31",
+                "method2_gain": "0.9845 ~ 0.9953",
+                "worst_error_percent_fs": 0.588
             },
             "deviations": [
                 "方法一的激励取与 d₀ 同号（规范原文为 −d₀）：取负号会把波形推出约两倍偏置量，无法读数",
@@ -100,9 +100,10 @@
             ],
             "limitations": [
                 "方法一用 MEAN 读数、方法二用原始码值，两者的误差定义与符号不可直接相加，只能按量级互相对照",
-                "4 个挡位方法二误差最大 0.255% FS，均在参考指标内"
+                "1 MΩ 4 点、50 Ω 3 点（50 Ω 10 V/div 的 20 V 超出 9500B 5 V 上限，已跳过）",
+                "50 Ω 最差 0.588% FS（0.01 V/div），1 MΩ 最差 0.388% FS，均在参考指标内"
             ],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
         },
         {
             "item": "freq_response_bandwidth",
@@ -128,21 +129,21 @@
             "status": "verified_with_caveat",
             "verified_at": "2026-11-05",
             "reference": "12 bit（参考）",
-            "points": 1,
+            "points": 2,
             "measured": {
                 "full_scale_v": 1.6,
                 "sample_rate_sa_s": 2500000000,
                 "signal_freq_hz": 17500000,
                 "signal_amplitude_vpp": 1.52,
-                "rms_error_v": 0.006195,
-                "enob_bit": 6.22
+                "1M": {"rms_error_v": 0.006126, "enob_bit": 6.24},
+                "50": {"rms_error_v": 0.006066, "enob_bit": 6.25}
             },
             "deviations": [],
             "limitations": [
                 "在机型最高采样率 2.5 GS/s 下测量，记录长度与分析点数 N = 1000 一致",
-                "实测 6.22 bit 与参考 12 bit 差距大，属 8 位 ADC 机型的正常水平，参考指标仅供参考"
+                "1 MΩ 6.24 bit、50 Ω 6.25 bit，两阻抗条件下一致；与参考 12 bit 差距大，属 8 位 ADC 机型的正常水平，参考指标仅供参考"
             ],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
         },
         {
             "item": "rise_time",
@@ -196,13 +197,17 @@
             "status": "deviation",
             "verified_at": "2026-11-05",
             "reference": "最大允许误差 ±(1% × 读值 ± 1 个量化阶梯)（参考）",
-            "points": 4,
+            "points": 6,
             "measured": {
-                "error_pct": "0.000 ~ 0.000（4 个挡位均在示波器幅度读数分辨力内）"
+                "1M": {"scales_v_per_div": [0.01, 0.1, 1.0, 10.0], "error_pct": "0.000 ~ 0.000"},
+                "50": {"scales_v_per_div": [0.01, 0.1], "error_pct": "0.000 ~ 0.000"}
             },
             "deviations": ["用示波器自动幅度测量读数代替规范要求的光标读数（记录中标注 method=auto_measurement）"],
-            "limitations": [],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "limitations": [
+                "1 MΩ 4 点、50 Ω 2 点；50 Ω 下 1 V/div、10 V/div 的 6.4/64 Vpp 超出 9500B 5 Vpp 上限，已跳过",
+                "两种阻抗下各点误差均在示波器幅度读数分辨力内"
+            ],
+            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
         },
         {
             "item": "delta_t",

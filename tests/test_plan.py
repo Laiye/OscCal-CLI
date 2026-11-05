@@ -45,22 +45,22 @@ def _by_name(plan: dict) -> dict[str, dict]:
 
 class TestPlanContent:
     def test_total_points(self, plan):
-        # 4 + 12 + 8 + 18 + 2 + 4 + 8 + 8 + 4 + 2 = 70
+        # 4 + 12 + 14 + 18 + 4 + 4 + 8 + 12 + 4 + 2 = 82
         # Δt 只有 2 点/通道：方波激励受 9500B 10 Hz~10 kHz 限制，快时基不可行
         # 时基挡位按实机能力收敛到 10 ms/div（去掉 100 ms/div）
-        assert plan["total_points"] == 70
+        assert plan["total_points"] == 82
 
     @pytest.mark.parametrize(
         "name,expected",
         [
             ("input_impedance", 4),
             ("dc_gain", 12),
-            ("dc_offset", 8),
+            ("dc_offset", 14),
             ("freq_response_bandwidth", 18),
-            ("enob", 2),
+            ("enob", 4),
             ("rise_time", 4),
             ("timebase_error", 8),
-            ("delta_v", 8),
+            ("delta_v", 12),
             ("delta_t", 4),
             ("random_noise", 2),
         ],
@@ -101,6 +101,29 @@ class TestPlanContent:
         assert len(skipped) == 4
         assert all(item["impedance"] == "50" for item in skipped)
         assert all("上限" in item["reason"] for item in skipped)
+
+    def test_dc_offset_includes_50_ohm_except_high_scale(self, plan):
+        points = [p for p in _by_name(plan)["dc_offset"]["points"] if p["channel"] == "1"]
+        assert {p["impedance"] for p in points} == {"1M", "50"}
+        fifty = {p["scale"] for p in points if p["impedance"] == "50"}
+        assert fifty == {0.01, 0.1, 1.0}
+        skipped = _by_name(plan)["dc_offset"]["skipped"]
+        assert len(skipped) == 2
+        assert all(item["impedance"] == "50" and item["scale"] == 10.0 for item in skipped)
+
+    def test_delta_v_includes_50_ohm_below_limit(self, plan):
+        points = [p for p in _by_name(plan)["delta_v"]["points"] if p["channel"] == "1"]
+        assert {p["impedance"] for p in points} == {"1M", "50"}
+        fifty = {p["scale"] for p in points if p["impedance"] == "50"}
+        assert fifty == {0.01, 0.1}
+        skipped = _by_name(plan)["delta_v"]["skipped"]
+        assert len(skipped) == 4
+        assert all(item["impedance"] == "50" for item in skipped)
+
+    def test_enob_covers_both_impedances(self, plan):
+        points = [p for p in _by_name(plan)["enob"]["points"] if p["channel"] == "1"]
+        assert {p["impedance"] for p in points} == {"1M", "50"}
+        assert len(points) == 2
 
     def test_dc_gain_standard_value_uses_screen_fraction(self, plan):
         point = next(
@@ -189,7 +212,7 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "70" in result.output
+        assert "82" in result.output
         assert "JJF 1057-2026" in result.output
         assert "MDO3052" in result.output
 
@@ -204,7 +227,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 70
+        assert data["total_points"] == 82
         assert len(data["items"]) == 12
         assert data["scheme_name"] == "JJF 1057-2026 默认校准方案"
 

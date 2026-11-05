@@ -73,12 +73,13 @@ def _check_amplitude(
     if not limits:
         return None
     label = IMPEDANCE_LABELS.get(impedance, impedance)
+    unit = "V" if shape == "DC" else "Vpp"
     lo = limits.get("min_vpp", limits.get("min_v"))
     hi = limits.get("max_vpp", limits.get("max_v"))
     if hi is not None and amplitude_vpp > _num(hi):
-        return f"标准值 {amplitude_vpp:.4g} Vpp 超出 {label} 上限 {_num(hi):.4g} Vpp"
+        return f"标准值 {amplitude_vpp:.4g} {unit} 超出 {label} 上限 {_num(hi):.4g} {unit}"
     if lo is not None and amplitude_vpp < _num(lo):
-        return f"标准值 {amplitude_vpp:.4g} Vpp 低于 {label} 下限 {_num(lo):.4g} Vpp"
+        return f"标准值 {amplitude_vpp:.4g} {unit} 低于 {label} 下限 {_num(lo):.4g} {unit}"
     return None
 
 
@@ -148,6 +149,11 @@ def _resolve_scale_list(
                     )
                     continue
                 std = float(fraction) * vertical_div * scale if fraction is not None else None
+                # 直流偏置没有屏占比，但 50 Ω 下仍要按偏置标称值核对标准器输出上限。
+                limit_amplitude = std
+                nominal_divisions = rule.get("offset_nominal_divisions")
+                if limit_amplitude is None and nominal_divisions is not None:
+                    limit_amplitude = _num(nominal_divisions) * scale
                 for impedance in wanted_impedances:
                     if not _impedance_supported(characteristics, impedance):
                         skipped.append(
@@ -159,8 +165,8 @@ def _resolve_scale_list(
                         )
                         continue
                     reason = None
-                    if std is not None:
-                        reason = _check_amplitude(std, calibrator, shape, impedance)
+                    if limit_amplitude is not None:
+                        reason = _check_amplitude(limit_amplitude, calibrator, shape, impedance)
                     if reason:
                         skipped.append(
                             {
@@ -232,22 +238,29 @@ def _resolve_bw_ratio(
     return {"points": points, "skipped": skipped}
 
 
-def _resolve_derived(item: dict, channels: list[str]) -> dict:
+def _resolve_derived(item: dict, characteristics: dict, channels: list[str]) -> dict:
     rule = item.get("points", {})
     note = rule.get("note", "现场按规范公式计算")
-    points = [
-        _point(
-            {
-                "channel": channel,
-                "runtime": True,
-                "samples_n": rule.get("samples_n"),
-                "integer_cycles_n": rule.get("integer_cycles_n"),
-                "note": note,
-            }
-        )
-        for channel in channels
-    ]
-    return {"points": points, "skipped": []}
+    wanted = rule.get("impedances", ["1M"])
+    points, skipped = [], []
+    for channel in channels:
+        for impedance in wanted:
+            if not _impedance_supported(characteristics, impedance):
+                skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
+                continue
+            points.append(
+                _point(
+                    {
+                        "channel": channel,
+                        "impedance": impedance,
+                        "runtime": True,
+                        "samples_n": rule.get("samples_n"),
+                        "integer_cycles_n": rule.get("integer_cycles_n"),
+                        "note": note,
+                    }
+                )
+            )
+    return {"points": points, "skipped": skipped}
 
 
 def _resolve_fixed(item: dict, characteristics: dict, channels: list[str]) -> dict:
@@ -330,7 +343,7 @@ def resolve_item(
     elif strategy == "bw_ratio":
         resolved = _resolve_bw_ratio(scheme_item, characteristics, calibrator, channels)
     elif strategy == "derived":
-        resolved = _resolve_derived(scheme_item, channels)
+        resolved = _resolve_derived(scheme_item, characteristics, channels)
     elif strategy == "fixed":
         resolved = _resolve_fixed(scheme_item, characteristics, channels)
     elif strategy == "channel_x_edge_speed":

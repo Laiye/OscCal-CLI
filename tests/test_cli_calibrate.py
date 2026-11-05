@@ -128,7 +128,7 @@ class TestCalibrateFlow:
         assert set(fake_env["results"]) == {"dc_gain", "delta_v"}
         plan = fake_env["metadata"]["points_plan"]["1"]
         assert plan["dc_gain"] == 6
-        assert plan["delta_v"] == 4
+        assert plan["delta_v"] == 6
 
     def test_json_record_is_serialisable(self, fake_env):
         result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "dc_gain"), input="n\n")
@@ -198,4 +198,4 @@ class TestCalibrateFlow:
         assert metadata["status"] == "completed_with_errors"
         assert metadata["item_status"]["dc_gain"] == "failed"
         assert metadata["failures"]["dc_gain"]["type"] == "ScpiError"
-        assert len(fake_env["results"]["delta_v"]) == 4, "后续项目必须继续执行"
+        assert len(fake_env["results"]["delta_v"]) == 6, "后续项目必须继续执行"

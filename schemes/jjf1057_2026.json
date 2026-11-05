@@ -71,7 +71,8 @@
                     10.0
                 ],
                 "impedances": [
-                    "1M"
+                    "1M",
+                    "50"
                 ],
                 "zero_point": true,
                 "offset_nominal_divisions": 2,
@@ -124,14 +125,17 @@
                 "peak_fraction_of_range": [
                     0.9,
                     1.0
-                ],
-                "impedance": "1M"
+                ]
             },
             "points": {
                 "strategy": "derived",
                 "samples_n": 1000,
                 "integer_cycles_n": 7,
                 "require_coprime": true,
+                "impedances": [
+                    "1M",
+                    "50"
+                ],
                 "note": "f = fs·n/N，fs 由 :HORizontal:SAMPLERATE? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
             },
             "notes": [
@@ -192,8 +196,7 @@
             ],
             "stimulus": {
                 "shape": "SQU",
-                "freq_hz": 1000,
-                "impedance": "1M"
+                "freq_hz": 1000
             },
             "points": {
                 "strategy": "scale_list",
@@ -203,7 +206,11 @@
                     1.0,
                     10.0
                 ],
-                "screen_fraction": 0.8
+                "screen_fraction": 0.8,
+                "impedances": [
+                    "1M",
+                    "50"
+                ]
             },
             "notes": [
                 "垂直方向覆盖 80% 屏幕，两个以上周期居中显示",
