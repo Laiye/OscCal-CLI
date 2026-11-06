@@ -151,7 +151,7 @@ class TestCalibrateFlow:
         result = CliRunner().invoke(cli, args, input="n\n")
         assert result.exit_code == 0, result.output
         assert fake_env["metadata"]["spec"]["spec_code"] == "JJF 1057-2026"
-        assert fake_env["metadata"]["scheme"]["name"] == "JJF 1057-2026 默认校准方案"
+        assert fake_env["metadata"]["scheme"]["name"] == "JJF 1057-2026 单方法校准方案"
         assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 6
 
     def test_rejects_item_missing_from_scheme(self, fake_env, tmp_path):

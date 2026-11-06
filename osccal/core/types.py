@@ -126,6 +126,7 @@ class SchemeItem(TypedDict, total=False):
     """单个校准项目的方案（来自 schemes/*.json）：方法 + 取点 + 刺激条件。"""
 
     methods: list[str]
+    method: str
     primary: str
     stimulus: dict[str, object]
     points: SchemePointRule

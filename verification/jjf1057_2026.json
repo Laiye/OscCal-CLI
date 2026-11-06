@@ -34,6 +34,23 @@
         "interface": "示波器 USB-TMC / 校准仪 GPIB0::19",
         "probe": "9530"
     },
+    "schemes": {
+        "trial": {
+            "name": "JJF 1057-2026 试验校准方案",
+            "description": "多方法并列，仅用于方法比对；本台账 items.*.record 均为试验记录"
+        },
+        "production": {
+            "name": "JJF 1057-2026 单方法校准方案",
+            "file": "jjf1057_2026_single.json",
+            "verified_at": "2026-11-06",
+            "record": "data/calibration_20261106_084655_242702_69600b09e60644ae8e8ae7ffdce7b0f1.json",
+            "items": {
+                "dc_gain": {"method": "square_amplitude", "error_pct": "0.000"},
+                "dc_offset": {"method": "raw_lsq", "worst_error_percent_fs": 0.614},
+                "timebase_error": {"method": "waveform_fit", "fit_ppm": "-154.59 ~ -28.65"}
+            }
+        }
+    },
     "status_legend": {
         "verified": "实机测量完成，数据合理且可复现",
         "verified_with_caveat": "实机测量完成，但存在需注明的限制（分辨率、重复性、外部条件）",

@@ -262,6 +262,35 @@ class TestMalformedScheme:
         errors = validate_scheme(data)
         assert any("primary" in e for e in errors)
 
+    def test_accepts_method_selection(self):
+        data = _valid_scheme()
+        del data["items"]["dc_gain"]["primary"]
+        data["items"]["dc_gain"]["method"] = "square_amplitude"
+        assert validate_scheme(data) == []
+
+    def test_method_must_be_in_methods(self):
+        data = _valid_scheme()
+        del data["items"]["dc_gain"]["primary"]
+        data["items"]["dc_gain"]["method"] = "multi_point_lsq"
+        errors = validate_scheme(data)
+        assert any("method" in e for e in errors)
+
+    def test_method_and_primary_conflict(self):
+        data = _valid_scheme()
+        data["items"]["dc_gain"]["method"] = "square_amplitude"
+        errors = validate_scheme(data)
+        assert any("不能同时声明" in e for e in errors)
+
+    def test_method_on_single_method_item_rejected(self):
+        data = _valid_scheme()
+        data["items"]["input_impedance"] = {
+            "methods": ["calibrator_load_measure"],
+            "method": "calibrator_load_measure",
+            "points": {"strategy": "channel_x_impedance"},
+        }
+        errors = validate_scheme(data)
+        assert any("只有一个方法" in e for e in errors)
+
     def test_scale_list_requires_stimulus_shape(self):
         data = _valid_scheme()
         del data["items"]["dc_gain"]["stimulus"]

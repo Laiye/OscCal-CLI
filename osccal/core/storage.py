@@ -62,6 +62,7 @@ def scheme_record(scheme: dict, filepath: str) -> dict:
     items = {
         name: {
             "methods": item.get("methods", []),
+            "method": item.get("method"),
             "primary": item.get("primary"),
         }
         for name, item in (scheme.get("items") or {}).items()

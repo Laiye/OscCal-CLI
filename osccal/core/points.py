@@ -374,12 +374,20 @@ def resolve_item(
             "skipped": [{"reason": f"暂不支持取点策略 {strategy!r}"}],
         }
 
+    declared = list(scheme_item.get("methods", []))
+    selected = scheme_item.get("method")
+    executed = [selected] if selected else declared
+    primary = (
+        selected if selected and name in {"dc_gain", "dc_offset"} else scheme_item.get("primary")
+    )
+
     return {
         "name": name,
         "clause": clause,
         "title": title,
-        "methods": list(scheme_item.get("methods", [])),
-        "primary": scheme_item.get("primary"),
+        "methods": executed,
+        "method": selected,
+        "primary": primary,
         "strategy": strategy,
         "status": "planned",
         "points": resolved["points"],

@@ -39,6 +39,11 @@ def plan(configs) -> dict:
     return _build(configs)
 
 
+@pytest.fixture(scope="module")
+def single_plan(configs) -> dict:
+    return _build(configs, scheme=_load("jjf1057_2026_single.json", "schemes"))
+
+
 def _by_name(plan: dict) -> dict[str, dict]:
     return {item["name"]: item for item in plan["items"]}
 
@@ -191,6 +196,29 @@ class TestPlanContent:
         assert any("edge_rise_times" in s["reason"] for s in item["skipped"])
 
 
+class TestSingleScheme:
+    def test_same_point_count(self, single_plan):
+        assert single_plan["total_points"] == 100
+
+    def test_multi_method_items_execute_one_method(self, single_plan):
+        items = _by_name(single_plan)
+        assert items["dc_gain"]["methods"] == ["square_amplitude"]
+        assert items["dc_gain"]["method"] == "square_amplitude"
+        assert items["dc_gain"]["primary"] == "square_amplitude"
+        assert items["dc_offset"]["methods"] == ["raw_lsq"]
+        assert items["dc_offset"]["method"] == "raw_lsq"
+        assert items["dc_offset"]["primary"] == "raw_lsq"
+        assert items["timebase_error"]["methods"] == ["waveform_fit"]
+        assert items["timebase_error"]["method"] == "waveform_fit"
+        assert items["timebase_error"]["primary"] is None
+
+    def test_trial_scheme_keeps_all_methods(self, plan):
+        items = _by_name(plan)
+        assert len(items["dc_gain"]["methods"]) == 3
+        assert items["dc_gain"]["method"] is None
+        assert len(items["timebase_error"]["methods"]) == 2
+
+
 class TestSchemeSelection:
     def test_method_subset_does_not_change_points(self, configs):
         scheme = copy.deepcopy(configs[1])
@@ -211,7 +239,7 @@ class TestSchemeSelection:
         assert any("方案未列入" in s["reason"] for s in item["skipped"])
 
     def test_plan_reports_scheme_name(self, plan):
-        assert plan["scheme_name"] == "JJF 1057-2026 默认校准方案"
+        assert plan["scheme_name"] == "JJF 1057-2026 试验校准方案"
         assert plan["scheme_spec"] == "jjf1057_2026"
 
 
@@ -226,8 +254,14 @@ class TestPlanCommand:
     def test_plan_shows_methods(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
+        assert "方波幅度" in result.output
+        assert "波形拟合" in result.output
+        assert "3法" not in result.output
+
+    def test_plan_trial_shows_all_methods(self):
+        result = CliRunner().invoke(cli, ["plan", "--scheme", "jjf1057_2026"])
+        assert result.exit_code == 0, result.output
         assert "3法" in result.output
-        assert "方波" in result.output
 
     def test_plan_writes_json(self, tmp_path):
         out = tmp_path / "plan.json"
@@ -236,7 +270,7 @@ class TestPlanCommand:
         data = json.loads(out.read_text(encoding="utf-8"))
         assert data["total_points"] == 100
         assert len(data["items"]) == 12
-        assert data["scheme_name"] == "JJF 1057-2026 默认校准方案"
+        assert data["scheme_name"] == "JJF 1057-2026 单方法校准方案"
 
     def test_plan_accepts_characteristics_name(self):
         result = CliRunner().invoke(cli, ["plan", "--characteristics", "tektronix_mdo3032"])

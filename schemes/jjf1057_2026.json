@@ -1,7 +1,7 @@
 {
     "$schema": "osccal.scheme.v1",
-    "name": "JJF 1057-2026 默认校准方案",
-    "description": "按 JJF 1057-2026 第 7 章全项执行；项目方法、校准点与刺激条件集中在本文件，硬件能力见 characteristics/，标准器能力见 calibrators/，规范条款与参考指标见 specs/。",
+    "name": "JJF 1057-2026 试验校准方案",
+    "description": "试验/参考用：多方法项目全部方法并列执行，用于方法比对，不作为默认校准方案；实际校准请用 jjf1057_2026_single.json。硬件能力见 characteristics/，标准器能力见 calibrators/，规范条款与参考指标见 specs/。",
     "spec": "jjf1057_2026",
     "items": {
         "input_impedance": {

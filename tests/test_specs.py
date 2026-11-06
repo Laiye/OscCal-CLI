@@ -18,6 +18,7 @@ SPECS_DIR = PROJECT_ROOT / "specs"
 SCHEMES_DIR = PROJECT_ROOT / "schemes"
 SPEC_PATH = SPECS_DIR / "jjf1057_2026.json"
 SCHEME_PATH = SCHEMES_DIR / "jjf1057_2026.json"
+SINGLE_SCHEME_PATH = SCHEMES_DIR / "jjf1057_2026_single.json"
 
 # 规范第 7 章共 12 个校准项目，条款号 7.2 ~ 7.13 各一。
 EXPECTED_CLAUSES = {f"7.{n}" for n in range(2, 14)}
@@ -47,6 +48,12 @@ def spec() -> dict:
 @pytest.fixture(scope="module")
 def scheme() -> dict:
     with open(SCHEME_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture(scope="module")
+def single_scheme() -> dict:
+    with open(SINGLE_SCHEME_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -148,6 +155,31 @@ class TestShippedScheme:
 
     def test_random_noise_uses_implemented_method(self, scheme):
         assert scheme["items"]["random_noise"]["methods"] == ["sample_stddev"]
+
+
+class TestShippedSingleScheme:
+    def test_scheme_is_valid(self, single_scheme):
+        assert validate_scheme(single_scheme) == []
+
+    def test_scheme_covers_all_automatable_items(self, single_scheme):
+        assert set(single_scheme["items"]) == AUTOMATABLE_ITEMS
+
+    def test_only_three_multi_method_items_select_method(self, single_scheme):
+        selected = {k: v.get("method") for k, v in single_scheme["items"].items() if "method" in v}
+        assert selected == {
+            "dc_gain": "square_amplitude",
+            "dc_offset": "raw_lsq",
+            "timebase_error": "waveform_fit",
+        }
+
+    def test_selected_items_do_not_keep_primary(self, single_scheme):
+        for name in ("dc_gain", "dc_offset", "timebase_error"):
+            assert "primary" not in single_scheme["items"][name]
+
+    def test_scheme_record_carries_selected_method(self, single_scheme):
+        record = scheme_record(single_scheme, str(SINGLE_SCHEME_PATH))
+        assert record["items"]["dc_gain"]["method"] == "square_amplitude"
+        assert record["items"]["timebase_error"]["method"] == "waveform_fit"
 
 
 class TestValidateSpec:

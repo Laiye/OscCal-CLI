@@ -103,6 +103,7 @@ VALID_LIMIT_SEMANTICS = {"reference_only"}
 REQUIRED_SCHEME_KEYS = {"name", "description", "spec", "items"}
 SCHEME_ITEM_FIELDS = {
     "methods",
+    "method",
     "primary",
     "stimulus",
     "points",
@@ -790,17 +791,28 @@ def validate_scheme(data: dict) -> list[str]:
                 f"items.{key}.methods 含未实现方法: {unsupported}（可用: {sorted(allowed)}）"
             )
 
-        primary = item.get("primary")
-        if key in PRIMARY_METHODS:
-            if not isinstance(primary, str) or not primary:
-                errors.append(f"items.{key}.primary 必须指定主记录方法")
-            elif primary not in methods:
-                errors.append(f"items.{key}.primary 必须是 methods 中的方法")
-        elif key in NO_PRIMARY_METHODS:
+        method = item.get("method")
+        if method is not None:
+            if not isinstance(method, str) or not method.strip():
+                errors.append(f"items.{key}.method 必须为非空字符串")
+            elif method not in methods:
+                errors.append(f"items.{key}.method 必须是 methods 中的方法")
+            if len(methods) <= 1:
+                errors.append(f"items.{key} 只有一个方法，不允许 method")
             if "primary" in item:
-                errors.append(f"items.{key} 的两法是并列方法，不允许 primary")
-        elif "primary" in item:
-            errors.append(f"items.{key} 只有一个已实现方法，不允许 primary")
+                errors.append(f"items.{key}.method 与 primary 不能同时声明")
+        else:
+            primary = item.get("primary")
+            if key in PRIMARY_METHODS:
+                if not isinstance(primary, str) or not primary:
+                    errors.append(f"items.{key}.primary 必须指定主记录方法")
+                elif primary not in methods:
+                    errors.append(f"items.{key}.primary 必须是 methods 中的方法")
+            elif key in NO_PRIMARY_METHODS:
+                if "primary" in item:
+                    errors.append(f"items.{key} 的两法是并列方法，不允许 primary")
+            elif "primary" in item:
+                errors.append(f"items.{key} 只有一个已实现方法，不允许 primary")
 
         errors.extend(_validate_scheme_points(key, item.get("points")))
 

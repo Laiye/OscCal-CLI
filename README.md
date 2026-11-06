@@ -6,10 +6,10 @@ JSON 原始记录与 Excel 报告。
 
 | 项 | 当前状态 |
 |---|---|
-| 版本 | **v0.3.0** |
+| 版本 | **v0.3.1** |
 | 依据规范 | JJF 1057-2026，2027-02-21 实施，复校间隔 12 个月 |
 | 实机验证硬件 | Tektronix MDO3052 + Fluke 9500B（9530 头） |
-| 实机验证 | 2026-11-05 按 v0.3.0 默认方案完成 10/10 项，见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
+| 实机验证 | 2026-11-05 试验方案全量 10/10 项；2026-11-06 单方法方案复测三个多方法项目，见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
 | 结论口径 | 规范表 1 明确"技术指标仅供参考，不作为符合性判定依据"；程序**不出具合格/不合格结论** |
 
 ---
@@ -22,7 +22,7 @@ v0.3.0 起把"仪器事实、标准要求、本轮做法"彻底分开：
 |---|---|---|---|
 | [`characteristics/`](characteristics) | 仪器是什么？ | 通道数、格线、垂直/水平档位集合、标称带宽、最高采样率、是否有 50 Ω | 校准点、方法、限值 |
 | [`specs/`](specs) | 标准要求什么？ | 条款号、记录表号与字段、计算公式、`reference_limits`、偏离声明、环境 | 方法选择、取点参数、硬件能力 |
-| [`schemes/`](schemes) | 本轮怎么做？ | 每个项目的 `methods` / `primary`、`points`、`stimulus`、人工确认提示 | 参考限值、硬件档位全集 |
+| [`schemes/`](schemes) | 本轮怎么做？ | 每个项目的 `methods` 候选集、`method` 实际执行方法、`primary`、`points`、`stimulus`、人工确认提示 | 参考限值、硬件档位全集 |
 | [`commands/`](commands) | 怎么和这台仪器说话？ | SCPI 动作模板、测量助记符、机型能力声明 | 硬件事实、校准点 |
 | [`calibrators/`](calibrators) | 标准器能输出什么？ | 探头、阻抗规则、输出上下限、SCPI 动作 | 被校设备信息、方案 |
 
@@ -40,6 +40,39 @@ calibrators（输出能力）┘
 - 方案可以跨机型复用：同一套点表在 350 MHz / 500 MHz 机型上会自动过滤不可执行的点。
 
 旧的 `profiles/` 目录与 `--profile` / `--spec` 参数在 v0.3.0 中已删除，旧 JSON 布局不再兼容。
+
+### 1.1 试验方案与单方法方案
+
+`schemes/` 下有两套方案：
+
+| 方案 | 文件 | 用途 | 多方法项目 |
+|---|---|---|---|
+| 试验方案 | [`jjf1057_2026.json`](schemes/jjf1057_2026.json) | 方法比对、看方法间偏差，**不作为默认校准方案** | 全部方法并列执行 |
+| 单方法方案 | [`jjf1057_2026_single.json`](schemes/jjf1057_2026_single.json) | **实际校准默认方案** | 每个项目只执行 `method` 指定的一种 |
+
+多方法项目在方案里这样写：
+
+```json
+"dc_gain": {
+  "methods": ["square_amplitude", "dc_two_point", "multi_point_lsq"],
+  "method": "square_amplitude"
+}
+```
+
+- `methods`：本方案声明可用的方法集合；
+- `method`：实际执行的方法，必须属于 `methods`；设置后不再写 `primary`；
+- `primary`：仅在试验方案（没有 `method`、跑全部方法）中用于报告主记录值；
+- 单方法项目不需要 `method`。
+
+当前单方法方案的选择：
+
+| 项目 | 实际执行 |
+|---|---|
+| `dc_gain` | `square_amplitude`（方波幅度法） |
+| `dc_offset` | `raw_lsq`（原始码值拟合） |
+| `timebase_error` | `waveform_fit`（波形拟合法） |
+
+未选方法的采集指令不会发送，报告对应列显示“—”/“不适用”。
 
 ---
 
@@ -62,20 +95,20 @@ calibrators（输出能力）┘
 
 JJF 1057-2026 第 7 章的 10 个项目全部实现：
 
-| 项目键 | 条款 | 项目 | 默认方法 | 取点策略 | MDO3052 单通道点数 |
+| 项目键 | 条款 | 项目 | 实际执行方法（单方法方案） | 取点策略 | MDO3052 单通道点数 |
 |---|---|---|---|---|---|
 | `input_impedance` | 7.3.1 | 输入阻抗 | 校准仪负载测量 | 每通道 × 每阻抗状态 | 2 |
-| `dc_gain` | 7.4.1 / 7.4.2 / 7.4.3 | 直流增益 | 三法并列（主：方波幅度法） | 垂直档位列表 | 6 |
-| `dc_offset` | 7.5.1 / 7.5.2 | 直流偏置 | 两法并列（主：原始码值拟合） | 垂直档位列表 × 1 MΩ/50 Ω | 7 |
+| `dc_gain` | 7.4.1 / 7.4.2 / 7.4.3 | 直流增益 | 方波幅度法（试验：三法并列） | 垂直档位列表 | 6 |
+| `dc_offset` | 7.5.1 / 7.5.2 | 直流偏置 | 原始码值拟合（试验：两法并列） | 垂直档位列表 × 1 MΩ/50 Ω | 7 |
 | `freq_response_bandwidth` | 7.6 | 频率响应、频带宽度 | 正弦扫频 + 半功率点 | 相对标称带宽的比值频点 × 1 MΩ/50 Ω | 18 |
 | `enob` | 7.7 | 动态有效位数 | 时域四参数拟合 | 现场按公式反推 × 1 MΩ/50 Ω | 2 |
 | `rise_time` | 7.8 | 上升时间 | 快沿 10%~90% | 每通道 × 每边沿速度档 | 2 |
-| `timebase_error` | 7.9.1 / 7.9.2 | 时基（采集速率）误差 | 频率法与拟合法并列 | 水平档位列表 | 4 |
+| `timebase_error` | 7.9.1 / 7.9.2 | 时基（采集速率）误差 | 波形拟合法（试验：两法并列） | 水平档位列表 | 4 |
 | `delta_v` | 7.11 | ΔV（幅度）测量 | 自动幅度测量 | 垂直档位列表 × 1 MΩ/50 Ω | 6 |
 | `delta_t` | 7.12 | Δt（时间）测量 | 自动周期测量 | 水平档位列表 | 2 |
 | `random_noise` | 7.13 | 随机噪声 | 采样标准差 | 固定条件（最小量程） | 1 |
 
-合计 **50 点/通道**（MDO3052 + 9500B/9530）。双通道默认方案共 100 点，跳过 16 处：
+合计 **50 点/通道**（MDO3052 + 9500B/9530）。双通道方案共 100 点，跳过 16 处：
 2 项规范定为人工，14 处点级跳过（每通道 2 个 50 Ω 档位超 5 Vpp 上限、
 1 个 50 Ω 偏置点超 5 V 上限、2 个 50 Ω ΔV 点超 5 Vpp 上限、2 个快时基超出方波
 10 kHz 上限）。逐条原因见 `osccal plan` 与记录中的 `skipped_points`。
@@ -119,7 +152,7 @@ PowerShell 提示"禁止运行脚本"时，先执行
 ```bash
 pip show osccal                 # Editable project location 应指向本仓库
 where.exe osccal                # Windows；Linux/macOS 用 which
-osccal --version                # osccal, version 0.3.0
+osccal --version                # osccal, version 0.3.1
 ```
 
 > 仅看 `osccal --version` 不足以证明装对：激活虚拟环境只是把 `.venv\Scripts`
@@ -140,9 +173,9 @@ osccal --version                # osccal, version 0.3.0
 osccal device list
 
 # 2) 离线核对方案的点表（不连仪器）
-osccal plan --scheme jjf1057_2026 --characteristics tektronix_mdo3052 --probe 9530 --channel 1,2
+osccal plan --scheme jjf1057_2026_single --characteristics tektronix_mdo3052 --probe 9530 --channel 1,2
 
-# 3) 自动识别设备并校准（--scheme 默认 jjf1057_2026，可省略）
+# 3) 自动识别设备并校准（--scheme 默认 jjf1057_2026_single，可省略）
 osccal calibrate --auto --probe 9530
 
 # 4) 查看 / 导出
@@ -176,7 +209,7 @@ osccal calibrate [OPTIONS]
 | `--auto` | 扫描 VISA 资源，按 `*IDN?` 自动识别设备并匹配配置 |
 | `--osc PATH` | 示波器指令集文件（默认交互选择） |
 | `--characteristics NAME 或 PATH` | 仪器特征：`characteristics/` 下名称（可省 `.json`）或文件路径（默认交互选择） |
-| `--scheme NAME 或 PATH` | 校准方案：`schemes/` 下名称（可省 `.json`）或文件路径，默认 `jjf1057_2026` |
+| `--scheme NAME 或 PATH` | 校准方案：`schemes/` 下名称（可省 `.json`）或文件路径，默认 `jjf1057_2026_single`（实际校准）；方法比对用 `jjf1057_2026`（试验） |
 | `--calibrator PATH` | 校准仪配置（默认取目录中首个） |
 | `--channel 1,2` | 通道，逗号分隔（MDO3052 共 2 通道） |
 | `--probe 9530 / 9550 / 9560` | 有源探头型号；`--auto` 下省略则自动识别 |
@@ -188,8 +221,11 @@ osccal calibrate [OPTIONS]
 示例：
 
 ```bash
-# 自动识别，跑方案中的全部项目
+# 自动识别并实际校准（默认单方法方案）
 osccal calibrate --auto --probe 9530
+
+# 方法比对：显式选择试验方案（全部方法并列）
+osccal calibrate --auto --probe 9530 --scheme jjf1057_2026
 
 # 只跑直流类两项
 osccal calibrate --auto --probe 9530 --channel 1 --items dc_gain,dc_offset
@@ -198,7 +234,7 @@ osccal calibrate --auto --probe 9530 --channel 1 --items dc_gain,dc_offset
 osccal calibrate \
   --osc commands/tektronix_mdo.json \
   --characteristics characteristics/tektronix_mdo3052.json \
-  --scheme jjf1057_2026 \
+  --scheme jjf1057_2026_single \
   --calibrator calibrators/fluke_9500b.json \
   --probe 9530 --channel 1 \
   --resource-cal "GPIB0::19::INSTR" \
@@ -223,7 +259,8 @@ osccal calibrate \
 只解析点表，**不连接任何仪器**：
 
 ```bash
-osccal plan --scheme jjf1057_2026 --characteristics tektronix_mdo3052 --probe 9530 --channel 1,2
+osccal plan --scheme jjf1057_2026_single --characteristics tektronix_mdo3052 --probe 9530 --channel 1,2
+osccal plan --scheme jjf1057_2026            # 试验方案，多方法并列
 osccal plan --json data/plan.json
 ```
 
@@ -268,11 +305,18 @@ osccal device info --socket 192.168.1.100:5025
 
 ## 6. 方法与测量口径
 
-### 6.1 方案裁剪
+### 6.1 方案与方法选择
 
-多方法项目由方案逐项声明 `methods`，可选子集；`dc_gain` / `dc_offset` 还必须用
-`primary` 指定报告主记录值。`timebase_error` 的频率法与拟合法是规范并列方法，
-两列都出、不指定唯一值。
+单方法方案用 `method` 指定实际执行的方法，`methods` 只作为候选集：
+
+```json
+"dc_gain": {
+  "methods": ["square_amplitude", "dc_two_point", "multi_point_lsq"],
+  "method": "square_amplitude"
+}
+```
+
+试验方案不写 `method`，跑 `methods` 中全部方法，用 `primary` 指定报告主记录值：
 
 ```json
 "dc_gain": {
@@ -281,8 +325,10 @@ osccal device info --socket 192.168.1.100:5025
 }
 ```
 
+- 有 `method` 时不再允许 `primary`；`method` 同时决定报告主记录值；
 - 未选的方法不发送采集指令、不产生读数，记录字段为 `null`；
-- 记录中保存 `methods_selected` 与 `primary_method`，报告信息页写明依据方案；
+- 记录中保存 `metadata.scheme.items.<项目>.method`、`methods_selected` 与
+  `primary_method`，报告信息页写明依据方案；
 - 单方法项目也显式写 `methods`，便于核对"项目—方法"对应关系；
 - 请求未实现的方法（如随机噪声的 RMS 读数法）在加载方案时直接报错。
 
@@ -358,6 +404,17 @@ FW 4.11，9530 头 SN 882750012，证书 WWM202600225，检定日期 2026-03-03�
 `deviation` 表示与规范方法存在偏离，已在 `deviations` 中声明。状态描述的是
 **测量是否完成且可信**，不是合格判定。逐项限制与记录文件见
 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json)。
+
+**单方法方案复测（2026-11-06）**
+
+| 项目 | 执行方法 | 结果 |
+|---|---|---|
+| 直流增益 | `square_amplitude` | 6 点全部 0.000% |
+| 直流偏置 | `raw_lsq` | 7 点；最差 0.614% FS（50 Ω、0.01 V/div） |
+| 时基误差 | `waveform_fit` | −154.59 ~ −28.65 ppm；频率法未执行 |
+
+记录：`data/calibration_20261106_084655_242702_69600b09e60644ae8e8ae7ffdce7b0f1.json`
+其余项目代码路径未变，沿用 2026-11-05 的试验方案实测结果。
 
 ---
 
@@ -459,13 +516,13 @@ data/             # 运行产物（gitignore）
 ```json
 {
   "$schema": "osccal.scheme.v1",
-  "name": "JJF 1057-2026 默认校准方案",
-  "description": "全项执行；方法可裁剪。",
+  "name": "JJF 1057-2026 单方法校准方案",
+  "description": "实际校准用：多方法项目只执行 method 指定的一种。",
   "spec": "jjf1057_2026",
   "items": {
     "dc_gain": {
       "methods": ["square_amplitude", "dc_two_point", "multi_point_lsq"],
-      "primary": "square_amplitude",
+      "method": "square_amplitude",
       "stimulus": {"shape": "SQU", "freq_hz": 1000, "polarity": "SYMM"},
       "points": {
         "strategy": "scale_list",
@@ -481,7 +538,9 @@ data/             # 运行产物（gitignore）
 
 - `spec` 指向 `specs/` 的文件名（不含 `.json`）；
 - `methods` 只能取 [`osccal/core/methods.py`](osccal/core/methods.py) 中已实现的键；
-- `dc_gain` / `dc_offset` 必须给 `primary`，`timebase_error` 不允许 `primary`；
+- `method` 必须属于 `methods`，且与 `primary` 互斥；
+- 试验方案（无 `method`）跑全部方法，`dc_gain` / `dc_offset` 必须给 `primary`；
+- 单方法项目只有一个方法，不写 `method`；
 - 方案未列入的项目在计划里为 `not_in_scheme`，不会被执行；
 - 人工项（外观检查、自校准信号）留在规范里，不写入方案。
 
@@ -492,7 +551,7 @@ data/             # 运行产物（gitignore）
 1. 在 `commands/` 新建指令集：`manufacturer`/`models`/`series`、`feature`、
    `keyword`、`actions`。校验规则见 `config_validation.validate_commands`。
 2. 在 `characteristics/` 新建特征文件：只写硬件事实，不含方法、点表与限值。
-3. 用 `osccal plan --scheme jjf1057_2026 --characteristics <名称或路径>` 核对点表；
+3. 用 `osccal plan --scheme jjf1057_2026_single --characteristics <名称或路径>` 核对点表；
    需要不同方法或点时，复制 `schemes/` 下的方案另存，保持 `spec` 指向同一规范。
 4. 实机跑通全部项目，测得的点数、最大偏差、固件版本写入 `verification/*.json`。
 5. 更新本文档的"支持范围"与"实机验证"两节。
@@ -517,7 +576,7 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 `mypy` 只检查 `pyproject.toml` 里列出的 4 个模块；`ruff format` 不覆盖
 `commands/ characteristics/ specs/ schemes/ calibrators/`（JSON 目录）。
 
-### 10.2 测试范围（约 504 个用例，以 CI 为准）
+### 10.2 测试范围（约 520 个用例，以 CI 为准）
 
 | 文件 | 覆盖 |
 |---|---|
@@ -567,6 +626,11 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 
 ## 12. 版本与兼容性
 
+- **v0.3.1**：新增“单方法校准方案” `jjf1057_2026_single.json` 并设为 CLI 默认；
+  多方法项目用 `method` 键指定实际执行的一种（`dc_gain` 方波幅度法、
+  `dc_offset` 原始码值拟合、`timebase_error` 波形拟合法）；原
+  `jjf1057_2026.json` 降为试验/参考方案，保留全部方法并列。2026-11-06
+  在 MDO3052 上完成三个多方法项目的单方法实机复测。
 - **v0.3.0**：配置分层重构。`profiles/` 改名 `characteristics/`（只保留硬件特征），
   `specs/` 只保留规范要求，方法与取点迁入新的 `schemes/`；新增按项目选择已实现方法
   （`dc_gain` 三法、`dc_offset` 两法、`timebase_error` 两法）。CLI 改为

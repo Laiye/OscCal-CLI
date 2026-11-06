@@ -308,7 +308,7 @@ def cli():
 @click.option(
     "--scheme",
     type=click.STRING,
-    default="jjf1057_2026",
+    default="jjf1057_2026_single",
     show_default=True,
     help="校准方案：schemes/ 下的名称（可省 .json）或文件路径",
 )
@@ -731,7 +731,7 @@ def calibrate(
 @click.option(
     "--scheme",
     type=click.STRING,
-    default="jjf1057_2026",
+    default="jjf1057_2026_single",
     show_default=True,
     help="校准方案：schemes/ 下的名称（可省 .json）或文件路径",
 )
