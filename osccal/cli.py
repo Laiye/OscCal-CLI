@@ -1042,9 +1042,10 @@ def _display_calibration_data(data: dict):
         console.print(skipped_table)
 
     from osccal.core.table_configs import (
-        ITEM_CONFIGS,
         LIMITS_DISCLAIMER,
+        active_config,
         base_item_name,
+        method_note,
         reference_text,
         row_values,
         select_rows,
@@ -1062,7 +1063,7 @@ def _display_calibration_data(data: dict):
         grouped.setdefault(base_name, []).extend(rows)
 
     for base_name, rows in grouped.items():
-        config = ITEM_CONFIGS.get(base_name)
+        config = active_config(base_name, rows, metadata.get("scheme"))
         if config is None:
             console.print(f"[yellow]⚠ 未知校准项目，跳过显示: {base_name}[/yellow]")
             continue
@@ -1085,6 +1086,9 @@ def _display_calibration_data(data: dict):
 
         console.print()
         console.print(table)
+        note = method_note(base_name, rows, metadata.get("scheme"))
+        if note:
+            console.print(f"[dim]执行方法：{note}[/dim]")
         console.print(f"[dim]参考指标：{reference_text(base_name, metadata.get('limits'))}[/dim]")
 
     if grouped:

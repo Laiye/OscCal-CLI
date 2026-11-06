@@ -17,6 +17,7 @@ import time
 from rich.progress import Progress
 
 from osccal.core.fitting import FitError, fit_sine
+from osccal.core.methods import describe_methods
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 #: 峰值占量程的比例（规范：90%~100%，取 95%）。
@@ -161,6 +162,7 @@ class EnobCalibrator(BaseCalibrator):
                 {"name": "序号"},
                 {"name": "通道", "justify": "center"},
                 {"name": "阻抗", "justify": "center"},
+                {"name": "挡位(V/div)"},
                 {"name": "量程(V)"},
                 {"name": "信号频率", "justify": "left"},
                 {"name": "信号幅度(Vpp)"},
@@ -182,6 +184,7 @@ class EnobCalibrator(BaseCalibrator):
                         index,
                         f"CH{self.channel}",
                         "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
+                        f"{record['vertical_scale']:g}",
                         f"{record['full_scale_v']:g}",
                         self._format_frequency(record["signal_freq_hz"]),
                         f"{record['signal_amplitude_vpp']:.4g}",
@@ -192,6 +195,9 @@ class EnobCalibrator(BaseCalibrator):
                 )
                 progress.update(task, advance=1)
         console.print(table)
+        console.print(
+            f"[dim]执行方法：{describe_methods('enob', list(self.methods) or ['time_domain_lsq'])}[/dim]"
+        )
 
     @staticmethod
     def _format_frequency(value: float) -> str:

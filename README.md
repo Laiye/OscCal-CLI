@@ -467,8 +467,11 @@ FW 4.11，9530 头 SN 882750012，证书 WWM202600225，检定日期 2026-03-03�
 列定义与显示精度只有一份声明：`osccal/core/table_configs.py` 的 `ITEM_CONFIGS`
 与 `ITEM_PRECISION`。终端 `show` 与 Excel 导出共用 `core/utils.py` 的格式化函数，
 新增/删除列时两处自动一致（`tests/test_report.py` 守护列数与精度数量一致）。
-未选方法对应的列显示"不适用"；参考指标文本用记录里的规范限值渲染，
-不在报告代码里另写一份限值。
+
+单方法方案下，报告会按结果行/方案中的 `method` **自动删除未选方法的方法列**
+（`active_config()`），表格下方输出“执行方法：…”；终端 runner 的表格同样只保留
+实际执行的方法列。频响/ENOB 表增加“挡位(V/div)”列，便于区分不同垂直档位。
+参考指标文本用记录里的规范限值渲染，不在报告代码里另写一份限值。
 
 ---
 
@@ -576,7 +579,7 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 `mypy` 只检查 `pyproject.toml` 里列出的 4 个模块；`ruff format` 不覆盖
 `commands/ characteristics/ specs/ schemes/ calibrators/`（JSON 目录）。
 
-### 10.2 测试范围（约 520 个用例，以 CI 为准）
+### 10.2 测试范围（约 525 个用例，以 CI 为准）
 
 | 文件 | 覆盖 |
 |---|---|

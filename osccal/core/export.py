@@ -14,11 +14,10 @@ from rich.console import Console
 from osccal.core.methods import ITEM_METHODS
 from osccal.core.storage import STATUS_LABELS
 from osccal.core.table_configs import (
-    EXCEL_ITEM_CONFIGS as item_configs,
-)
-from osccal.core.table_configs import (
     LIMITS_DISCLAIMER,
+    active_config,
     base_item_name,
+    method_note,
     reference_text,
     row_values,
     select_rows,
@@ -48,13 +47,14 @@ def export_to_excel(data: dict, output_path: str) -> str:
         grouped.setdefault(base_name, []).extend(rows)
 
     for base_name, rows in grouped.items():
-        config = item_configs.get(base_name)
+        config = active_config(base_name, rows, metadata.get("scheme"))
         if not config:
             console.print(f"[yellow]⚠ 未知校准项目，跳过导出: {base_name}[/yellow]")
             continue
         data_rows = select_rows(config, rows)
         if data_rows:
-            _create_data_sheet(wb, base_name, config, data_rows, limits)
+            note = method_note(base_name, rows, metadata.get("scheme"))
+            _create_data_sheet(wb, base_name, config, data_rows, limits, note)
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -159,7 +159,7 @@ def _create_info_sheet(wb, metadata):
     ws.column_dimensions["B"].width = 60
 
 
-def _create_data_sheet(wb, name, config, rows, limits):
+def _create_data_sheet(wb, name, config, rows, limits, note=""):
     ws = wb.create_sheet(title=config["title"])
 
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -172,7 +172,7 @@ def _create_data_sheet(wb, name, config, rows, limits):
         bottom=Side(style="thin"),
     )
 
-    headers = config["headers"]
+    headers = config.get("headers") or config["columns"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.fill = header_fill
@@ -195,8 +195,15 @@ def _create_data_sheet(wb, name, config, rows, limits):
             cell.border = thin_border
         row_idx += 1
 
-    # 表尾：参考指标 + 免责说明（不做合格判定）
+    # 表尾：执行方法 + 参考指标 + 免责说明（不做合格判定）
     note_row = row_idx + 1
+    if note:
+        ws.cell(row=note_row, column=1, value="执行方法").font = Font(bold=True, size=10)
+        ws.cell(row=note_row, column=2, value=note).font = Font(size=10)
+        ws.merge_cells(
+            start_row=note_row, start_column=2, end_row=note_row, end_column=len(headers)
+        )
+        note_row += 1
     ws.cell(row=note_row, column=1, value="参考指标").font = Font(bold=True, size=10)
     ws.cell(row=note_row, column=2, value=reference_text(name, limits)).font = Font(size=10)
     ws.merge_cells(start_row=note_row, start_column=2, end_row=note_row, end_column=len(headers))

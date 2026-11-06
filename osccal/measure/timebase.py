@@ -21,6 +21,7 @@ import time
 from rich.progress import Progress
 
 from osccal.core.fitting import FitError, fit_sine
+from osccal.core.methods import describe_methods
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 #: 垂直档位与激励幅度：0.5 Vpp 在 0.1 V/div 下约占 62% 屏，满足"覆盖 50% 以上"。
@@ -162,44 +163,50 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")
             return
 
-        table = self.make_table(
-            "时基（采集速率）误差校准结果",
-            [
-                {"name": "序号"},
-                {"name": "通道", "justify": "center"},
-                {"name": "时基挡位", "justify": "left"},
-                {"name": "信号频率", "justify": "left"},
-                {"name": "测得频率", "justify": "left"},
-                {"name": "方法一(ppm)"},
-                {"name": "方法二(ppm)"},
-            ],
-        )
+        methods = list(self.methods) or list(ALL_METHODS)
+        show_frequency = self.method_enabled(METHOD_FREQUENCY)
+        show_fit = self.method_enabled(METHOD_FIT)
+        columns = [
+            {"name": "序号"},
+            {"name": "通道", "justify": "center"},
+            {"name": "时基挡位", "justify": "left"},
+            {"name": "信号频率", "justify": "left"},
+            {"name": "测得频率", "justify": "left"},
+        ]
+        if show_frequency:
+            columns.append({"name": "方法一(ppm)"})
+        if show_fit:
+            columns.append({"name": "方法二(ppm)"})
+        table = self.make_table("时基（采集速率）误差校准结果", columns)
 
         with Progress() as progress:
             task = progress.add_task("时基误差", total=len(self.points))
             for index, point in enumerate(self.points, start=1):
                 record = self._measure_point(point)
                 self.results.append({"index": index, **record})
-                fit_text = (
-                    f"{record['rel_error_fit'] * 1e6:.2f}"
-                    if record["rel_error_fit"] is not None
-                    else ("不适用" if record["fit_note"] else "—")
-                )
-                freq_text = "不适用" if record["rel_ppm"] is None else f"{record['rel_ppm']:.2f}"
-                self.add_result_row(
-                    table,
-                    [
-                        index,
-                        f"CH{self.channel}",
-                        self._format_time(record["timebase_s_per_div"]) + "/div",
-                        self._format_frequency(record["signal_freq_hz"]),
-                        self._format_frequency(record["measured_freq_hz"]),
-                        freq_text,
-                        fit_text,
-                    ],
-                )
+                row = [
+                    index,
+                    f"CH{self.channel}",
+                    self._format_time(record["timebase_s_per_div"]) + "/div",
+                    self._format_frequency(record["signal_freq_hz"]),
+                    self._format_frequency(record["measured_freq_hz"]),
+                ]
+                if show_frequency:
+                    row.append(
+                        "不适用" if record["rel_ppm"] is None else f"{record['rel_ppm']:.2f}"
+                    )
+                if show_fit:
+                    row.append(
+                        f"{record['rel_error_fit'] * 1e6:.2f}"
+                        if record["rel_error_fit"] is not None
+                        else ("不适用" if record["fit_note"] else "—")
+                    )
+                self.add_result_row(table, row)
                 progress.update(task, advance=1)
         console.print(table)
+        console.print(
+            f"[dim]执行方法：{describe_methods('timebase_error', methods, self.primary_method)}[/dim]"
+        )
 
     @staticmethod
     def _format_time(value: float) -> str:

@@ -11,6 +11,8 @@
 `filter_key` 用于跳过不适合进表格的辅助记录（例如频带宽度汇总行）。
 """
 
+from osccal.core.methods import describe_methods
+
 # 各校准项目的显示精度，按列顺序排列
 ITEM_PRECISION = {
     "input_impedance": [None, None, None, ("sig", 4), ("sig", 4), ("sig", 3), ("dec", 3), None],
@@ -32,6 +34,7 @@ ITEM_PRECISION = {
     "dc_offset": [
         None,
         None,
+        None,
         ("sig", 3),
         ("sig", 3),
         ("sig", 3),
@@ -47,12 +50,24 @@ ITEM_PRECISION = {
         None,
         None,
         None,
+        None,
         ("sig", 4),
         ("sig", 4),
         ("dec", 4),
         None,
     ],
-    "enob": [None, None, None, ("sig", 3), ("sig", 4), ("sig", 3), ("sig", 3), ("dec", 2), None],
+    "enob": [
+        None,
+        None,
+        None,
+        None,
+        ("sig", 3),
+        ("sig", 4),
+        ("sig", 3),
+        ("sig", 3),
+        ("dec", 2),
+        None,
+    ],
     "rise_time": [None, None, ("sig", 3), ("sig", 4), ("dec", 2), ("sig", 3)],
     "timebase_error": [None, None, ("sig", 3), ("sig", 4), ("sig", 4), ("dec", 2), ("dec", 2)],
     "delta_v": [None, None, None, ("sig", 3), ("sig", 3), ("sig", 3), ("dec", 3)],
@@ -126,6 +141,7 @@ ITEM_CONFIGS = {
         "columns": [
             "序号",
             "通道",
+            "阻抗",
             "挡位(V/div)",
             "满量程(V)",
             "零点读数(V)",
@@ -140,6 +156,7 @@ ITEM_CONFIGS = {
         "keys": [
             "index",
             "channel",
+            "impedance",
             "scale",
             "full_scale_v",
             "zero_reading_v",
@@ -156,11 +173,21 @@ ITEM_CONFIGS = {
     },
     "freq_response_bandwidth": {
         "title": "A.5 频率响应、频带宽度",
-        "columns": ["序号", "通道", "阻抗", "频率(Hz)", "幅值(Vpp)", "相对响应 G", "备注"],
+        "columns": [
+            "序号",
+            "通道",
+            "阻抗",
+            "挡位(V/div)",
+            "频率(Hz)",
+            "幅值(Vpp)",
+            "相对响应 G",
+            "备注",
+        ],
         "keys": [
             "index",
             "channel",
             "impedance",
+            "vertical_scale",
             "frequency_hz",
             "amplitude_vpp",
             "response",
@@ -176,6 +203,7 @@ ITEM_CONFIGS = {
             "序号",
             "通道",
             "阻抗",
+            "挡位(V/div)",
             "量程(V)",
             "信号频率(Hz)",
             "信号幅度(Vpp)",
@@ -187,6 +215,7 @@ ITEM_CONFIGS = {
             "index",
             "channel",
             "impedance",
+            "vertical_scale",
             "full_scale_v",
             "signal_freq_hz",
             "signal_amplitude_vpp",
@@ -411,6 +440,92 @@ def reference_text(name: str, limits: dict | None) -> str:
 def base_item_name(result_key: str) -> str:
     """把多通道结果键 `<item>_ch<N>` 还原为项目名。"""
     return result_key.split("_ch")[0]
+
+
+#: 方法专用列 -> 方法键。单方法方案下删除未选方法的列，避免整列“—/不适用”。
+METHOD_COLUMN_METHODS = {
+    "dc_gain": {
+        "gain_m1": "dc_two_point",
+        "error_m1_pct": "dc_two_point",
+        "gain_m3": "multi_point_lsq",
+        "error_m3_pct": "multi_point_lsq",
+        "intercept_m3_v": "multi_point_lsq",
+    },
+    "dc_offset": {
+        "zero_reading_v_m1": "mean_readout",
+        "offset_nominal_v_m1": "mean_readout",
+        "offset_measured_v_m1": "mean_readout",
+        "offset_error_v_m1": "mean_readout",
+        "gain_m1": "mean_readout",
+    },
+    "timebase_error": {
+        "rel_ppm": "frequency_readout",
+        "fit_ppm": "waveform_fit",
+    },
+}
+
+
+def _selected_methods(name: str, rows: list, scheme: dict | None) -> list[str]:
+    """从结果行或方案记录中取出本项实际执行的方法（保持顺序、去重）。"""
+    ordered: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for method in row.get("methods_selected") or []:
+            if method not in ordered:
+                ordered.append(method)
+    if ordered:
+        return ordered
+
+    item = ((scheme or {}).get("items") or {}).get(name) or {}
+    if item.get("method"):
+        return [item["method"]]
+    return list(item.get("methods") or [])
+
+
+def _primary_method(name: str, rows: list, scheme: dict | None) -> str | None:
+    for row in rows:
+        if isinstance(row, dict) and row.get("primary_method"):
+            return str(row["primary_method"])
+    item = ((scheme or {}).get("items") or {}).get(name) or {}
+    primary = item.get("primary")
+    return str(primary) if primary else None
+
+
+def active_config(name: str, rows: list, scheme: dict | None = None) -> dict | None:
+    """按实际执行的方法裁剪表格列；旧记录无方法信息时返回完整配置。"""
+    config = ITEM_CONFIGS.get(name)
+    if config is None:
+        return None
+    methods = _selected_methods(name, rows, scheme)
+    if not methods:
+        return config
+
+    allowed = set(methods)
+    mapping = METHOD_COLUMN_METHODS.get(name, {})
+    keep = [
+        index
+        for index, key in enumerate(config["keys"])
+        if key not in mapping or mapping[key] in allowed
+    ]
+    if len(keep) == len(config["keys"]):
+        return config
+
+    precision = config.get("precision") or []
+    return {
+        **config,
+        "columns": [config["columns"][index] for index in keep],
+        "keys": [config["keys"][index] for index in keep],
+        "precision": [precision[index] for index in keep],
+    }
+
+
+def method_note(name: str, rows: list, scheme: dict | None = None) -> str:
+    """生成表格下方的“执行方法”说明；旧记录无方法信息时返回空串。"""
+    methods = _selected_methods(name, rows, scheme)
+    if not methods:
+        return ""
+    return describe_methods(name, methods, _primary_method(name, rows, scheme))
 
 
 def row_values(config: dict, row: dict) -> list:

@@ -23,6 +23,7 @@ import time
 
 from rich.progress import Progress
 
+from osccal.core.methods import describe_methods
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 #: 偏置设定值：2 格。
@@ -226,45 +227,58 @@ class DcOffsetCalibrator(BaseCalibrator):
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")
             return
 
-        table = self.make_table(
-            "直流偏置校准结果",
-            [
-                {"name": "序号"},
-                {"name": "通道", "justify": "center"},
-                {"name": "阻抗", "justify": "center"},
-                {"name": "挡位(V/div)"},
+        methods = list(self.methods) or list(ALL_METHODS)
+        has_method1 = self.method_enabled(METHOD_MEAN)
+        columns = [
+            {"name": "序号"},
+            {"name": "通道", "justify": "center"},
+            {"name": "阻抗", "justify": "center"},
+            {"name": "挡位(V/div)"},
+            {"name": "满量程(V)"},
+            {"name": "偏置标称(V)"},
+            {"name": "偏置实测(V)"},
+            {"name": "偏置误差(V)"},
+            {"name": "误差(%FS)"},
+            {"name": "偏置增益 G"},
+        ]
+        if has_method1:
+            columns += [
                 {"name": "方法一 零点(mV)"},
                 {"name": "方法一 d₀(V)"},
                 {"name": "方法一 d_r(V)"},
                 {"name": "方法一 Δd(mV)"},
                 {"name": "方法一 G"},
-                {"name": "主方法 d_c(V)"},
-                {"name": "主方法 Δd(mV)"},
-                {"name": "主方法 G"},
-            ],
-        )
+            ]
+        table = self.make_table("直流偏置校准结果", columns)
 
         with Progress() as progress:
             task = progress.add_task("直流偏置", total=len(self.points))
             for index, point in enumerate(self.points, start=1):
                 record = self._measure_point(point)
                 self.results.append({"index": index, **record})
-                self.add_result_row(
-                    table,
-                    [
-                        index,
-                        f"CH{self.channel}",
-                        "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
-                        f"{record['scale']:g}",
+                row = [
+                    index,
+                    f"CH{self.channel}",
+                    "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
+                    f"{record['scale']:g}",
+                    f"{record['full_scale_v']:g}",
+                    self._fmt(record["offset_nominal_v"], ".4g"),
+                    self._fmt(record["offset_measured_v"], ".5f"),
+                    self._fmt(record["offset_error_v"], "+.4f"),
+                    self._fmt(record["error_pct"], "+.3f"),
+                    self._fmt(record["gain"], ".4f"),
+                ]
+                if has_method1:
+                    row += [
                         self._fmt(record["zero_reading_v_m1"], "+.2f", 1e3),
                         self._fmt(record["offset_nominal_v_m1"], ".4g"),
                         self._fmt(record["offset_measured_v_m1"], ".5f"),
                         self._fmt(record["offset_error_v_m1"], "+.2f", 1e3),
                         self._fmt(record["gain_m1"], ".4f"),
-                        self._fmt(record["offset_measured_v"], ".5f"),
-                        self._fmt(record["offset_error_v"], "+.2f", 1e3),
-                        self._fmt(record["gain"], ".4f"),
-                    ],
-                )
+                    ]
+                self.add_result_row(table, row)
                 progress.update(task, advance=1)
         console.print(table)
+        console.print(
+            f"[dim]执行方法：{describe_methods('dc_offset', methods, self.primary_method)}[/dim]"
+        )

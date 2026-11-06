@@ -82,7 +82,7 @@ def describe_methods(item: str, methods: list[str], primary: str | None = None) 
     """把方法键列表渲染为终端/计划表用的中文文本。"""
     labels = ITEM_METHODS.get(item, {})
     text = " + ".join(labels.get(name, name) for name in methods) or "—"
-    if primary:
+    if primary and len(methods) > 1:
         text += f"（主：{labels.get(primary, primary)}）"
     return text
 

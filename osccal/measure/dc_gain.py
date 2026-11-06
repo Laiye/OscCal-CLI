@@ -16,6 +16,7 @@ import time
 
 from rich.progress import Progress
 
+from osccal.core.methods import describe_methods
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 #: 方法一的两个取点位置：屏幕高度的 90% / 10%（相对中心即 ±3.2 格，共 8 格）。
@@ -213,46 +214,54 @@ class DcGainCalibrator(BaseCalibrator):
             console.print("[yellow]⚠ 本轮没有可执行的校准点[/yellow]")
             return
 
-        table = self.make_table(
-            "直流增益校准结果",
-            [
-                {"name": "序号"},
-                {"name": "通道", "justify": "center"},
-                {"name": "阻抗", "justify": "center"},
-                {"name": "挡位(V/div)"},
-                {"name": "方法一 G"},
-                {"name": "误差1(%)"},
-                {"name": "主方法 G"},
-                {"name": "主方法误差(%)"},
-                {"name": "方法三 G"},
-                {"name": "误差3(%)"},
-                {"name": "截距 d(V)"},
-            ],
-        )
+        methods = list(self.methods) or list(ALL_METHODS)
+        has_method1 = self.method_enabled(METHOD_DC_TWO_POINT)
+        has_method3 = self.method_enabled(METHOD_MULTI)
+        columns = [
+            {"name": "序号"},
+            {"name": "通道", "justify": "center"},
+            {"name": "阻抗", "justify": "center"},
+            {"name": "挡位(V/div)"},
+        ]
+        if has_method1:
+            columns += [{"name": "方法一 G"}, {"name": "误差1(%)"}]
+        columns += [{"name": "主方法 G"}, {"name": "主方法误差(%)"}]
+        if has_method3:
+            columns += [{"name": "方法三 G"}, {"name": "误差3(%)"}, {"name": "截距 d(V)"}]
+        table = self.make_table("直流增益校准结果", columns)
 
         with Progress() as progress:
             task = progress.add_task("直流增益", total=len(self.points))
             for index, point in enumerate(self.points, start=1):
                 record = self._measure_point(point)
                 self.results.append({"index": index, **record})
-                self.add_result_row(
-                    table,
-                    [
-                        index,
-                        f"CH{self.channel}",
-                        "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
-                        f"{record['scale']:g}",
+                row = [
+                    index,
+                    f"CH{self.channel}",
+                    "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
+                    f"{record['scale']:g}",
+                ]
+                if has_method1:
+                    row += [
                         self._fmt(record["gain_m1"], 4),
                         self._fmt(record["error_m1_pct"], 3),
-                        self._fmt(record["gain"], 4),
-                        self._fmt(record["error_pct"], 3),
+                    ]
+                row += [
+                    self._fmt(record["gain"], 4),
+                    self._fmt(record["error_pct"], 3),
+                ]
+                if has_method3:
+                    row += [
                         self._fmt(record["gain_m3"], 4),
                         self._fmt(record["error_m3_pct"], 3),
                         self._fmt(record["intercept_m3_v"], 5),
-                    ],
-                )
+                    ]
+                self.add_result_row(table, row)
                 progress.update(task, advance=1)
         console.print(table)
+        console.print(
+            f"[dim]执行方法：{describe_methods('dc_gain', methods, self.primary_method)}[/dim]"
+        )
 
     @staticmethod
     def _fmt(value, digits: int) -> str:

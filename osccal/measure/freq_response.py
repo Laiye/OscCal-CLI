@@ -15,6 +15,7 @@ import time
 
 from rich.progress import Progress
 
+from osccal.core.methods import describe_methods
 from osccal.measure.base import BaseCalibrator, console, ensure_output_off
 
 #: 测试幅度（峰峰值）。高频段 9500B 的可用幅度远低于低频，统一取小值更稳。
@@ -83,6 +84,7 @@ class FreqResponseCalibrator(BaseCalibrator):
                 {"name": "序号"},
                 {"name": "通道", "justify": "center"},
                 {"name": "阻抗", "justify": "center"},
+                {"name": "挡位(V/div)"},
                 {"name": "频率", "justify": "left"},
                 {"name": "幅值(Vpp)"},
                 {"name": "相对响应 G"},
@@ -148,6 +150,7 @@ class FreqResponseCalibrator(BaseCalibrator):
                             index,
                             f"CH{self.channel}",
                             "1 MΩ" if impedance == "1M" else "50 Ω",
+                            f"{scale:g}",
                             self._format_frequency(frequency),
                             f"{measured:.6g}",
                             f"{response:.4f}",
@@ -158,6 +161,9 @@ class FreqResponseCalibrator(BaseCalibrator):
 
                 summaries.append((frequencies, responses, impedance))
         console.print(table)
+        console.print(
+            f"[dim]执行方法：{describe_methods('freq_response_bandwidth', list(self.methods) or ['sine_sweep_half_power'])}[/dim]"
+        )
         for frequencies, responses, impedance in summaries:
             self._report_bandwidth(frequencies, responses, impedance)
 

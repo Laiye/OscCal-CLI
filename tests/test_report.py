@@ -16,6 +16,8 @@ from osccal.core.table_configs import (
     ITEM_CONFIGS,
     ITEM_PRECISION,
     LIMITS_DISCLAIMER,
+    active_config,
+    method_note,
     reference_text,
     row_values,
     select_rows,
@@ -119,6 +121,60 @@ class TestTableConfigs:
         for name, config in EXCEL_ITEM_CONFIGS.items():
             assert config["precision"] is ITEM_CONFIGS[name]["precision"]
 
+    def test_single_method_config_drops_unused_columns(self):
+        rows = [
+            {
+                "methods_selected": ["square_amplitude"],
+                "primary_method": "square_amplitude",
+            }
+        ]
+        config = active_config("dc_gain", rows)
+        assert config is not None
+        assert "方法一 G" not in config["columns"]
+        assert "方法三 G" not in config["columns"]
+        assert "增益 G" in config["columns"]
+        assert "方波幅度法" in method_note("dc_gain", rows)
+
+    def test_trial_config_keeps_all_method_columns(self):
+        rows = [
+            {
+                "methods_selected": [
+                    "square_amplitude",
+                    "dc_two_point",
+                    "multi_point_lsq",
+                ],
+                "primary_method": "square_amplitude",
+            }
+        ]
+        config = active_config("dc_gain", rows)
+        assert config is not None
+        assert "方法一 G" in config["columns"]
+        assert "方法三 G" in config["columns"]
+        assert len(config["columns"]) == len(ITEM_CONFIGS["dc_gain"]["columns"])
+
+    def test_scheme_method_filters_without_row_metadata(self):
+        scheme = {
+            "items": {
+                "timebase_error": {
+                    "methods": ["frequency_readout", "waveform_fit"],
+                    "method": "waveform_fit",
+                }
+            }
+        }
+        config = active_config("timebase_error", [], scheme)
+        assert config is not None
+        assert "方法一(ppm)" not in config["columns"]
+        assert "方法二(ppm)" in config["columns"]
+        assert "波形拟合法" in method_note("timebase_error", [], scheme)
+
+    def test_freq_and_enob_table_include_vertical_scale(self):
+        for name in ("freq_response_bandwidth", "enob"):
+            config = ITEM_CONFIGS[name]
+            assert "挡位(V/div)" in config["columns"]
+            assert "vertical_scale" in config["keys"]
+            assert len(config["columns"]) == len(config["keys"])
+            assert len(config["precision"]) == len(config["columns"])
+
     def test_row_values_tolerates_missing_keys(self):
         row = {"index": 1, "channel": "1"}
         values = row_values(ITEM_CONFIGS["dc_gain"], row)
@@ -219,6 +275,24 @@ class TestExport:
             }
             assert values["依据方案"] == "JJF 1057-2026 默认校准方案"
             assert "方波幅度法" in values["方案方法 dc_gain"]
+        finally:
+            wb.close()
+
+    def test_data_sheet_footer_records_method(self, tmp_path):
+        from osccal.core.export import export_to_excel
+
+        out = tmp_path / "report.xlsx"
+        export_to_excel({"metadata": _metadata(), "results": _results()}, str(out))
+        wb = load_workbook(out)
+        try:
+            text = " ".join(
+                str(cell.value)
+                for row in wb["A.3 直流增益"].iter_rows()
+                for cell in row
+                if cell.value is not None
+            )
+            assert "执行方法" in text
+            assert "方波幅度法" in text
         finally:
             wb.close()
 
