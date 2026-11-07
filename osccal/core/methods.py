@@ -54,6 +54,27 @@ PRIMARY_METHODS = {"dc_gain", "dc_offset"}
 #: 这些项目的方法在规范中是并列方法，不设 primary。
 NO_PRIMARY_METHODS = {"timebase_error"}
 
+#: 多方法项目中，各个方法实际使用的标准器输出波形。
+#:
+#: 方案里的 `stimulus.shape` 是「本轮首选方法」的波形；直流两点法/多点法实际输出
+#: 直流而不是方波，点表核对标准器幅度上限时必须按方法取波形，否则会拿方波的
+#: 6.4 Vpp 去卡 50 Ω 的 ±5 V 直流上限，把本来可做的 1 V/div 点误判为跳过。
+METHOD_OUTPUT_SHAPES: dict[tuple[str, str], str] = {
+    ("dc_gain", "dc_two_point"): "DC",
+    ("dc_gain", "multi_point_lsq"): "DC",
+    ("dc_gain", "square_amplitude"): "SQU",
+    ("dc_offset", "mean_readout"): "DC",
+    ("dc_offset", "raw_lsq"): "DC",
+}
+
+
+def method_output_shape(item: str, method: str | None) -> str | None:
+    """返回某项目某方法实际使用的波形；未声明时返回 None，由调用方回退方案配置。"""
+    if not method:
+        return None
+    return METHOD_OUTPUT_SHAPES.get((item, method))
+
+
 #: 计划表用的短标签，避免终端表格被长条款/长名称挤到换行。
 SHORT_LABELS = {
     "calibrator_load_measure": "负载测量",

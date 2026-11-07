@@ -195,6 +195,17 @@ class TestMalformedCharacteristics:
         errors = validate_characteristics(data)
         assert any("channels" in e for e in errors)
 
+    def test_max_vertical_scale_50_must_be_a_known_scale(self):
+        data = _valid_characteristics()
+        data["max_vertical_scale_50"] = 2.0
+        errors = validate_characteristics(data)
+        assert any("max_vertical_scale_50" in e for e in errors)
+
+    def test_max_vertical_scale_50_accepts_known_scale(self):
+        data = _valid_characteristics()
+        data["max_vertical_scale_50"] = 1.0
+        assert validate_characteristics(data) == []
+
 
 class TestMalformedSpec:
     def test_valid_spec(self):

@@ -111,10 +111,15 @@ def _create_info_sheet(wb, metadata):
         for item_name, selection in (scheme.get("items") or {}).items():
             labels = ITEM_METHODS.get(item_name, {})
             methods = [labels.get(name, name) for name in selection.get("methods", [])]
+            method = selection.get("method")
             primary = selection.get("primary")
-            text = " + ".join(methods)
-            if primary:
-                text += f"（主：{labels.get(primary, primary)}）"
+            if method:
+                # 单方法方案：只写实际执行的方法，不能再把候选集当成本轮方法。
+                text = labels.get(method, method)
+            else:
+                text = " + ".join(methods)
+                if primary and len(methods) > 1:
+                    text += f"（主：{labels.get(primary, primary)}）"
             info_items.append((f"方案方法 {item_name}", text))
 
     for name, failure in metadata.get("failures", {}).items():

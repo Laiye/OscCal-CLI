@@ -284,7 +284,7 @@ class TestDeltaTime:
         assert record["time_measured_s"] == pytest.approx(7.92e-4)
         assert record["error_pct"] == pytest.approx(-1.0)
 
-    def test_uses_square_wave_per_spec(self, configs):
+    def test_uses_time_marker_for_wide_period_range(self, configs):
         points = [
             {
                 "channel": "1",
@@ -297,7 +297,10 @@ class TestDeltaTime:
         instance._read_meas = lambda key, trigger=True: 4e-4
         instance.run()
         cal = instance.inst_calibrator
-        assert any("SHAP SQU" in cmd for cmd in cal.written)
+        assert any("SHAP MARK" in cmd for cmd in cal.written)
+        assert any("SOUR:PER" in cmd for cmd in cal.written), "应设置 MARK 周期而不是 SQU 频率"
+        assert not any("SHAP SQU" in cmd for cmd in cal.written)
+        assert instance.results[0]["stimulus"] == "MARK"
 
     def test_no_points_reports_gap(self, configs):
         instance = build(DeltaTimeCalibrator, configs, [])

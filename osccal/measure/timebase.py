@@ -164,6 +164,7 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             return
 
         methods = list(self.methods) or list(ALL_METHODS)
+        single = len(methods) == 1
         show_frequency = self.method_enabled(METHOD_FREQUENCY)
         show_fit = self.method_enabled(METHOD_FIT)
         columns = [
@@ -174,9 +175,9 @@ class TimebaseErrorCalibrator(BaseCalibrator):
             {"name": "测得频率", "justify": "left"},
         ]
         if show_frequency:
-            columns.append({"name": "方法一(ppm)"})
+            columns.append({"name": "时基误差(ppm)" if single else "方法一(ppm)"})
         if show_fit:
-            columns.append({"name": "方法二(ppm)"})
+            columns.append({"name": "时基误差(ppm)" if single else "方法二(ppm)"})
         table = self.make_table("时基（采集速率）误差校准结果", columns)
 
         with Progress() as progress:

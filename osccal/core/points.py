@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from osccal.core.methods import method_output_shape
+
 SHAPE_TO_OUTPUT = {
     "DC": "DC",
     "SQU": "SQU",
@@ -63,6 +65,21 @@ def _impedance_supported(characteristics: dict, impedance: str) -> bool:
     if impedance == "50":
         return bool(characteristics.get("imp_has_50"))
     return True
+
+
+def _vertical_scales_for(characteristics: dict, impedance: str) -> list[float]:
+    """返回某阻抗状态下可设置的垂直挡位。
+
+    50 Ω 输入的垂直挡位上限通常低于 1 MΩ（MDO3000 系列为 1 V/div），由
+    `characteristics.max_vertical_scale_50` 声明；未声明时按全挡位处理。
+    """
+    scales = [_num(v) for v in characteristics.get("vertical_scales") or []]
+    if impedance != "50":
+        return scales
+    cap = characteristics.get("max_vertical_scale_50")
+    if cap is None:
+        return scales
+    return [scale for scale in scales if scale <= _num(cap) + 1e-12]
 
 
 def _check_amplitude(
@@ -124,10 +141,14 @@ def _resolve_channel_x_impedance(
 
 
 def _resolve_scale_list(
-    item: dict, characteristics: dict, calibrator: dict, channels: list[str]
+    item: dict,
+    characteristics: dict,
+    calibrator: dict,
+    channels: list[str],
+    shape: str | None = None,
 ) -> dict:
     rule = item.get("points", {})
-    shape = item.get("stimulus", {}).get("shape", "DC")
+    shape = shape or item.get("stimulus", {}).get("shape", "DC")
     fraction = rule.get("screen_fraction")
     vertical_scales = rule.get("scales_v_per_div")
     horizontal_scales = rule.get("horizontal_scales_s_per_div")
@@ -140,6 +161,7 @@ def _resolve_scale_list(
 
     if vertical_scales is not None:
         available = set(_num(v) for v in characteristics.get("vertical_scales", []))
+        nominal_divisions = rule.get("offset_nominal_divisions")
         for channel in channels:
             for scale in vertical_scales:
                 scale = _num(scale)
@@ -150,10 +172,14 @@ def _resolve_scale_list(
                     continue
                 std = float(fraction) * vertical_div * scale if fraction is not None else None
                 # 直流偏置没有屏占比，但 50 Ω 下仍要按偏置标称值核对标准器输出上限。
-                limit_amplitude = std
-                nominal_divisions = rule.get("offset_nominal_divisions")
-                if limit_amplitude is None and nominal_divisions is not None:
+                # 直流增益的两点/多点法用双极性直流电平，幅度上限看单侧电平（std/2），
+                # 不能拿 Vpp 去卡 DC 输出的 ±V 上限。
+                if std is not None:
+                    limit_amplitude = std / 2.0 if shape == "DC" else std
+                elif nominal_divisions is not None:
                     limit_amplitude = _num(nominal_divisions) * scale
+                else:
+                    limit_amplitude = None
                 for impedance in wanted_impedances:
                     if not _impedance_supported(characteristics, impedance):
                         skipped.append(
@@ -161,6 +187,23 @@ def _resolve_scale_list(
                                 "channel": channel,
                                 "scale": scale,
                                 "reason": f"机型不支持 {impedance} 输入阻抗",
+                            }
+                        )
+                        continue
+                    impedance_scales = _vertical_scales_for(characteristics, impedance)
+                    if impedance_scales and scale not in impedance_scales:
+                        cap = characteristics.get("max_vertical_scale_50")
+                        reason = (
+                            f"50 Ω 输入垂直挡位上限 {_num(cap):g} V/div"
+                            if cap is not None
+                            else "机型无此垂直档位"
+                        )
+                        skipped.append(
+                            {
+                                "channel": channel,
+                                "scale": scale,
+                                "impedance": impedance,
+                                "reason": reason,
                             }
                         )
                         continue
@@ -320,7 +363,7 @@ def resolve_item(
 ) -> dict:
     """解析单个校准项目。
 
-    返回 {name, clause, title, methods, primary, strategy, status, points, skipped}。
+    返回 {name, clause, title, methods, method, primary, strategy, status, points, skipped}。
     规范中未实现的人工项返回 manual；方案未列入的项目返回 not_in_scheme。
     """
     clause = spec_item.get("clause", "")
@@ -353,13 +396,20 @@ def resolve_item(
 
     rule = scheme_item.get("points", {})
     strategy = rule.get("strategy")
+    selected = scheme_item.get("method")
 
     if strategy == "channel_x_impedance":
         resolved = _resolve_channel_x_impedance(
             scheme_item, characteristics, channels, reference_limits or {}
         )
     elif strategy == "scale_list":
-        resolved = _resolve_scale_list(scheme_item, characteristics, calibrator, channels)
+        resolved = _resolve_scale_list(
+            scheme_item,
+            characteristics,
+            calibrator,
+            channels,
+            shape=method_output_shape(name, selected),
+        )
     elif strategy == "bw_ratio":
         resolved = _resolve_bw_ratio(scheme_item, characteristics, calibrator, channels)
     elif strategy == "derived":
@@ -375,7 +425,6 @@ def resolve_item(
         }
 
     declared = list(scheme_item.get("methods", []))
-    selected = scheme_item.get("method")
     executed = [selected] if selected else declared
     primary = (
         selected if selected and name in {"dc_gain", "dc_offset"} else scheme_item.get("primary")

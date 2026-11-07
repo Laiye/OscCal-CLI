@@ -50,10 +50,9 @@ def _by_name(plan: dict) -> dict[str, dict]:
 
 class TestPlanContent:
     def test_total_points(self, plan):
-        # 4 + 12 + 14 + 36 + 4 + 4 + 8 + 12 + 4 + 2 = 100
-        # Δt 只有 2 点/通道：方波激励受 9500B 10 Hz~10 kHz 限制，快时基不可行
-        # 时基挡位按实机能力收敛到 10 ms/div（去掉 100 ms/div）
-        assert plan["total_points"] == 100
+        # 4 + 12 + 14 + 36 + 4 + 4 + 8 + 12 + 8 + 2 = 104
+        # 试验方案 Δt 保留 4 个水平挡位；MARK 时标使 800 ns~10 ms 均可测
+        assert plan["total_points"] == 104
 
     @pytest.mark.parametrize(
         "name,expected",
@@ -66,7 +65,7 @@ class TestPlanContent:
             ("rise_time", 4),
             ("timebase_error", 8),
             ("delta_v", 12),
-            ("delta_t", 4),
+            ("delta_t", 8),
             ("random_noise", 2),
         ],
     )
@@ -177,12 +176,13 @@ class TestPlanContent:
         # 1 µs/div 在 MDO3052 上不存在（1-2-4-8 序列），用 800 ns/div
         assert scales == [1e-8, 8e-7, 1e-4, 1e-2]
 
-    def test_delta_t_skips_fast_timebases(self, plan):
-        """Δt 用方波激励，9500B 方波只到 10 kHz，最快的两个时基挡位会被跳过。"""
+    def test_delta_t_uses_time_marker_for_all_scales(self, plan):
+        """试验方案 Δt 改 MARK 后，4 个水平挡位都不再受 10 kHz 方波幅度档限制。"""
         item = _by_name(plan)["delta_t"]
-        assert len(item["points"]) == 4
-        reasons = " ".join(skip["reason"] for skip in item["skipped"])
-        assert "超出输出上限" in reasons
+        assert len(item["points"]) == 8
+        assert item["skipped"] == []
+        scales = {p["timebase_s_per_div"] for p in item["points"]}
+        assert scales == {1e-8, 8e-7, 1e-4, 1e-2}
 
     def test_timebase_error_keeps_all_points(self, plan):
         """时基误差用正弦激励，0.1 Hz~600 MHz 覆盖全部 4 个时基挡位。"""
@@ -198,13 +198,14 @@ class TestPlanContent:
 
 class TestSingleScheme:
     def test_same_point_count(self, single_plan):
-        assert single_plan["total_points"] == 100
+        # 单方法用直流两点法：50 Ω 1 V/div 只需 ±3.2 V 直流，不再被方波 5 Vpp 上限误杀。
+        assert single_plan["total_points"] == 102
 
     def test_multi_method_items_execute_one_method(self, single_plan):
         items = _by_name(single_plan)
-        assert items["dc_gain"]["methods"] == ["square_amplitude"]
-        assert items["dc_gain"]["method"] == "square_amplitude"
-        assert items["dc_gain"]["primary"] == "square_amplitude"
+        assert items["dc_gain"]["methods"] == ["dc_two_point"]
+        assert items["dc_gain"]["method"] == "dc_two_point"
+        assert items["dc_gain"]["primary"] == "dc_two_point"
         assert items["dc_offset"]["methods"] == ["raw_lsq"]
         assert items["dc_offset"]["method"] == "raw_lsq"
         assert items["dc_offset"]["primary"] == "raw_lsq"
@@ -218,6 +219,29 @@ class TestSingleScheme:
         assert items["dc_gain"]["method"] is None
         assert len(items["timebase_error"]["methods"]) == 2
 
+    def test_timebase_and_delta_t_use_three_scales(self, single_plan):
+        items = _by_name(single_plan)
+        timebase = [
+            p["timebase_s_per_div"]
+            for p in items["timebase_error"]["points"]
+            if p["channel"] == "1"
+        ]
+        delta_t = [
+            p["timebase_s_per_div"] for p in items["delta_t"]["points"] if p["channel"] == "1"
+        ]
+        assert timebase == [1e-8, 1e-5, 1e-2]
+        assert delta_t == [1e-8, 1e-5, 1e-2]
+        assert items["delta_t"]["skipped"] == []
+
+    def test_two_point_keeps_50_ohm_1v_per_div(self, single_plan):
+        points = [p for p in _by_name(single_plan)["dc_gain"]["points"] if p["channel"] == "1"]
+        fifty = {p["scale"] for p in points if p["impedance"] == "50"}
+        assert fifty == {0.01, 0.1, 1.0}, "1 V/div 在 50 Ω 下应可测（±3.2 V 直流）"
+        skipped = [s for s in _by_name(single_plan)["dc_gain"]["skipped"] if s["channel"] == "1"]
+        assert len(skipped) == 1
+        assert skipped[0]["scale"] == 10.0
+        assert "垂直挡位上限" in skipped[0]["reason"], "50 Ω 10 V/div 应按硬件上限跳过"
+
 
 class TestSchemeSelection:
     def test_method_subset_does_not_change_points(self, configs):
@@ -228,6 +252,19 @@ class TestSchemeSelection:
         item = _by_name(plan)["dc_gain"]
         assert item["methods"] == ["square_amplitude"]
         assert len(item["points"]) == 12
+
+    def test_square_method_still_hits_50_ohm_vpp_limit(self, configs):
+        """方波法在 50 Ω 1 V/div 需要 6.4 Vpp，超过 9500B 的 5 Vpp，应跳过。"""
+        scheme = copy.deepcopy(_load("jjf1057_2026_single.json", "schemes"))
+        scheme["items"]["dc_gain"]["method"] = "square_amplitude"
+        plan = _build(configs, scheme=scheme)
+        item = _by_name(plan)["dc_gain"]
+        skipped = [s for s in item["skipped"] if s["channel"] == "1"]
+        assert any(s["scale"] == 1.0 and "6.4 Vpp" in s["reason"] for s in skipped)
+        fifty = {
+            p["scale"] for p in item["points"] if p["channel"] == "1" and p["impedance"] == "50"
+        }
+        assert fifty == {0.01, 0.1}
 
     def test_item_not_in_scheme_is_reported(self, configs):
         scheme = copy.deepcopy(configs[1])
@@ -247,14 +284,14 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "100" in result.output
+        assert "102" in result.output
         assert "JJF 1057-2026" in result.output
         assert "MDO3052" in result.output
 
     def test_plan_shows_methods(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "方波幅度" in result.output
+        assert "直流两点" in result.output
         assert "波形拟合" in result.output
         assert "3法" not in result.output
 
@@ -268,7 +305,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 100
+        assert data["total_points"] == 102
         assert len(data["items"]) == 12
         assert data["scheme_name"] == "JJF 1057-2026 单方法校准方案"
 

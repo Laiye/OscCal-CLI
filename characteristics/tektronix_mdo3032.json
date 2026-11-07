@@ -13,6 +13,7 @@
     "bandwidth_hz": 350000000,
     "vertical_div": 8,
     "horizontal_div": 10,
+    "max_vertical_scale_50": 1.0,
     "probe_default": 1,
     "init_time": 2,
     "vertical_scales": [

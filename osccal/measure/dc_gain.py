@@ -9,7 +9,8 @@
 - 方法三（7.4.3）：多点最小二乘。m = 16 点、每点采集 n ≥ 1000 点，
   Eᵢ = E_L + (i − 0.5)·E_r/m，G = Σ(Eᵢ−Ē)(ȳᵢ−ȳ)/Σ(Eᵢ−Ē)²，截距 d = ȳ − G·Ē。
 
-三种方法在同一次运行里对同一个点各测一遍，记录并列保存，便于互相印证。
+试验方案会把三种方法在同一次运行里对同一个点各测一遍，记录并列保存，便于互相
+印证；单方法方案只执行 `method` 指定的一种，未选方法的采集指令不会发送。
 """
 
 import time
@@ -186,7 +187,7 @@ class DcGainCalibrator(BaseCalibrator):
             "impedance": impedance,
             "scale": scale,
             "std_value_vpp": std_value,
-            # 只有方波幅度法给出直接的 Vpp 读数；其余主方法没有该列
+            # 只有方波幅度法给出直接的 Vpp 读数；直流两点/多点法没有该列
             "measured_vpp": None if gain2 is None else gain2 * std_value,
             "gain": primary_gain,
             "error_pct": primary_error,
@@ -215,19 +216,30 @@ class DcGainCalibrator(BaseCalibrator):
             return
 
         methods = list(self.methods) or list(ALL_METHODS)
+        single = len(methods) == 1
+        selected = methods[0]
         has_method1 = self.method_enabled(METHOD_DC_TWO_POINT)
         has_method3 = self.method_enabled(METHOD_MULTI)
+        has_square = self.method_enabled(METHOD_SQUARE)
         columns = [
             {"name": "序号"},
             {"name": "通道", "justify": "center"},
             {"name": "阻抗", "justify": "center"},
             {"name": "挡位(V/div)"},
         ]
-        if has_method1:
-            columns += [{"name": "方法一 G"}, {"name": "误差1(%)"}]
-        columns += [{"name": "主方法 G"}, {"name": "主方法误差(%)"}]
-        if has_method3:
-            columns += [{"name": "方法三 G"}, {"name": "误差3(%)"}, {"name": "截距 d(V)"}]
+        # “被校示值 Vpp”只有方波幅度法才有；直流两点/多点法没有这一读数。
+        if has_square:
+            columns.append({"name": "被校示值(Vpp)"})
+        if single:
+            columns += [{"name": "增益 G"}, {"name": "增益误差(%)"}]
+            if selected == METHOD_MULTI:
+                columns.append({"name": "截距 d(V)"})
+        else:
+            if has_method1:
+                columns += [{"name": "方法一 G"}, {"name": "误差1(%)"}]
+            columns += [{"name": "主记录 G"}, {"name": "主记录误差(%)"}]
+            if has_method3:
+                columns += [{"name": "方法三 G"}, {"name": "误差3(%)"}, {"name": "截距 d(V)"}]
         table = self.make_table("直流增益校准结果", columns)
 
         with Progress() as progress:
@@ -241,21 +253,31 @@ class DcGainCalibrator(BaseCalibrator):
                     "1 MΩ" if record["impedance"] == "1M" else "50 Ω",
                     f"{record['scale']:g}",
                 ]
-                if has_method1:
+                if has_square:
+                    row.append(self._fmt(record["measured_vpp"], 4))
+                if single:
                     row += [
-                        self._fmt(record["gain_m1"], 4),
-                        self._fmt(record["error_m1_pct"], 3),
+                        self._fmt(record["gain"], 4),
+                        self._fmt(record["error_pct"], 3),
                     ]
-                row += [
-                    self._fmt(record["gain"], 4),
-                    self._fmt(record["error_pct"], 3),
-                ]
-                if has_method3:
+                    if selected == METHOD_MULTI:
+                        row.append(self._fmt(record["intercept_m3_v"], 5))
+                else:
+                    if has_method1:
+                        row += [
+                            self._fmt(record["gain_m1"], 4),
+                            self._fmt(record["error_m1_pct"], 3),
+                        ]
                     row += [
-                        self._fmt(record["gain_m3"], 4),
-                        self._fmt(record["error_m3_pct"], 3),
-                        self._fmt(record["intercept_m3_v"], 5),
+                        self._fmt(record["gain"], 4),
+                        self._fmt(record["error_pct"], 3),
                     ]
+                    if has_method3:
+                        row += [
+                            self._fmt(record["gain_m3"], 4),
+                            self._fmt(record["error_m3_pct"], 3),
+                            self._fmt(record["intercept_m3_v"], 5),
+                        ]
                 self.add_result_row(table, row)
                 progress.update(task, advance=1)
         console.print(table)

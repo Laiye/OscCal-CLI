@@ -5,6 +5,11 @@
 
 取点按屏占比给出信号周期：T = screen_fraction × 水平格数 × 时基挡位 / M。
 示波器用周期测量功能读单个周期，再乘 M 与标准值比较。
+
+激励优先使用 9500B 的**时标输出（MARK）**：时标方波周期约 9.0091 ns~55 s，
+10 ns/div（40 ns 周期）和 10 µs/div（40 µs 周期）都可输出；普通 SQU 幅度档
+只保证到 10 kHz，会把这两档误判为不可测。无 `set_mark_period` 能力的标准器
+才退回 SQU + `set_freq`。
 """
 
 import time
@@ -38,9 +43,15 @@ class DeltaTimeCalibrator(BaseCalibrator):
             self._write_osc("set_vertical_position", self.channel, 0.0)
         self._nudge_trigger_level(VERTICAL_SCALE)
 
-        self._write_calibrator("set_shap", "SQU")
-        self._write_calibrator("set_squ_polarity", "SYMM")
-        self._write_calibrator("set_freq", freq_std)
+        actions = self.cmd_calibrator.get("actions", {})
+        use_marker = "set_mark_period" in actions
+        if use_marker:
+            self._write_calibrator("set_shap", "MARK")
+            self._write_calibrator("set_mark_period", period_std)
+        else:
+            self._write_calibrator("set_shap", "SQU")
+            self._write_calibrator("set_squ_polarity", "SYMM")
+            self._write_calibrator("set_freq", freq_std)
         self._write_calibrator("set_volt", AMPLITUDE_VPP)
         self._write_calibrator("set_output", "ON")
         time.sleep(1.0)
@@ -63,6 +74,8 @@ class DeltaTimeCalibrator(BaseCalibrator):
             "time_standard_s": time_standard,
             "time_measured_s": time_measured,
             "error_pct": error_pct,
+            "stimulus": "MARK" if use_marker else "SQU",
+            "marker_period_s": period_std if use_marker else None,
         }
 
     @ensure_output_off
@@ -73,7 +86,9 @@ class DeltaTimeCalibrator(BaseCalibrator):
         self.setup_measurement("meas_period")
 
         if not self.points:
-            console.print("[yellow]⚠ 本轮没有可执行的校准点（方波激励能力不足时会被跳过）[/yellow]")
+            console.print(
+                "[yellow]⚠ 本轮没有可执行的校准点（时标/SQU 激励能力不足时会被跳过）[/yellow]"
+            )
             return
 
         table = self.make_table(

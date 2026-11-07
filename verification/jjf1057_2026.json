@@ -7,7 +7,7 @@
         "file": "jjf1057_2026.json",
         "limits_semantics": "reference_only"
     },
-    "verified_at": "2026-11-05",
+    "verified_at": "2026-11-07",
     "hardware": {
         "oscilloscope": {
             "manufacturer": "Tektronix",
@@ -42,13 +42,29 @@
         "production": {
             "name": "JJF 1057-2026 单方法校准方案",
             "file": "jjf1057_2026_single.json",
-            "verified_at": "2026-11-06",
-            "record": "data/calibration_20261106_084655_242702_69600b09e60644ae8e8ae7ffdce7b0f1.json",
+            "verified_at": "2026-11-07",
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json",
             "items": {
-                "dc_gain": {"method": "square_amplitude", "error_pct": "0.000"},
-                "dc_offset": {"method": "raw_lsq", "worst_error_percent_fs": 0.614},
-                "timebase_error": {"method": "waveform_fit", "fit_ppm": "-154.59 ~ -28.65"}
-            }
+                "dc_gain": {
+                    "method": "dc_two_point",
+                    "max_error_pct": 0.172,
+                    "50ohm_1v_error_pct": -0.033
+                },
+                "dc_offset": {
+                    "method": "raw_lsq",
+                    "worst_error_percent_fs": 1.72
+                },
+                "timebase_error": {
+                    "method": "waveform_fit",
+                    "fit_ppm": "-373.0 ~ -130.5"
+                },
+                "delta_t": {
+                    "method": "auto_period",
+                    "stimulus": "MARK",
+                    "points": 3
+                }
+            },
+            "note": "2026-11-07 单方法方案 10 项一次复跑（含 MARK 时标 Δt）"
         }
     },
     "status_legend": {
@@ -62,100 +78,113 @@
             "item": "input_impedance",
             "clause": "7.3.1",
             "status": "verified",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "1 MΩ ±0.5%；50 Ω ±1%（表 1，仅供参考）",
             "points": 2,
             "measured": {
-                "1M": {"resistance_ohm": 998100.0, "capacitance_pf": 11.78, "error_pct": -0.19},
-                "50": {"resistance_ohm": 50.016, "capacitance_pf": 120.0, "error_pct": 0.032}
+                "1M": {
+                    "resistance_ohm": 997600.0,
+                    "capacitance_pf": 12.07,
+                    "error_pct": -0.24
+                },
+                "50": {
+                    "resistance_ohm": 50.023,
+                    "capacitance_pf": 120.0,
+                    "error_pct": 0.046
+                }
             },
             "deviations": [],
-            "limitations": ["50 Ω 时电容读数 120 pF 处于量程边界，仅作记录"],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "limitations": [
+                "50 Ω 时电容读数 120 pF 处于量程边界，仅作记录",
+                "1 MΩ 电阻偏差 -0.24%，50 Ω +0.046%，均在表 1 参考范围内"
+            ],
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "dc_gain",
             "clause": "7.4.1 / 7.4.2 / 7.4.3",
             "status": "verified",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "最大允许误差 ±1%（参考）",
-            "points": 6,
+            "points": 7,
             "measured": {
-                "method1_error_pct": "0.077 ~ 0.453",
-                "method2_error_pct": "0.000 ~ 0.000",
-                "method3_error_pct": "0.183 ~ 0.391",
-                "max_cross_method_divergence_pct": 0.453
+                "method": "dc_two_point",
+                "error_pct": "-0.033 ~ 0.172",
+                "max_error_pct": 0.172,
+                "50ohm_1v_error_pct": -0.033,
+                "1M_points": 4,
+                "50_points": 3
             },
             "deviations": [
-                "三种方法并列测量，互为印证；方法二为方波幅度法（1 kHz、SYMM 双极性）"
+                "单方法方案执行直流两点法（7.4.1）；三法并列比对见 2026-11-05 试验记录"
             ],
             "limitations": [
-                "方波仅取 1 kHz：9500B 方波指标适用至 10 kHz",
-                "方法二本次 6 点均为 0.000%，量化台阶未出现；不能据此认为其重复性优于 0.625% 台阶",
-                "方法一/三使用读数收敛判据（0.3 s 间隔、相对差 ≤0.05%），累计等待写入记录"
+                "50 Ω 1 V/div 用 ±3.2 V 直流电平，7 点全部完成（含 50 Ω 1 V/div，误差 -0.033%）",
+                "50 Ω 10 V/div 受输入垂直挡位上限 1 V/div 限制，已跳过",
+                "两点法由 MEAN 读数计算，标准值 Vpp 仅表示 V+ 与 V− 的差值"
             ],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "dc_offset",
             "clause": "7.5.1 / 7.5.2",
             "status": "deviation",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "最大允许误差 ±1% × 满量程（参考）",
             "points": 7,
             "measured": {
-                "zero_reading_mv": "-1.72 ~ +23.00",
-                "method1_offset_error_mv": "+0.25 ~ +10.80",
-                "method1_gain": "1.0005 ~ 1.0156",
-                "method2_offset_error_mv": "-94.00 ~ -0.31",
-                "method2_gain": "0.9845 ~ 0.9953",
-                "worst_error_percent_fs": 0.588
+                "zero_reading_mv": "-10.87 ~ -0.95",
+                "offset_error_mv": "-120.80 ~ -1.07",
+                "gain": "0.9312 ~ 0.9940",
+                "worst_error_percent_fs": 1.72,
+                "50ohm_1v_error_percent_fs": -0.301
             },
             "deviations": [
-                "方法一的激励取与 d₀ 同号（规范原文为 −d₀）：取负号会把波形推出约两倍偏置量，无法读数",
-                "零点测量用 ±1 mV 两点插值：9500B 的最小可设幅度约 1 mV，SOUR:VOLT 0 被静默丢弃"
+                "零点测量用 ±1 mV 两点插值：9500B 最小可设幅度约 1 mV，SOUR:VOLT 0 被静默丢弃",
+                "单方法方案只执行原始码值拟合（7.5.2）；方法一同号激励的偏离见 2026-11-05 试验记录"
             ],
             "limitations": [
-                "方法一用 MEAN 读数、方法二用原始码值，两者的误差定义与符号不可直接相加，只能按量级互相对照",
-                "1 MΩ 4 点、50 Ω 3 点（50 Ω 10 V/div 的 20 V 超出 9500B 5 V 上限，已跳过）",
-                "50 Ω 最差 0.588% FS（0.01 V/div），1 MΩ 最差 0.388% FS，均在参考指标内"
+                "1 MΩ 4 点、50 Ω 3 点；50 Ω 10 V/div 受输入垂直挡位上限 1 V/div 限制，已跳过",
+                "50 Ω 1 V/div 误差 -0.301% FS；最差 1.720% FS（50 Ω 0.01 V/div），超参考 ±1% FS，按规范仅作参考、不作符合性判定"
             ],
-            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "freq_response_bandwidth",
             "clause": "7.6",
             "status": "verified_with_caveat",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "带内波动 ±3 dB；半功率点 0.707（参考）",
             "points": 18,
             "measured": {
                 "reference_frequency_hz": 50000,
                 "1M": {
-                    "response_at_450mhz": 0.846,
-                    "response_at_500mhz": 0.715,
+                    "response_at_450mhz": 0.87,
+                    "response_at_500mhz": 0.748,
                     "bandwidth": "≥500 MHz（测试范围内未出现 −3 dB 点）",
-                    "inband_max_response": 1.0244
+                    "inband_max_response": 1.0325,
+                    "inband_max_frequency_hz": 250000000
                 },
                 "50": {
-                    "response_at_450mhz": 0.910,
-                    "response_at_500mhz": 0.836,
+                    "response_at_450mhz": 0.893,
+                    "response_at_500mhz": 0.82,
                     "bandwidth": "≥500 MHz（测试范围内未出现 −3 dB 点）",
-                    "inband_max_response": 1.0164
+                    "inband_max_response": 1.0164,
+                    "inband_max_frequency_hz": 25000000
                 }
             },
             "deviations": [],
             "limitations": [
-                "1 MΩ 500 MHz 处 G=0.715、50 Ω 处 G=0.836，两种阻抗均 ≥0.707，带宽 ≥500 MHz",
-                "1 MΩ 带内最大 +2.44%（25/250 MHz），50 Ω 为 +1.64%（25 MHz），属带内纹波或单点测量散布"
+                "1 MΩ 500 MHz 处 G=0.748、50 Ω 处 G=0.820，两种阻抗均 ≥0.707，带宽 ≥500 MHz",
+                "1 MΩ 带内最大 +3.25%（250 MHz），50 Ω 为 +1.64%（25 MHz），属带内纹波或单点测量散布"
             ],
-            "record": "data/calibration_20261105_165913_194588_3e16cbc070424b7e88591b76b4618681.json"
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "enob",
             "clause": "7.7",
             "status": "verified_with_caveat",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "12 bit（参考）",
             "points": 2,
             "measured": {
@@ -163,29 +192,35 @@
                 "sample_rate_sa_s": 2500000000,
                 "signal_freq_hz": 17500000,
                 "signal_amplitude_vpp": 1.52,
-                "1M": {"rms_error_v": 0.006126, "enob_bit": 6.24},
-                "50": {"rms_error_v": 0.006066, "enob_bit": 6.25}
+                "1M": {
+                    "rms_error_v": 0.006315,
+                    "enob_bit": 6.19
+                },
+                "50": {
+                    "rms_error_v": 0.006239,
+                    "enob_bit": 6.21
+                }
             },
             "deviations": [],
             "limitations": [
                 "在机型最高采样率 2.5 GS/s 下测量，记录长度与分析点数 N = 1000 一致",
-                "1 MΩ 6.24 bit、50 Ω 6.25 bit，两阻抗条件下一致；与参考 12 bit 差距大，属 8 位 ADC 机型的正常水平，参考指标仅供参考"
+                "1 MΩ 6.19 bit、50 Ω 6.21 bit，两阻抗条件下一致；与参考 12 bit 差距大，属 8 位 ADC 机型的正常水平，参考指标仅供参考"
             ],
-            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "rise_time",
             "clause": "7.8",
             "status": "verified_with_caveat",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "可测下限 >10 ps（参考）",
             "points": 2,
             "measured": {
-                "edge_150ps_reading_ps": 775.8,
-                "edge_500ps_reading_ps": 884.5,
-                "difference_ps": 108.7,
-                "difference_sem_ps": 24.4,
-                "derived_scope_rise_time_ps": "729.4 ~ 759.2",
+                "edge_150ps_reading_ps": 797.2,
+                "edge_500ps_reading_ps": 883.5,
+                "difference_ps": 86.24,
+                "difference_sem_ps": 27.1,
+                "derived_scope_rise_time_ps": "728.4 ~ 783.0",
                 "rounds": 1,
                 "acquisitions_per_point": 10
             },
@@ -194,84 +229,120 @@
                 "测量项取 RIS（上升沿）；按图 9 接匹配阻抗，示波器选 50 Ω 端接；垂直偏置置于脉冲中点 −0.5 V"
             ],
             "limitations": [
-                "单次采集标准差 62.3 ps（150 ps 边沿）/45.5 ps（500 ps 边沿），10 次平均后标准误 19.7/14.4 ps",
+                "单次采集标准差 59.3 ps（150 ps 边沿）/61.9 ps（500 ps 边沿），10 次平均后标准误 18.7/19.6 ps",
                 "证书边沿值在头输出端，经电缆与接头到达示波器会略慢，反推的示波器过渡可能略偏小",
-                "实测差值 108.7 ps 与理论 86.0 ps 相差 22.7 ps（约 0.93 个标准误），仍在重复性范围内"
+                "实测差值 86.24 ps 与理论 86.0 ps 相差 0.24 ps（约 0.01 个标准误），在重复性范围内"
             ],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "timebase_error",
             "clause": "7.9.1 / 7.9.2",
             "status": "verified_with_caveat",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "最大允许误差 ±1×10⁻⁶ ~ ±5×10⁻⁹（参考）",
-            "points": 4,
+            "points": 3,
             "measured": {
-                "frequency_method_ppm": "-3260.00 ~ +1248.53",
-                "fit_method_ppm": "-204.75 ~ +55.09"
+                "fit_method_ppm": "-373.0 ~ -130.5",
+                "frequency_method_ppm": "未执行（单方法方案只执行波形拟合法）"
             },
-            "deviations": ["按 7.9.1 / 7.9.2 两种方法并列记录，不指定唯一判定值"],
-            "limitations": [
-                "频率法受示波器频率读数 5 位有效数字限制，量化误差约 1000 ppm",
-                "拟合法在 4 个挡位全部通过时间轴一致性检查（无 fit_note），分辨力高一个量级",
-                "记录长度固定为 1000 点后，800 ns/div 吸附为 1 µs/div；记录中保存回读的实际挡位"
+            "deviations": [
+                "按 7.9.1 / 7.9.2 两种方法并列定义；单方法方案只执行 7.9.2 波形拟合法"
             ],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "limitations": [
+                "单方法方案未执行 7.9.1 频率法；3 个挡位拟合值：10 ns/div -130.5 ppm、10 µs/div -373.0 ppm、10 ms/div -171.2 ppm",
+                "拟合值在 3 个挡位均通过时间轴一致性检查（无 fit_note）",
+                "10 ms/div 拟合值比 11-07 前一次复跑（-235.0 ppm）更负，属时基非线性/单点散布，记录中保留原始读数"
+            ],
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "delta_v",
             "clause": "7.11",
             "status": "deviation",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "最大允许误差 ±(1% × 读值 ± 1 个量化阶梯)（参考）",
             "points": 6,
             "measured": {
-                "1M": {"scales_v_per_div": [0.01, 0.1, 1.0, 10.0], "error_pct": "0.000 ~ 0.000"},
-                "50": {"scales_v_per_div": [0.01, 0.1], "error_pct": "0.000 ~ 0.000"}
+                "1M": {
+                    "scales_v_per_div": [
+                        0.01,
+                        0.1,
+                        1.0,
+                        10.0
+                    ],
+                    "error_pct": "0.000 ~ 0.000"
+                },
+                "50": {
+                    "scales_v_per_div": [
+                        0.01,
+                        0.1
+                    ],
+                    "error_pct": "0.000 ~ 0.000"
+                }
             },
-            "deviations": ["用示波器自动幅度测量读数代替规范要求的光标读数（记录中标注 method=auto_measurement）"],
-            "limitations": [
-                "1 MΩ 4 点、50 Ω 2 点；50 Ω 下 1 V/div、10 V/div 的 6.4/64 Vpp 超出 9500B 5 Vpp 上限，已跳过",
-                "两种阻抗下各点误差均在示波器幅度读数分辨力内"
+            "deviations": [
+                "用示波器自动幅度测量读数代替规范要求的光标读数（记录中标注 method=auto_measurement）"
             ],
-            "record": "data/calibration_20261105_164005_696527_26c26ae54d544d79a4be626c582d13d1.json"
+            "limitations": [
+                "1 MΩ 4 点、50 Ω 2 点；50 Ω 1 V/div 的 6.4 Vpp 超 9500B 5 Vpp 上限，10 V/div 也受输入垂直挡位 1 V/div 限制，已跳过",
+                "两种阻抗所有可测点误差均为 0.000%（在幅度读数分辨力内）"
+            ],
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "delta_t",
             "clause": "7.12",
             "status": "deviation",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "最大允许误差 ±(0.2% × 读值 + 1 个量化间隔)（参考）",
-            "points": 2,
+            "points": 3,
             "measured": {
-                "time_standard_s": [0.0008, 0.08],
-                "time_measured_s": [0.0008, 0.08],
-                "error_pct": "0.000 ~ 0.000"
+                "time_standard_s": [
+                    8e-08,
+                    8e-05,
+                    0.08
+                ],
+                "time_measured_s": [
+                    8.00302e-08,
+                    8e-05,
+                    0.08
+                ],
+                "error_pct": "0.000 ~ 0.0378",
+                "stimulus": "MARK"
             },
-            "deviations": ["用示波器自动时延测量读数代替规范要求的光标读数"],
-            "limitations": ["方波激励受 9500B 10 Hz~10 kHz 限制，仅 100 µs/div 与 10 ms/div 两个挡位可测"],
-            "record": "data/calibration_20261105_125525_826510_f2e20b4118d949919c65a777fee3bbde.json"
+            "deviations": [
+                "用示波器自动时延测量读数代替规范要求的光标读数"
+            ],
+            "limitations": [
+                "使用 9500B 时标输出（MARK 方波，周期约 9.0091 ns~55 s），10 ns/10 µs/10 ms 三档均可测，不再受 10 kHz 方波幅度档限制",
+                "10 ns/div 误差 +0.0378%；10 µs/div、10 ms/div 均为 0.000%",
+                "时标周期由点表的 screen_fraction、水平格数和 M 计算，记录中保存 marker_period_s"
+            ],
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         },
         {
             "item": "random_noise",
             "clause": "7.13",
             "status": "verified_with_caveat",
-            "verified_at": "2026-11-05",
+            "verified_at": "2026-11-07",
             "reference": "±0.1% × 满量程（参考）",
             "points": 1,
             "measured": {
                 "vertical_scale_v_per_div": 0.001,
                 "full_scale_v": 0.008,
                 "samples": 1000,
-                "noise_v": 0.000148337,
-                "noise_percent_fs": 1.8542
+                "noise_v": 0.00016974826088084696,
+                "noise_percent_fs": 2.1219
             },
-            "deviations": ["输入端外接 50 Ω 匹配负载，示波器保持 1 MΩ"],
-            "limitations": [
-                "实测 1.8542% FS 约为参考指标 0.1% FS 的 18.5 倍，属 1 mV/div 挡位的本底噪声水平，参考指标仅供参考"
+            "deviations": [
+                "输入端外接 50 Ω 匹配负载，示波器保持 1 MΩ"
             ],
-            "record": "data/calibration_20261105_132905_252291_2a36f53506bf47109563fc4110382661.json"
+            "limitations": [
+                "实测 2.1219% FS 约为参考指标 0.1% FS 的 21.2 倍，属 1 mV/div 挡位的本底噪声水平，参考指标仅供参考",
+                "2026-11-07 复跑时 CH1 已接 50 Ω 匹配负载，校准仪输出关闭"
+            ],
+            "record": "data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json"
         }
     ]
 }

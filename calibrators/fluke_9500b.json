@@ -134,6 +134,20 @@
                 "max_vpp": 3
             }
         },
+        "MARK": {
+            "1M": {
+                "min_vpp": 0.1,
+                "max_vpp": 1.0,
+                "min_freq_hz": 0.018181,
+                "max_freq_hz": 111000000
+            },
+            "50": {
+                "min_vpp": 0.1,
+                "max_vpp": 1.0,
+                "min_freq_hz": 0.018181,
+                "max_freq_hz": 111000000
+            }
+        },
         "amplitude_accuracy": {
             "DC_1M": "±(0.025% + 25 μV)",
             "SQU_1M_ge_1mV": "±(0.1% + 10 μV)",

@@ -228,7 +228,9 @@ class DcOffsetCalibrator(BaseCalibrator):
             return
 
         methods = list(self.methods) or list(ALL_METHODS)
-        has_method1 = self.method_enabled(METHOD_MEAN)
+        # 单方法执行时基础列已经承载该方法的判定值；再列“方法一”会出现同一读数
+        # 两列。只有多方法并列时才把方法一作为附加列展示。
+        has_method1 = self.method_enabled(METHOD_MEAN) and len(methods) > 1
         columns = [
             {"name": "序号"},
             {"name": "通道", "justify": "center"},

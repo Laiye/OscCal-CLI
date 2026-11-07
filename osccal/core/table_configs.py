@@ -464,6 +464,46 @@ METHOD_COLUMN_METHODS = {
     },
 }
 
+#: 基础列中只对某个方法有意义的列：未选该方法时整列删除（例如只有方波幅度法
+#: 才有“被校示值 Vpp”，直流两点法没有这一读数）。
+METHOD_SPECIFIC_BASE_COLUMNS = {
+    "dc_gain": {"measured_vpp": "square_amplitude"},
+}
+
+#: 单方法执行时，基础列已经是该方法的判定值，方法专用列只是同一读数的副本；
+#: 这些列要删掉，避免终端/Excel 同时出现“方法一”和“主记录”两列相同数字。
+SINGLE_METHOD_DROP_COLUMNS = {
+    "dc_gain": {
+        "dc_two_point": {"gain_m1", "error_m1_pct"},
+        "multi_point_lsq": {"gain_m3", "error_m3_pct"},
+    },
+    "dc_offset": {
+        "mean_readout": {
+            "zero_reading_v_m1",
+            "offset_nominal_v_m1",
+            "offset_measured_v_m1",
+            "offset_error_v_m1",
+            "gain_m1",
+        },
+    },
+}
+
+#: 单方法时把“方法一/方法二”表头换成不暗示多方法的名称。
+SINGLE_METHOD_HEADERS = {
+    "timebase_error": {
+        "rel_ppm": "时基误差(ppm)",
+        "fit_ppm": "时基误差(ppm)",
+    },
+}
+
+#: 多方法并列时，基础判定列表头用“主记录”，避免与方法专用列混淆。
+MULTI_METHOD_HEADERS = {
+    "dc_gain": {
+        "gain": "主记录增益 G",
+        "error_pct": "主记录误差(%)",
+    },
+}
+
 
 def _selected_methods(name: str, rows: list, scheme: dict | None) -> list[str]:
     """从结果行或方案记录中取出本项实际执行的方法（保持顺序、去重）。"""
@@ -493,7 +533,12 @@ def _primary_method(name: str, rows: list, scheme: dict | None) -> str | None:
 
 
 def active_config(name: str, rows: list, scheme: dict | None = None) -> dict | None:
-    """按实际执行的方法裁剪表格列；旧记录无方法信息时返回完整配置。"""
+    """按实际执行的方法裁剪表格列；旧记录无方法信息时返回完整配置。
+
+    单方法执行时只保留该方法真正产生的列：未选方法的方法列、以及基础列中只对
+    未选方法有意义的列（如直流两点法的“被校示值 Vpp”）都删掉；与方法专用列
+    重复的基础列也删掉，表头不再出现“主方法/方法一”并列。
+    """
     config = ITEM_CONFIGS.get(name)
     if config is None:
         return None
@@ -502,21 +547,34 @@ def active_config(name: str, rows: list, scheme: dict | None = None) -> dict | N
         return config
 
     allowed = set(methods)
+    single = len(methods) == 1
+    selected = methods[0]
     mapping = METHOD_COLUMN_METHODS.get(name, {})
-    keep = [
-        index
-        for index, key in enumerate(config["keys"])
-        if key not in mapping or mapping[key] in allowed
-    ]
-    if len(keep) == len(config["keys"]):
-        return config
-
+    base_specific = METHOD_SPECIFIC_BASE_COLUMNS.get(name, {})
+    drop_single = SINGLE_METHOD_DROP_COLUMNS.get(name, {}).get(selected, set()) if single else set()
+    single_headers = SINGLE_METHOD_HEADERS.get(name, {}) if single else {}
+    multi_headers = {} if single else MULTI_METHOD_HEADERS.get(name, {})
     precision = config.get("precision") or []
+
+    columns, keys, precisions = [], [], []
+    for index, key in enumerate(config["keys"]):
+        if key in mapping and mapping[key] not in allowed:
+            continue
+        if key in base_specific and base_specific[key] not in allowed:
+            continue
+        if single and key in drop_single:
+            continue
+        header = config["columns"][index]
+        header = single_headers.get(key) or multi_headers.get(key) or header
+        columns.append(header)
+        keys.append(key)
+        precisions.append(precision[index] if index < len(precision) else None)
+
     return {
         **config,
-        "columns": [config["columns"][index] for index in keep],
-        "keys": [config["keys"][index] for index in keep],
-        "precision": [precision[index] for index in keep],
+        "columns": columns,
+        "keys": keys,
+        "precision": precisions,
     }
 
 

@@ -167,7 +167,7 @@ class TestShippedSingleScheme:
     def test_only_three_multi_method_items_select_method(self, single_scheme):
         selected = {k: v.get("method") for k, v in single_scheme["items"].items() if "method" in v}
         assert selected == {
-            "dc_gain": "square_amplitude",
+            "dc_gain": "dc_two_point",
             "dc_offset": "raw_lsq",
             "timebase_error": "waveform_fit",
         }
@@ -178,8 +178,14 @@ class TestShippedSingleScheme:
 
     def test_scheme_record_carries_selected_method(self, single_scheme):
         record = scheme_record(single_scheme, str(SINGLE_SCHEME_PATH))
-        assert record["items"]["dc_gain"]["method"] == "square_amplitude"
+        assert record["items"]["dc_gain"]["method"] == "dc_two_point"
         assert record["items"]["timebase_error"]["method"] == "waveform_fit"
+
+    def test_timebase_and_delta_t_scales(self, single_scheme):
+        for name in ("timebase_error", "delta_t"):
+            scales = single_scheme["items"][name]["points"]["horizontal_scales_s_per_div"]
+            assert scales == [1e-8, 1e-5, 1e-2]
+        assert single_scheme["items"]["delta_t"]["stimulus"]["shape"] == "MARK"
 
 
 class TestValidateSpec:

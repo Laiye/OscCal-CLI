@@ -26,7 +26,7 @@
                 "dc_two_point",
                 "multi_point_lsq"
             ],
-            "method": "square_amplitude",
+            "method": "dc_two_point",
             "stimulus": {
                 "shape": "SQU",
                 "freq_hz": 1000,
@@ -45,7 +45,7 @@
                     "1M",
                     "50"
                 ],
-                "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 挡位由 calibrators 的 SQU 输出上限自动过滤（上限 5 Vpp）"
+                "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 输入最高 1 V/div（characteristics.max_vertical_scale_50），直流两点法按单侧直流电平核对 9500B 的 ±5 V 上限，方波法则按 5 Vpp 上限过滤"
             },
             "notes": [
                 "选定通道量程、直流耦合、直流偏置调零（规范 7.4 前置条件）",
@@ -183,8 +183,7 @@
                 "strategy": "scale_list",
                 "horizontal_scales_s_per_div": [
                     1e-08,
-                    8e-07,
-                    0.0001,
+                    0.00001,
                     0.01
                 ],
                 "note": "水平挡位取 1-2-4-8 序列值；机型没有的挡位由 characteristics 过滤。记录长度固定为 1000 点后挡位网格随之变化，记录中保存回读的实际挡位。"
@@ -226,24 +225,25 @@
                 "auto_period"
             ],
             "stimulus": {
-                "shape": "SQU",
-                "impedance": "1M"
+                "shape": "MARK",
+                "impedance": "1M",
+                "note": "9500B 时标（MARK）方波输出；周期由点表按屏占比给出，不再受 10 kHz 方波幅度档限制"
             },
             "points": {
                 "strategy": "scale_list",
                 "horizontal_scales_s_per_div": [
                     1e-08,
-                    8e-07,
-                    0.0001,
+                    0.00001,
                     0.01
                 ],
                 "periods_m": 2,
                 "screen_fraction": 0.8,
-                "note": "水平挡位取 1-2-4-8 序列值；1 µs/div 不存在，会吸附到 800 ns/div。"
+                "note": "水平挡位取 1-2-4-8 序列值；周期 = screen_fraction × 水平格数 × 挡位 / M，由 MARK 时标输出"
             },
             "notes": [
                 "M ≥ 2 个完整周期，水平方向覆盖 80% 屏幕",
-                "按规范偏离声明，用自动测量读数代替光标读数"
+                "按规范偏离声明，用自动测量读数代替光标读数",
+                "时标输出（MARK）周期范围约 9.0091 ns~55 s，10 ns/div 对应 40 ns 周期仍可测"
             ]
         },
         "random_noise": {

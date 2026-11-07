@@ -160,6 +160,22 @@ class TestDcGainMethodSelection:
         assert record["measured_vpp"] is None
         assert any("SHAP DC" in cmd for cmd in cal.written)
 
+    def test_two_point_only_prints_one_method_table(self, configs, capsys):
+        """单方法执行时终端只能出现一组判定列，不能再有“方法一/主方法”两列。"""
+        options = {"methods": ["dc_two_point"], "primary": "dc_two_point"}
+        instance, _, _ = build(
+            DcGainCalibrator, configs, self._point(), lambda key, trigger=True: 0.64, options
+        )
+        instance.run()
+
+        output = capsys.readouterr().out
+        assert "方法一 G" not in output
+        assert "主方法" not in output
+        assert "主记录" not in output
+        assert "方法三 G" not in output
+        assert "被校示值(Vpp)" not in output, "直流两点法没有 Vpp 读数"
+        assert "执行方法：直流两点法" in output
+
     def test_multi_point_only_maps_primary(self, configs):
         options = {"methods": ["multi_point_lsq"], "primary": "multi_point_lsq"}
         instance, _, _ = build(

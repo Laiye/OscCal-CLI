@@ -137,11 +137,11 @@ class TestCalibrateFlow:
         json.dumps(fake_env["results"], ensure_ascii=False)
 
     def test_runs_waveform_free_item(self, fake_env):
-        """Δt 只用标量周期测量，走通即可（方波激励限幅已在点表里体现）。"""
+        """Δt 只用标量周期测量，走通即可（MARK 时标三档均已在点表中）。"""
         result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "delta_t"), input="n\n")
         assert result.exit_code == 0, result.output
-        assert fake_env["metadata"]["points_plan"]["1"]["delta_t"] == 2
-        assert len(fake_env["results"]["delta_t"]) == 2
+        assert fake_env["metadata"]["points_plan"]["1"]["delta_t"] == 4
+        assert len(fake_env["results"]["delta_t"]) == 4
 
     def test_scheme_defaults_to_shipped_scheme(self, fake_env):
         """省略 --scheme 时必须按内置方案执行，而不是解析出空点表空跑。"""
@@ -152,7 +152,8 @@ class TestCalibrateFlow:
         assert result.exit_code == 0, result.output
         assert fake_env["metadata"]["spec"]["spec_code"] == "JJF 1057-2026"
         assert fake_env["metadata"]["scheme"]["name"] == "JJF 1057-2026 单方法校准方案"
-        assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 6
+        # 单方法方案用直流两点法：4 档 1 MΩ + 3 档 50 Ω（1 V/div 可测）= 7 点
+        assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 7
 
     def test_rejects_item_missing_from_scheme(self, fake_env, tmp_path):
         """所选项目不在方案里时必须中止，不能静默跑 0 个点。"""

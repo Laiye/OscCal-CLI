@@ -135,6 +135,25 @@ class TestTableConfigs:
         assert "增益 G" in config["columns"]
         assert "方波幅度法" in method_note("dc_gain", rows)
 
+    def test_two_point_single_method_drops_duplicate_columns(self):
+        rows = [
+            {
+                "methods_selected": ["dc_two_point"],
+                "primary_method": "dc_two_point",
+            }
+        ]
+        config = active_config("dc_gain", rows)
+        assert config is not None
+        assert "方法一 G" not in config["columns"]
+        assert "主方法 G" not in config["columns"]
+        assert "主记录 G" not in config["columns"]
+        assert "被校示值(Vpp)" not in config["columns"], "直流两点法没有 Vpp 读数"
+        assert "增益 G" in config["columns"]
+        assert "增益误差(%)" in config["columns"]
+        note = method_note("dc_gain", rows)
+        assert "直流两点法" in note
+        assert "主" not in note
+
     def test_trial_config_keeps_all_method_columns(self):
         rows = [
             {
@@ -150,6 +169,8 @@ class TestTableConfigs:
         assert config is not None
         assert "方法一 G" in config["columns"]
         assert "方法三 G" in config["columns"]
+        assert "主记录增益 G" in config["columns"]
+        assert "主方法 G" not in config["columns"]
         assert len(config["columns"]) == len(ITEM_CONFIGS["dc_gain"]["columns"])
 
     def test_scheme_method_filters_without_row_metadata(self):
@@ -164,7 +185,8 @@ class TestTableConfigs:
         config = active_config("timebase_error", [], scheme)
         assert config is not None
         assert "方法一(ppm)" not in config["columns"]
-        assert "方法二(ppm)" in config["columns"]
+        assert "方法二(ppm)" not in config["columns"]
+        assert "时基误差(ppm)" in config["columns"]
         assert "波形拟合法" in method_note("timebase_error", [], scheme)
 
     def test_freq_and_enob_table_include_vertical_scale(self):
@@ -314,6 +336,63 @@ class TestExport:
         joined = " ".join(values)
         assert "合格" not in joined
         assert "超差" not in joined
+
+    def test_two_point_export_has_no_method_or_vpp_columns(self, tmp_path):
+        from osccal.core.export import export_to_excel
+
+        metadata = _metadata()
+        metadata["scheme"] = {
+            "name": "JJF 1057-2026 单方法校准方案",
+            "file": "jjf1057_2026_single.json",
+            "sha256": "c" * 64,
+            "items": {
+                "dc_gain": {
+                    "methods": ["square_amplitude", "dc_two_point", "multi_point_lsq"],
+                    "method": "dc_two_point",
+                }
+            },
+        }
+        results = _results()
+        results["dc_gain"] = [
+            {
+                "index": 1,
+                "channel": "1",
+                "impedance": "50",
+                "scale": 1.0,
+                "std_value_vpp": 6.4,
+                "measured_vpp": None,
+                "gain": 1.0,
+                "error_pct": 0.0,
+                "primary_method": "dc_two_point",
+                "methods_selected": ["dc_two_point"],
+            }
+        ]
+        out = tmp_path / "two_point.xlsx"
+        export_to_excel({"metadata": metadata, "results": results}, str(out))
+
+        wb = load_workbook(out)
+        try:
+            ws = wb["A.3 直流增益"]
+            headers = [cell.value for cell in ws[1]]
+            assert "方法一 G" not in headers
+            assert "主方法 G" not in headers
+            assert "被校示值(Vpp)" not in headers
+            assert "增益 G" in headers
+            text = " ".join(
+                str(cell.value) for row in ws.iter_rows() for cell in row if cell.value is not None
+            )
+            assert "执行方法" in text
+            assert "直流两点法" in text
+            info = " ".join(
+                str(cell.value)
+                for row in wb["校准信息"].iter_rows()
+                for cell in row
+                if cell.value is not None
+            )
+            assert "方案方法 dc_gain" in info
+            assert "直流两点法" in info
+        finally:
+            wb.close()
 
     def test_data_matches_keys(self, tmp_path):
         from osccal.core.export import export_to_excel

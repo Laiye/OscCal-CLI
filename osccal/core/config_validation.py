@@ -466,6 +466,16 @@ def validate_characteristics(data: dict) -> list[str]:
 
     errors.extend(_validate_scale_list(data, "vertical_scales"))
     errors.extend(_validate_scale_list(data, "horizontal_scales"))
+
+    # 50 Ω 输入的垂直挡位通常低于 1 MΩ（MDO3000 系列最高 1 V/div）。它是硬件事实，
+    # 放在 characteristics/；点表解析据此过滤 50 Ω 下不可设置的挡位。
+    cap = data.get("max_vertical_scale_50")
+    if cap is not None:
+        scales = data.get("vertical_scales") or []
+        if not _is_number(cap) or cap <= 0:
+            errors.append("max_vertical_scale_50 必须为有限正数")
+        elif not any(_is_number(v) and abs(float(v) - float(cap)) < 1e-12 for v in scales):
+            errors.append("max_vertical_scale_50 必须是 vertical_scales 中的一档")
     return errors
 
 
