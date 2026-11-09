@@ -24,6 +24,10 @@ ACQUIRE_TIMEOUT_SECONDS = 5.0
 ACQUIRE_SETTLE_SECONDS = 0.6
 #: 读到无效测量哨兵时的最大尝试次数（每次重新采集，而不是重复查询同一份记录）。
 READ_MEAS_ATTEMPTS = 3
+#: 切到 50 Ω 前先把校准仪输出幅度降到该值（V）。
+#: 9500B 在 1 MΩ 高幅度（如 64 Vpp）下会拒绝切到 50 Ω，查询会一直返回 1E6；
+#: 先降幅再切，50 Ω 才生效。各项目随后会设置本点的实际幅度。
+IMPEDANCE_SWITCH_AMPLITUDE_V = 0.1
 
 
 class OutputShutdownError(RuntimeError):
@@ -130,6 +134,10 @@ class BaseCalibrator:
         if label == "50" and not self.characteristics.get("imp_has_50", False):
             raise ValueError("该机型不支持 50 Ω 输入阻抗")
         self._write_calibrator("set_output", "OFF")
+        if label == "50" and "set_volt" in self.cmd_calibrator.get("actions", {}):
+            # 实机：9500B 在 64 Vpp 等高幅度下会拒绝切 50 Ω，且降幅后不会补切；
+            # 必须先降幅再切，否则查询持续返回 1E6，误报为阻抗失配。
+            self._write_calibrator("set_volt", IMPEDANCE_SWITCH_AMPLITUDE_V)
         self.setup_impedance(key)
         self._write_calibrator("set_impedance", self.cmd_calibrator["keyword"][key])
         self._verify_impedance(label)

@@ -55,6 +55,42 @@ class TestApplyImpedanceVerifies:
 
         assert calls == ["50"], "设置阻抗后必须回读校验（否则接错也不会发现）"
 
+    def test_switch_to_50_reduces_amplitude_first(self):
+        """实机：9500B 在高幅度下拒绝切 50 Ω，必须先降幅再切。"""
+        calibrator = _calibrator()
+        calibrator._verify_impedance = lambda label: None
+
+        calibrator._apply_impedance("50")
+
+        commands = calibrator.inst_calibrator.written
+        assert "SOUR:VOLT 0.1" in commands
+        assert commands.index("SOUR:VOLT 0.1") < commands.index("ROUT:SIGN:IMP 50")
+
+    def test_switch_to_1m_does_not_touch_amplitude(self):
+        calibrator = _calibrator()
+        calibrator._verify_impedance = lambda label: None
+
+        calibrator._apply_impedance("1M")
+
+        assert all("SOUR:VOLT" not in cmd for cmd in calibrator.inst_calibrator.written)
+
+    def test_high_amplitude_is_lowered_before_switch(self, capsys):
+        """模拟 9500B：幅度 >5 V 时拒绝切 50 Ω，查询返回 1E6；先降幅则返回 50。"""
+        calibrator = _calibrator()
+        state = {"volt": 64.0}
+
+        def write(action, *args):
+            if action == "set_volt":
+                state["volt"] = float(args[0])
+
+        calibrator._write_calibrator = write
+        calibrator._query_osc = lambda *args: "FIF"
+        calibrator._query_calibrator = lambda action: "1E6" if state["volt"] > 5 else "50"
+
+        calibrator._apply_impedance("50")
+
+        assert "阻抗与设定不符" not in capsys.readouterr().out
+
     def test_scope_query_carries_channel(self):
         calibrator = _calibrator("2")
         calls: list[tuple] = []
