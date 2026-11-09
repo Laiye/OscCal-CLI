@@ -6,10 +6,10 @@ JSON 原始记录与 Excel 报告。
 
 | 项 | 当前状态 |
 |---|---|
-| 版本 | **v0.3.1** |
+| 版本 | **v0.3.2** |
 | 依据规范 | JJF 1057-2026，2027-02-21 实施，复校间隔 12 个月 |
 | 实机验证硬件 | Tektronix MDO3052 + Fluke 9500B（9530 头） |
-| 实机验证 | 2026-11-07 单方法方案一次复跑 10/10 项；2026-11-05 试验方案全量 10/10 项，见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
+| 实机验证 | 2026-11-09 单方法方案（分离阻抗点表）一次复跑 10/10 项；2026-11-05 试验方案全量 10/10 项，见 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json) |
 | 结论口径 | 规范表 1 明确"技术指标仅供参考，不作为符合性判定依据"；程序**不出具合格/不合格结论** |
 
 ---
@@ -109,13 +109,18 @@ JJF 1057-2026 第 7 章的 10 个项目全部实现：
 | `delta_t` | 7.12 | Δt（时间）测量 | 自动周期测量 | 水平档位列表（MARK 时标） | 3 |
 | `random_noise` | 7.13 | 随机噪声 | 采样标准差 | 固定条件（最小量程） | 1 |
 
-合计 **51 点/通道**（MDO3052 + 9500B/9530）。双通道方案共 102 点，跳过 10 处：
-2 项规范定为人工，8 处点级跳过（每通道 1 个 50 Ω 10 V/div 直流增益点、1 个
-50 Ω 10 V/div 偏置点、1 个 50 Ω 1 V/div ΔV 点（方波 6.4 Vpp 超 5 Vpp）、1 个
-50 Ω 10 V/div ΔV 点）。Δt 使用 9500B MARK 时标输出（约 9.0091 ns~55 s），
-10 ns/10 µs/10 ms 三档均可测。50 Ω 输入最高 1 V/div 由
-`characteristics.max_vertical_scale_50` 声明；逐条原因见 `osccal plan` 与记录
-中的 `skipped_points`。
+合计 **51 点/通道**（MDO3052 + 9500B/9530）。双通道方案共 102 点，跳过 2 处，
+均为规范定为人工的 7.2、7.10；50 Ω 与 1 MΩ 点表分离后不再产生点级跳过：
+
+- 1 MΩ：`dc_gain`/`dc_offset` 为 0.01/0.1/1/10 V/div，`delta_v` 为
+  0.01/0.1/1/10 V/div；
+- 50 Ω：`dc_gain`/`dc_offset` 为 0.01/0.1/1 V/div（最高 1 V/div），
+  `delta_v` 为 0.01/0.1 V/div（1 V/div 的 6.4 Vpp 超 9500B 5 Vpp 上限）；
+- `freq_response_bandwidth`、`enob` 的 1 MΩ/50 Ω 块当前参数相同，后续可分别调整；
+- Δt 使用 9500B MARK 时标输出（约 9.0091 ns~55 s），10 ns/10 µs/10 ms 三档均可测。
+
+50 Ω 输入最高 1 V/div 仍由 `characteristics.max_vertical_scale_50` 校验；
+如果显式点表误写了不支持的挡位，`osccal plan` 仍会跳过并说明原因。
 
 ### 2.3 程序不做的事
 
@@ -391,37 +396,35 @@ osccal device info --socket 192.168.1.100:5025
 FW 4.11，9530 头 SN 882750012，证书 WWM202600225，检定日期 2026-03-03；
 快沿 146 ps、主输出上升时间 409 ps）。
 
-| 项目 | 状态 | 关键结果（2026-11-07 单方法复跑 10 项） |
+| 项目 | 状态 | 关键结果（2026-11-09 分离阻抗点表复跑 10 项） |
 |---|---|---|
-| 输入阻抗 | verified | 1 MΩ：−0.240%；50 Ω：+0.046% |
-| 直流增益 | verified | 直流两点法 7 点：−0.033~0.172%；50 Ω 1 V/div −0.033% |
-| 直流偏置 | deviation | 原始码值拟合 7 点：零点 −10.87~−0.95 mV；Δd −120.80~−1.07 mV；最差 1.720% FS（50 Ω 0.01 V/div，超参考 ±1% FS） |
-| 频率响应 | verified_with_caveat | 500 MHz 处 1 MΩ G=0.748、50 Ω G=0.820；两种阻抗均 ≥0.707 → 带宽 ≥500 MHz；1 MΩ 带内最大 +3.25%（250 MHz） |
-| 动态有效位数 | verified_with_caveat | 2.5 GS/s、17.5 MHz、1.52 Vpp 下 1 MΩ 6.19 bit / 50 Ω 6.21 bit |
-| 上升时间 | verified_with_caveat | 150 ps 边沿 797.2 ps；500 ps 边沿 883.5 ps；差 86.24±27.1 ps |
-| 时基误差 | verified_with_caveat | 波形拟合法 −373.0~−130.5 ppm（3 档）；频率法未执行（单方法方案） |
-| ΔV | deviation | 1 MΩ 4 点 0.000%；50 Ω 2 点 0.000%；50 Ω 1 V/div、10 V/div 已跳过 |
-| Δt | deviation | MARK 时标 3 档：0.000~0.0378%（10 ns/div +0.0378%） |
-| 随机噪声 | verified_with_caveat | 0.170 mV = 2.1219% FS（50 Ω 负载，1 mV/div 本底） |
+| 输入阻抗 | verified | 1 MΩ：−0.160%；50 Ω：+0.066% |
+| 直流增益 | verified | 直流两点法 7 点：0.194~0.410%；50 Ω 1 V/div +0.194% |
+| 直流偏置 | deviation | 原始码值拟合 7 点：零点 −1.69~+43.70 mV；Δd −32.45~−0.17 mV；最差 0.574% FS（50 Ω 0.01 V/div） |
+| 频率响应 | verified_with_caveat | 500 MHz 处 1 MΩ G=0.740、50 Ω G=0.803；两种阻抗均 ≥0.707 → 带宽 ≥500 MHz；带内最大约 +1.6% |
+| 动态有效位数 | verified_with_caveat | 2.5 GS/s、17.5 MHz、1.52 Vpp 下 1 MΩ 6.20 bit / 50 Ω 6.23 bit |
+| 上升时间 | verified_with_caveat | 150 ps 边沿 802.1 ps；500 ps 边沿 865.2 ps；差 63.14±23.0 ps |
+| 时基误差 | verified_with_caveat | 波形拟合法 +18.0 ~ −303.0 ppm（3 档）；频率法未执行（单方法方案） |
+| ΔV | deviation | 1 MΩ 4 点 0.000%；50 Ω 0.01 V/div −0.625%，50 Ω 0.1 V/div 0.000% |
+| Δt | deviation | MARK 时标 3 档：−0.008~0.000%（10 ns/div −0.008%） |
+| 随机噪声 | verified_with_caveat | 0.163 mV = 2.0360% FS（50 Ω 负载，1 mV/div 本底） |
 
 `verified_with_caveat` 表示测量完成但存在需注明的限制（分辨率、重复性、外部条件）；
 `deviation` 表示与规范方法存在偏离，已在 `deviations` 中声明。状态描述的是
 **测量是否完成且可信**，不是合格判定。逐项限制与记录文件见
 [`verification/jjf1057_2026.json`](verification/jjf1057_2026.json)。
 
-**单方法方案复跑（2026-11-07）**
+**单方法方案复跑（2026-11-09，分离阻抗点表）**
 
 - 方案：`jjf1057_2026_single`；通道 CH1；10 项全部完成且无失败；SCPI 错误 0；
-- 记录：`data/calibration_20261107_140253_111213_b4434bfe7d7347c19c99d9ef8494e1e2.json`
+- 记录：`data/calibration_20261109_094459_209593_a696b00142ff40fbbc98af4d7e8138f9.json`
   （一次会话，含随机噪声；执行前已接 50 Ω 负载）；
-- 点表：51 点/通道，点级跳过 4 处（50 Ω 10 V/div 直流增益/偏置、50 Ω ΔV 1 V/div
-  与 10 V/div；另有 2 项人工项）；
-- 直流增益改用 `dc_two_point` 后，50 Ω 1 V/div（±3.2 V 直流）进入实机点表，
-  误差 -0.033%；
-- Δt 改用 9500B MARK 时标后，10 ns/10 µs/10 ms 三档全部可测，误差 0.000~0.0378%；
-- 随机噪声 0.170 mV = 2.1219% FS（50 Ω 负载，1 mV/div 本底）。
+- 点表：51 点/通道，点级跳过 0 处（50 Ω 与 1 MΩ 已分开列点；另有 2 项人工项）；
+- 直流增益 50 Ω 1 V/div（±3.2 V 直流）误差 +0.194%；
+- Δt 使用 9500B MARK 时标，10 ns/10 µs/10 ms 三档全部可测，误差 −0.008~0.000%；
+- 随机噪声 0.163 mV = 2.0360% FS（50 Ω 负载，1 mV/div 本底）。
 
-> 2026-11-07 的 10 项单方法记录已写入验证台账。
+> 2026-11-09 的 10 项分离阻抗点表记录已写入验证台账。
 
 ---
 
@@ -535,13 +538,20 @@ data/             # 运行产物（gitignore）
   "items": {
     "dc_gain": {
       "methods": ["square_amplitude", "dc_two_point", "multi_point_lsq"],
-      "method": "square_amplitude",
+      "method": "dc_two_point",
       "stimulus": {"shape": "SQU", "freq_hz": 1000, "polarity": "SYMM"},
       "points": {
         "strategy": "scale_list",
-        "scales_v_per_div": [0.01, 0.1, 1.0, 10.0],
-        "screen_fraction": 0.8,
-        "impedances": ["1M", "50"]
+        "by_impedance": {
+          "1M": {
+            "scales_v_per_div": [0.01, 0.1, 1.0, 10.0],
+            "screen_fraction": 0.8
+          },
+          "50": {
+            "scales_v_per_div": [0.01, 0.1, 1.0],
+            "screen_fraction": 0.8
+          }
+        }
       },
       "notes": ["方波只取 1 kHz：9500B 方波仅在 ≤10 kHz 有指标"]
     }
@@ -550,6 +560,11 @@ data/             # 运行产物（gitignore）
 ```
 
 - `spec` 指向 `specs/` 的文件名（不含 `.json`）；
+- `points.by_impedance` 按 `"1M"`/`"50"` 分别写点表，键顺序即计划表顺序；
+  与旧的 `points.impedances` **互斥**，旧 flat 写法仍兼容；
+- 采用 `by_impedance` 时，每个阻抗块写清该阻抗的 `scales_v_per_div`（或频点、
+  ENOB 参数）；`screen_fraction`、`offset_nominal_divisions` 等未写的参数可回退到
+  顶层公共值；报告仍用“阻抗”列区分，不拆表；
 - `methods` 只能取 [`osccal/core/methods.py`](osccal/core/methods.py) 中已实现的键；
 - `method` 必须属于 `methods`，且与 `primary` 互斥；
 - 试验方案（无 `method`）跑全部方法，`dc_gain` / `dc_offset` 必须给 `primary`；
@@ -589,7 +604,7 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 `mypy` 只检查 `pyproject.toml` 里列出的 4 个模块；`ruff format` 不覆盖
 `commands/ characteristics/ specs/ schemes/ calibrators/`（JSON 目录）。
 
-### 10.2 测试范围（约 534 个用例，以 CI 为准）
+### 10.2 测试范围（约 541 个用例，以 CI 为准）
 
 | 文件 | 覆盖 |
 |---|---|
@@ -639,12 +654,12 @@ Linux/macOS 把 `.venv\Scripts\` 换成 `.venv/bin/`。
 
 ## 12. 版本与兼容性
 
-- **未发布（2026-11-07，main）**：单方法方案的 `dc_gain` 改为 `dc_two_point`
-  （直流两点法），50 Ω 1 V/div 重新进入点表；新增
-  `characteristics.max_vertical_scale_50`（MDO 系列 1 V/div）；单方法报告删除
-  与方法专用列重复的列和只在方波法下有效的“被校示值 Vpp”，不再出现
-  “方法一/主方法”并列表头。2026-11-07 在 MDO3052 上复跑 10 项（随机噪声在接
-  50 Ω 负载后单独执行）。
+- **v0.3.2（2026-11-09）**：单方法方案的 `dc_gain` 改为 `dc_two_point`
+  （直流两点法），50 Ω 1 V/div 进入点表；新增
+  `characteristics.max_vertical_scale_50`（MDO 系列 1 V/div）；点表支持
+  `points.by_impedance`，1 MΩ/50 Ω 分块配置；Δt 改用 9500B MARK 时标；单方法
+  报告删除与方法专用列重复的列和只在方波法下有效的“被校示值 Vpp”，不再出现
+  “方法一/主方法”并列表头。2026-11-09 在 MDO3052 上复跑 10 项。
 - **v0.3.1**：新增“单方法校准方案” `jjf1057_2026_single.json` 并设为 CLI 默认；
   多方法项目用 `method` 键指定实际执行的一种（`dc_gain` 方波幅度法、
   `dc_offset` 原始码值拟合、`timebase_error` 波形拟合法）；原

@@ -100,29 +100,30 @@ class TestPlanContent:
         tolerances = {p["impedance"]: p["tolerance_pct"] for p in points if p["channel"] == "1"}
         assert tolerances == {"1M": 0.5, "50": 1.0}
 
-    def test_dc_gain_skips_50_ohm_above_limit(self, plan):
-        skipped = _by_name(plan)["dc_gain"]["skipped"]
-        assert len(skipped) == 4
-        assert all(item["impedance"] == "50" for item in skipped)
-        assert all("上限" in item["reason"] for item in skipped)
+    def test_dc_gain_separate_impedance_points(self, plan):
+        item = _by_name(plan)["dc_gain"]
+        points = [p for p in item["points"] if p["channel"] == "1"]
+        one_m = {p["scale"] for p in points if p["impedance"] == "1M"}
+        fifty = {p["scale"] for p in points if p["impedance"] == "50"}
+        assert one_m == {0.01, 0.1, 1.0, 10.0}
+        assert fifty == {0.01, 0.1}
+        assert item["skipped"] == []
 
-    def test_dc_offset_includes_50_ohm_except_high_scale(self, plan):
-        points = [p for p in _by_name(plan)["dc_offset"]["points"] if p["channel"] == "1"]
+    def test_dc_offset_separate_impedance_points(self, plan):
+        item = _by_name(plan)["dc_offset"]
+        points = [p for p in item["points"] if p["channel"] == "1"]
         assert {p["impedance"] for p in points} == {"1M", "50"}
         fifty = {p["scale"] for p in points if p["impedance"] == "50"}
         assert fifty == {0.01, 0.1, 1.0}
-        skipped = _by_name(plan)["dc_offset"]["skipped"]
-        assert len(skipped) == 2
-        assert all(item["impedance"] == "50" and item["scale"] == 10.0 for item in skipped)
+        assert item["skipped"] == []
 
-    def test_delta_v_includes_50_ohm_below_limit(self, plan):
-        points = [p for p in _by_name(plan)["delta_v"]["points"] if p["channel"] == "1"]
+    def test_delta_v_separate_impedance_points(self, plan):
+        item = _by_name(plan)["delta_v"]
+        points = [p for p in item["points"] if p["channel"] == "1"]
         assert {p["impedance"] for p in points} == {"1M", "50"}
         fifty = {p["scale"] for p in points if p["impedance"] == "50"}
         assert fifty == {0.01, 0.1}
-        skipped = _by_name(plan)["delta_v"]["skipped"]
-        assert len(skipped) == 4
-        assert all(item["impedance"] == "50" for item in skipped)
+        assert item["skipped"] == []
 
     def test_enob_covers_both_impedances(self, plan):
         points = [p for p in _by_name(plan)["enob"]["points"] if p["channel"] == "1"]
@@ -234,16 +235,28 @@ class TestSingleScheme:
         assert items["delta_t"]["skipped"] == []
 
     def test_two_point_keeps_50_ohm_1v_per_div(self, single_plan):
-        points = [p for p in _by_name(single_plan)["dc_gain"]["points"] if p["channel"] == "1"]
+        item = _by_name(single_plan)["dc_gain"]
+        points = [p for p in item["points"] if p["channel"] == "1"]
         fifty = {p["scale"] for p in points if p["impedance"] == "50"}
         assert fifty == {0.01, 0.1, 1.0}, "1 V/div 在 50 Ω 下应可测（±3.2 V 直流）"
-        skipped = [s for s in _by_name(single_plan)["dc_gain"]["skipped"] if s["channel"] == "1"]
-        assert len(skipped) == 1
-        assert skipped[0]["scale"] == 10.0
-        assert "垂直挡位上限" in skipped[0]["reason"], "50 Ω 10 V/div 应按硬件上限跳过"
+        assert 10.0 not in fifty, "50 Ω 10 V/div 不应出现在分离点表中"
+        assert item["skipped"] == [], "显式点表不应再产生点级跳过"
 
 
 class TestSchemeSelection:
+    def test_flat_impedance_points_still_supported(self, configs):
+        scheme = copy.deepcopy(_load("jjf1057_2026_single.json", "schemes"))
+        scheme["items"]["dc_gain"]["points"] = {
+            "strategy": "scale_list",
+            "scales_v_per_div": [0.1],
+            "screen_fraction": 0.8,
+            "impedances": ["1M"],
+        }
+        plan = _build(configs, scheme=scheme)
+        item = _by_name(plan)["dc_gain"]
+        assert len(item["points"]) == 2
+        assert all(p["impedance"] == "1M" for p in item["points"])
+
     def test_method_subset_does_not_change_points(self, configs):
         scheme = copy.deepcopy(configs[1])
         scheme["items"]["dc_gain"]["methods"] = ["square_amplitude"]

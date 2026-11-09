@@ -314,6 +314,50 @@ class TestMalformedScheme:
         errors = validate_scheme(data)
         assert any("未升序" in e for e in errors)
 
+    def test_by_impedance_is_valid_alternative(self):
+        data = _valid_scheme()
+        points = data["items"]["dc_gain"]["points"]
+        points.pop("scales_v_per_div")
+        points.pop("impedances")
+        points["by_impedance"] = {
+            "1M": {"scales_v_per_div": [0.1, 1.0]},
+            "50": {"scales_v_per_div": [0.1]},
+        }
+        assert validate_scheme(data) == []
+
+    def test_by_impedance_and_impedances_conflict(self):
+        data = _valid_scheme()
+        points = data["items"]["dc_gain"]["points"]
+        points["by_impedance"] = {"1M": {"scales_v_per_div": [0.1]}}
+        errors = validate_scheme(data)
+        assert any("不能同时声明" in e for e in errors)
+
+    def test_by_impedance_rejects_unknown_impedance(self):
+        data = _valid_scheme()
+        points = data["items"]["dc_gain"]["points"]
+        points.pop("scales_v_per_div")
+        points.pop("impedances")
+        points["by_impedance"] = {"75": {"scales_v_per_div": [0.1]}}
+        errors = validate_scheme(data)
+        assert any("阻抗非法" in e for e in errors)
+
+    def test_by_impedance_block_needs_scales(self):
+        data = _valid_scheme()
+        points = data["items"]["dc_gain"]["points"]
+        points.pop("scales_v_per_div")
+        points.pop("impedances")
+        points["by_impedance"] = {"1M": {"screen_fraction": 0.8}}
+        errors = validate_scheme(data)
+        assert any("缺少 scales_v_per_div" in e for e in errors)
+
+    def test_by_impedance_rejected_for_fixed_strategy(self):
+        data = _valid_scheme()
+        points = data["items"]["dc_gain"]["points"]
+        points["strategy"] = "fixed"
+        points["by_impedance"] = {"1M": {"scales_v_per_div": [0.1]}}
+        errors = validate_scheme(data)
+        assert any("不支持策略" in e for e in errors)
+
     def test_derived_samples_must_be_coprime(self):
         data = _valid_scheme()
         data["items"] = {

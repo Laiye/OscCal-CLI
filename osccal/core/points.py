@@ -119,6 +119,18 @@ def _point(values: dict, **extra) -> dict:
     return point
 
 
+def _impedance_blocks(rule: dict) -> list[tuple[str, dict]]:
+    """把点表规则展开为 (阻抗, 该阻抗参数) 列表。
+
+    `by_impedance` 是新的分离写法；没有该键时按旧 `impedances` 展开，保证旧方案
+    继续可解析。块的键覆盖顶层同名键，块内未写的参数沿用顶层值。
+    """
+    by_impedance = rule.get("by_impedance")
+    if isinstance(by_impedance, dict) and by_impedance:
+        return [(str(impedance), {**rule, **block}) for impedance, block in by_impedance.items()]
+    return [(str(impedance), rule) for impedance in rule.get("impedances", ["1M"])]
+
+
 def _resolve_channel_x_impedance(
     item: dict, characteristics: dict, channels: list[str], reference_limits: dict
 ) -> dict:
@@ -149,47 +161,52 @@ def _resolve_scale_list(
 ) -> dict:
     rule = item.get("points", {})
     shape = shape or item.get("stimulus", {}).get("shape", "DC")
-    fraction = rule.get("screen_fraction")
-    vertical_scales = rule.get("scales_v_per_div")
-    horizontal_scales = rule.get("horizontal_scales_s_per_div")
-    wanted_impedances = rule.get("impedances", ["1M"])
     vertical_div = _num(characteristics.get("vertical_div", 8))
     horizontal_div = _num(characteristics.get("horizontal_div", 10))
+    vertical_available = set(_num(v) for v in characteristics.get("vertical_scales", []))
+    horizontal_available = set(_num(v) for v in characteristics.get("horizontal_scales", []))
 
     points: list[dict] = []
     skipped: list[dict] = []
 
-    if vertical_scales is not None:
-        available = set(_num(v) for v in characteristics.get("vertical_scales", []))
-        nominal_divisions = rule.get("offset_nominal_divisions")
-        for channel in channels:
-            for scale in vertical_scales:
-                scale = _num(scale)
-                if available and scale not in available:
-                    skipped.append(
-                        {"channel": channel, "scale": scale, "reason": "机型无此垂直档位"}
-                    )
-                    continue
-                std = float(fraction) * vertical_div * scale if fraction is not None else None
-                # 直流偏置没有屏占比，但 50 Ω 下仍要按偏置标称值核对标准器输出上限。
-                # 直流增益的两点/多点法用双极性直流电平，幅度上限看单侧电平（std/2），
-                # 不能拿 Vpp 去卡 DC 输出的 ±V 上限。
-                if std is not None:
-                    limit_amplitude = std / 2.0 if shape == "DC" else std
-                elif nominal_divisions is not None:
-                    limit_amplitude = _num(nominal_divisions) * scale
-                else:
-                    limit_amplitude = None
-                for impedance in wanted_impedances:
-                    if not _impedance_supported(characteristics, impedance):
+    for channel in channels:
+        for impedance, block in _impedance_blocks(rule):
+            if not _impedance_supported(characteristics, impedance):
+                skipped.append(
+                    {
+                        "channel": channel,
+                        "impedance": impedance,
+                        "reason": f"机型不支持 {impedance} 输入阻抗",
+                    }
+                )
+                continue
+
+            vertical_scales = block.get("scales_v_per_div")
+            horizontal_scales = block.get("horizontal_scales_s_per_div")
+
+            if vertical_scales is not None:
+                fraction = block.get("screen_fraction", rule.get("screen_fraction"))
+                nominal_divisions = block.get(
+                    "offset_nominal_divisions", rule.get("offset_nominal_divisions")
+                )
+                for scale in vertical_scales:
+                    scale = _num(scale)
+                    if vertical_available and scale not in vertical_available:
                         skipped.append(
-                            {
-                                "channel": channel,
-                                "scale": scale,
-                                "reason": f"机型不支持 {impedance} 输入阻抗",
-                            }
+                            {"channel": channel, "scale": scale, "reason": "机型无此垂直档位"}
                         )
                         continue
+                    std = float(fraction) * vertical_div * scale if fraction is not None else None
+                    # 直流偏置没有屏占比，但 50 Ω 下仍要按偏置标称值核对标准器输出上限。
+                    # 直流增益的两点/多点法用双极性直流电平，幅度上限看单侧电平（std/2），
+                    # 不能拿 Vpp 去卡 DC 输出的 ±V 上限。
+                    if std is not None:
+                        limit_amplitude = std / 2.0 if shape == "DC" else std
+                    elif nominal_divisions is not None:
+                        limit_amplitude = _num(nominal_divisions) * scale
+                    else:
+                        limit_amplitude = None
+
                     impedance_scales = _vertical_scales_for(characteristics, impedance)
                     if impedance_scales and scale not in impedance_scales:
                         cap = characteristics.get("max_vertical_scale_50")
@@ -224,40 +241,45 @@ def _resolve_scale_list(
                     if std is not None:
                         values["std_value_vpp"] = std
                     points.append(_point(values))
-    elif horizontal_scales is not None:
-        available = set(_num(v) for v in characteristics.get("horizontal_scales", []))
-        # 两种水平取点口径：多周期测量（periods_m，按屏占比铺满）与
-        # 时基误差（periods_on_screen，屏上显示 N 个周期）。
-        if "periods_m" in rule:
-            periods = _num(rule.get("periods_m", 2))
-            coverage = _num(rule.get("screen_fraction", 1.0))
-        else:
-            periods = _num(rule.get("periods_on_screen", 3))
-            coverage = 1.0
-        for channel in channels:
-            for scale in horizontal_scales:
-                scale = _num(scale)
-                if available and scale not in available:
-                    skipped.append(
-                        {"channel": channel, "scale_s_per_div": scale, "reason": "机型无此水平档位"}
+
+            elif horizontal_scales is not None:
+                # 两种水平取点口径：多周期测量（periods_m，按屏占比铺满）与
+                # 时基误差（periods_on_screen，屏上显示 N 个周期）。
+                if "periods_m" in block:
+                    periods = _num(block.get("periods_m", 2))
+                    coverage = _num(block.get("screen_fraction", 1.0))
+                else:
+                    periods = _num(block.get("periods_on_screen", 3))
+                    coverage = 1.0
+                for scale in horizontal_scales:
+                    scale = _num(scale)
+                    if horizontal_available and scale not in horizontal_available:
+                        skipped.append(
+                            {
+                                "channel": channel,
+                                "scale_s_per_div": scale,
+                                "reason": "机型无此水平档位",
+                            }
+                        )
+                        continue
+                    period = coverage * horizontal_div * scale / periods
+                    freq = 1.0 / period if period > 0 else 0.0
+                    reason = _check_frequency(freq, calibrator, impedance, shape)
+                    if reason:
+                        skipped.append(
+                            {"channel": channel, "scale_s_per_div": scale, "reason": reason}
+                        )
+                        continue
+                    points.append(
+                        _point(
+                            {
+                                "channel": channel,
+                                "timebase_s_per_div": scale,
+                                "period_on_screen_s": period,
+                                "signal_freq_hz": freq,
+                            }
+                        )
                     )
-                    continue
-                period = coverage * horizontal_div * scale / periods
-                freq = 1.0 / period if period > 0 else 0.0
-                reason = _check_frequency(freq, calibrator, "1M", shape)
-                if reason:
-                    skipped.append({"channel": channel, "scale_s_per_div": scale, "reason": reason})
-                    continue
-                points.append(
-                    _point(
-                        {
-                            "channel": channel,
-                            "timebase_s_per_div": scale,
-                            "period_on_screen_s": period,
-                            "signal_freq_hz": freq,
-                        }
-                    )
-                )
     return {"points": points, "skipped": skipped}
 
 
@@ -265,18 +287,23 @@ def _resolve_bw_ratio(
     item: dict, characteristics: dict, calibrator: dict, channels: list[str]
 ) -> dict:
     rule = item.get("points", {})
-    reference = _num(rule.get("reference_hz", 50000))
-    ratios = [_num(r) for r in rule.get("ratios", [])]
     bandwidth = _num(characteristics.get("bandwidth_hz", 0))
-    frequencies = [reference] + [bandwidth * ratio for ratio in ratios]
 
     points, skipped = [], []
-    wanted = rule.get("impedances", ["1M"])
     for channel in channels:
-        for impedance in wanted:
+        for impedance, block in _impedance_blocks(rule):
             if not _impedance_supported(characteristics, impedance):
-                skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
+                skipped.append(
+                    {
+                        "channel": channel,
+                        "impedance": impedance,
+                        "reason": f"机型不支持 {impedance} 输入阻抗",
+                    }
+                )
                 continue
+            reference = _num(block.get("reference_hz", rule.get("reference_hz", 50000)))
+            ratios = [_num(r) for r in block.get("ratios", rule.get("ratios", []))]
+            frequencies = [reference] + [bandwidth * ratio for ratio in ratios]
             for freq in frequencies:
                 reason = _check_frequency(freq, calibrator, impedance, "SIN")
                 if reason:
@@ -304,12 +331,17 @@ def _resolve_bw_ratio(
 def _resolve_derived(item: dict, characteristics: dict, channels: list[str]) -> dict:
     rule = item.get("points", {})
     note = rule.get("note", "现场按规范公式计算")
-    wanted = rule.get("impedances", ["1M"])
     points, skipped = [], []
     for channel in channels:
-        for impedance in wanted:
+        for impedance, block in _impedance_blocks(rule):
             if not _impedance_supported(characteristics, impedance):
-                skipped.append({"channel": channel, "reason": f"机型不支持 {impedance} 输入阻抗"})
+                skipped.append(
+                    {
+                        "channel": channel,
+                        "impedance": impedance,
+                        "reason": f"机型不支持 {impedance} 输入阻抗",
+                    }
+                )
                 continue
             points.append(
                 _point(
@@ -317,8 +349,10 @@ def _resolve_derived(item: dict, characteristics: dict, channels: list[str]) -> 
                         "channel": channel,
                         "impedance": impedance,
                         "runtime": True,
-                        "samples_n": rule.get("samples_n"),
-                        "integer_cycles_n": rule.get("integer_cycles_n"),
+                        "samples_n": block.get("samples_n", rule.get("samples_n")),
+                        "integer_cycles_n": block.get(
+                            "integer_cycles_n", rule.get("integer_cycles_n")
+                        ),
                         "note": note,
                     }
                 )

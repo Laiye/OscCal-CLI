@@ -660,14 +660,111 @@ def _positive_number_list(values: object) -> bool:
     )
 
 
+_BY_IMPEDANCE_STRATEGIES = {"scale_list", "bw_ratio", "derived"}
+
+
+def _validate_point_rule(item_key: str, strategy: str, rule: dict, suffix: str = "") -> list[str]:
+    """校验一个阻抗块（或扁平规则）的策略参数。"""
+    errors: list[str] = []
+    base = f"items.{item_key}.points{suffix}"
+
+    if strategy == "scale_list":
+        vertical = rule.get("scales_v_per_div")
+        horizontal = rule.get("horizontal_scales_s_per_div")
+        if vertical is None and horizontal is None:
+            errors.append(f"{base} 缺少 scales_v_per_div 或 horizontal_scales_s_per_div")
+        if vertical is not None and horizontal is not None:
+            errors.append(f"{base} 不能同时声明垂直与水平档位列表")
+        for field, value in (
+            ("scales_v_per_div", vertical),
+            ("horizontal_scales_s_per_div", horizontal),
+        ):
+            if value is None:
+                continue
+            if not _positive_number_list(value):
+                errors.append(f"{base}.{field} 必须为非空、无重复的正数列表")
+            elif value != sorted(value):
+                errors.append(f"{base}.{field} 未升序")
+        fraction = rule.get("screen_fraction")
+        if fraction is not None and (not _is_number(fraction) or not 0 < fraction <= 1):
+            errors.append(f"{base}.screen_fraction 必须在 (0, 1] 内")
+        for field in ("periods_m", "periods_on_screen"):
+            value = rule.get(field)
+            if value is not None and (not _is_count(value) or value == 0):
+                errors.append(f"{base}.{field} 必须为正整数")
+        return errors
+
+    if strategy == "bw_ratio":
+        reference = rule.get("reference_hz")
+        if not _is_number(reference) or reference <= 0:
+            errors.append(f"{base}.reference_hz 必须为有限正数")
+        ratios = rule.get("ratios")
+        if not _positive_number_list(ratios):
+            errors.append(f"{base}.ratios 必须为非空、无重复的正数列表")
+        crossing = rule.get("crossing")
+        if crossing is not None:
+            if not isinstance(crossing, dict):
+                errors.append(f"{base}.crossing 必须为对象")
+            elif not _is_number(crossing.get("target_ratio")) or crossing["target_ratio"] <= 0:
+                errors.append(f"{base}.crossing.target_ratio 必须为正数")
+        return errors
+
+    if strategy == "derived":
+        samples = rule.get("samples_n")
+        cycles = rule.get("integer_cycles_n")
+        if not _is_count(samples) or samples == 0:
+            errors.append(f"{base}.samples_n 必须为正整数")
+        if not _is_count(cycles) or cycles == 0:
+            errors.append(f"{base}.integer_cycles_n 必须为正整数")
+        coprime = rule.get("require_coprime")
+        if coprime is not None and not isinstance(coprime, bool):
+            errors.append(f"{base}.require_coprime 必须为布尔值")
+        if coprime and _is_count(samples) and _is_count(cycles) and math.gcd(samples, cycles) != 1:
+            errors.append(f"{base} 的 samples_n 与 integer_cycles_n 不互质")
+        return errors
+
+    # channel_x_edge_speed / fixed 无额外参数；边缘速度与最小量程由特征/校准仪提供。
+    return errors
+
+
 def _validate_scheme_points(item_key: str, points: object) -> list[str]:
-    """校验方案中单个项目的取点规则；返回错误列表。"""
+    """校验方案中单个项目的取点规则；返回错误列表。
+
+    点表支持两种写法：
+
+    - 扁平：`impedances` + 公共参数（旧写法，继续兼容）；
+    - 分离：`by_impedance` 下按 `"1M"`/`"50"` 各写一份参数（两者互斥）。
+    """
     errors: list[str] = []
     if not isinstance(points, dict):
         return [f"items.{item_key}.points 必须为对象"]
     strategy = points.get("strategy")
     if strategy not in VALID_POINT_STRATEGIES:
         return [f"items.{item_key}.points.strategy 非法: {strategy!r}"]
+
+    by_impedance = points.get("by_impedance")
+    if by_impedance is not None:
+        if strategy not in _BY_IMPEDANCE_STRATEGIES:
+            errors.append(f"items.{item_key}.points.by_impedance 不支持策略 {strategy!r}")
+        if "impedances" in points:
+            errors.append(f"items.{item_key}.points.by_impedance 与 impedances 不能同时声明")
+        if not isinstance(by_impedance, dict) or not by_impedance:
+            errors.append(f"items.{item_key}.points.by_impedance 必须为非空对象")
+            return errors
+        for impedance, block in by_impedance.items():
+            block_base = f"items.{item_key}.points.by_impedance.{impedance}"
+            if impedance not in VALID_IMPEDANCES:
+                errors.append(f"{block_base} 阻抗非法")
+                continue
+            if not isinstance(block, dict) or not block:
+                errors.append(f"{block_base} 必须为非空对象")
+                continue
+            merged = {**points, **block}
+            merged.pop("by_impedance", None)
+            errors.extend(
+                _validate_point_rule(item_key, strategy, merged, f".by_impedance.{impedance}")
+            )
+        return errors
 
     impedances = points.get("impedances")
     if impedances is not None and (
@@ -680,64 +777,7 @@ def _validate_scheme_points(item_key: str, points: object) -> list[str]:
     if strategy == "channel_x_impedance":
         return errors
 
-    if strategy == "scale_list":
-        vertical = points.get("scales_v_per_div")
-        horizontal = points.get("horizontal_scales_s_per_div")
-        if vertical is None and horizontal is None:
-            errors.append(
-                f"items.{item_key}.points 缺少 scales_v_per_div 或 horizontal_scales_s_per_div"
-            )
-        if vertical is not None and horizontal is not None:
-            errors.append(f"items.{item_key}.points 不能同时声明垂直与水平档位列表")
-        for field, value in (
-            ("scales_v_per_div", vertical),
-            ("horizontal_scales_s_per_div", horizontal),
-        ):
-            if value is None:
-                continue
-            if not _positive_number_list(value):
-                errors.append(f"items.{item_key}.points.{field} 必须为非空、无重复的正数列表")
-            elif value != sorted(value):
-                errors.append(f"items.{item_key}.points.{field} 未升序")
-        fraction = points.get("screen_fraction")
-        if fraction is not None and (not _is_number(fraction) or not 0 < fraction <= 1):
-            errors.append(f"items.{item_key}.points.screen_fraction 必须在 (0, 1] 内")
-        for field in ("periods_m", "periods_on_screen"):
-            value = points.get(field)
-            if value is not None and (not _is_count(value) or value == 0):
-                errors.append(f"items.{item_key}.points.{field} 必须为正整数")
-        return errors
-
-    if strategy == "bw_ratio":
-        reference = points.get("reference_hz")
-        if not _is_number(reference) or reference <= 0:
-            errors.append(f"items.{item_key}.points.reference_hz 必须为有限正数")
-        ratios = points.get("ratios")
-        if not _positive_number_list(ratios):
-            errors.append(f"items.{item_key}.points.ratios 必须为非空、无重复的正数列表")
-        crossing = points.get("crossing")
-        if crossing is not None:
-            if not isinstance(crossing, dict):
-                errors.append(f"items.{item_key}.points.crossing 必须为对象")
-            elif not _is_number(crossing.get("target_ratio")) or crossing["target_ratio"] <= 0:
-                errors.append(f"items.{item_key}.points.crossing.target_ratio 必须为正数")
-        return errors
-
-    if strategy == "derived":
-        samples = points.get("samples_n")
-        cycles = points.get("integer_cycles_n")
-        if not _is_count(samples) or samples == 0:
-            errors.append(f"items.{item_key}.points.samples_n 必须为正整数")
-        if not _is_count(cycles) or cycles == 0:
-            errors.append(f"items.{item_key}.points.integer_cycles_n 必须为正整数")
-        coprime = points.get("require_coprime")
-        if coprime is not None and not isinstance(coprime, bool):
-            errors.append(f"items.{item_key}.points.require_coprime 必须为布尔值")
-        if coprime and _is_count(samples) and _is_count(cycles) and math.gcd(samples, cycles) != 1:
-            errors.append(f"items.{item_key}.points 的 samples_n 与 integer_cycles_n 不互质")
-        return errors
-
-    # channel_x_edge_speed / fixed 无额外参数；边缘速度与最小量程由特征/校准仪提供。
+    errors.extend(_validate_point_rule(item_key, strategy, points))
     return errors
 
 

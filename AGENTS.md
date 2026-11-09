@@ -36,6 +36,7 @@
 - `osccal/core/methods.py` 是方法键、中文名、短标签与 `PRIMARY_METHODS`/`NO_PRIMARY_METHODS` 的唯一来源；方案校验（`validate_scheme`）、计划表与 runner 的 `method_enabled()` 共用它。**方案里只能写已实现的方法**，未实现的方法（如随机噪声 RMS 读数法）加载即报错。
 - **v0.2.0（不兼容 V0.1.0）**：`osccal/measure/registry.py` 是唯一项目清单（JJF 1057-2026 的 10 项，旧项目已删除、无别名），`RUNNERS` **已全部落地**；`osccal/core/points.py` 是唯一取点实现（6 种策略，超出标准器能力的点写入 `skipped` 并说明原因，**禁止静默降级**）；`osccal plan` 是离线核对入口，不连接仪器。实机验证结论见 `verification/jjf1057_2026.json`（状态：verified / verified_with_caveat / deviation）。
 - 点表核对标准器幅度上限时必须按**实际执行方法**取波形（`methods.METHOD_OUTPUT_SHAPES` / `method_output_shape()`）：`dc_gain` 的 `dc_two_point`、`multi_point_lsq` 输出直流，上限看单侧电平 `std/2` 与 DC 的 `±5 V`；`square_amplitude` 才按方波 `Vpp=6.4 V` 卡 `5 Vpp`。不要把方案里的 `stimulus.shape`（SQU）直接套到所有方法上，否则 50 Ω 1 V/div 会被误跳过。
+- 点表支持 `points.by_impedance`：`"1M"`/`"50"` 各自写 `scales_v_per_div`、频点或 ENOB 参数，键顺序即计划顺序；与旧 `points.impedances` 互斥，旧 flat 写法继续兼容。块内未写的 `screen_fraction`/`offset_nominal_divisions` 等回退顶层公共值。`config_validation._validate_point_rule()` 对每个块单独校验，`points._impedance_blocks()` 统一展开；显式 50 Ω 点表仍会经过硬件/标准器上限兜底，误写不可实现挡位会在 `skipped` 说明，不能静默接受。
 - **实机教训（M7' 硬件验证得出，改测量代码前先看这一节）**：
   - **读数前必须重新采集**：单次采集完成后示波器停止，改完激励/时基若不再采集，`MEASU:IMM:VAL?` 返回上一点的读数。`base._read_meas` 已统一先触发一次单次采集并用 `ACQuire:STATE?` 轮询确认结束。
   - **直流/无沿信号不要走单次采集**：等不到触发会白等 5 s 超时。用 `_read_meas(trigger=False)` / `_ensure_free_running()`。

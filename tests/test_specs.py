@@ -130,13 +130,17 @@ class TestShippedScheme:
         ]
         assert item["primary"] == "square_amplitude"
         points = item["points"]
-        assert points["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
-        assert points["screen_fraction"] == 0.8
+        assert points["by_impedance"]["1M"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
+        assert points["by_impedance"]["1M"]["screen_fraction"] == 0.8
+        assert points["by_impedance"]["50"]["scales_v_per_div"] == [0.01, 0.1]
+        assert points["by_impedance"]["50"]["screen_fraction"] == 0.8
 
     def test_bandwidth_ratios_stop_at_one(self, scheme):
-        ratios = scheme["items"]["freq_response_bandwidth"]["points"]["ratios"]
-        assert ratios[-1] == 1.0
-        assert ratios == sorted(ratios)
+        blocks = scheme["items"]["freq_response_bandwidth"]["points"]["by_impedance"]
+        for block in blocks.values():
+            ratios = block["ratios"]
+            assert ratios[-1] == 1.0
+            assert ratios == sorted(ratios)
 
     def test_timebase_points(self, scheme):
         scales = scheme["items"]["timebase_error"]["points"]["horizontal_scales_s_per_div"]
@@ -180,6 +184,14 @@ class TestShippedSingleScheme:
         record = scheme_record(single_scheme, str(SINGLE_SCHEME_PATH))
         assert record["items"]["dc_gain"]["method"] == "dc_two_point"
         assert record["items"]["timebase_error"]["method"] == "waveform_fit"
+
+    def test_dc_gain_and_delta_v_have_separate_impedance_blocks(self, single_scheme):
+        gain = single_scheme["items"]["dc_gain"]["points"]["by_impedance"]
+        assert gain["1M"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
+        assert gain["50"]["scales_v_per_div"] == [0.01, 0.1, 1.0]
+        delta_v = single_scheme["items"]["delta_v"]["points"]["by_impedance"]
+        assert delta_v["1M"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
+        assert delta_v["50"]["scales_v_per_div"] == [0.01, 0.1]
 
     def test_timebase_and_delta_t_scales(self, single_scheme):
         for name in ("timebase_error", "delta_t"):

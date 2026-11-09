@@ -34,18 +34,25 @@
             },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "screen_fraction": 0.8,
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
-                "note": "档位为垂直挡位 V/div；标准值 V = screen_fraction × vertical_div × scale；50 Ω 输入最高 1 V/div（characteristics.max_vertical_scale_50），直流两点法按单侧直流电平核对 9500B 的 ±5 V 上限，方波法则按 5 Vpp 上限过滤"
+                "by_impedance": {
+                    "1M": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1,
+                            1.0,
+                            10.0
+                        ],
+                        "screen_fraction": 0.8
+                    },
+                    "50": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1
+                        ],
+                        "screen_fraction": 0.8
+                    }
+                },
+                "note": "档位为垂直挡位 V/div；试验方案 50 Ω 只列 0.01/0.1，保证方波幅度法（5 Vpp 上限）可执行；生产方案另列到 1 V/div"
             },
             "notes": [
                 "选定通道量程、直流耦合、直流偏置调零（规范 7.4 前置条件）",
@@ -64,16 +71,23 @@
             },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
+                "by_impedance": {
+                    "1M": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1,
+                            1.0,
+                            10.0
+                        ]
+                    },
+                    "50": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1,
+                            1.0
+                        ]
+                    }
+                },
                 "zero_point": true,
                 "offset_nominal_divisions": 2,
                 "note": "零点：偏置 0、激励用 ±1 mV 两点插值到 0 V（9500B 最小可设幅度约 1 mV，无法直接输出 0 V）；偏移点：偏置 d₀ = 2 格、激励 v₀，读 d_r"
@@ -93,25 +107,38 @@
             },
             "points": {
                 "strategy": "bw_ratio",
-                "reference_hz": 50000,
-                "ratios": [
-                    0.05,
-                    0.1,
-                    0.2,
-                    0.3,
-                    0.5,
-                    0.7,
-                    0.9,
-                    1.0
-                ],
+                "by_impedance": {
+                    "1M": {
+                        "reference_hz": 50000,
+                        "ratios": [
+                            0.05,
+                            0.1,
+                            0.2,
+                            0.3,
+                            0.5,
+                            0.7,
+                            0.9,
+                            1.0
+                        ]
+                    },
+                    "50": {
+                        "reference_hz": 50000,
+                        "ratios": [
+                            0.05,
+                            0.1,
+                            0.2,
+                            0.3,
+                            0.5,
+                            0.7,
+                            0.9,
+                            1.0
+                        ]
+                    }
+                },
                 "crossing": {
                     "target_ratio": 0.707,
                     "interpolation": "log_frequency"
                 },
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
                 "note": "频点 = ratio × characteristics.bandwidth_hz；另加 50 kHz 基准。标称带宽处 G ≥ 0.707 记作带宽 ≥ 标称；否则在相邻频点间按对数频率插值求 G=0.707 的频点"
             },
             "notes": [
@@ -132,13 +159,17 @@
             },
             "points": {
                 "strategy": "derived",
-                "samples_n": 1000,
-                "integer_cycles_n": 7,
+                "by_impedance": {
+                    "1M": {
+                        "samples_n": 1000,
+                        "integer_cycles_n": 7
+                    },
+                    "50": {
+                        "samples_n": 1000,
+                        "integer_cycles_n": 7
+                    }
+                },
                 "require_coprime": true,
-                "impedances": [
-                    "1M",
-                    "50"
-                ],
                 "note": "f = fs·n/N，fs 由 :HORizontal:SAMPLERATE? 现场读回，不在配置中写死；N 与 n 不得有公因子；采集 ≥2 个完整周期"
             },
             "notes": [
@@ -203,17 +234,25 @@
             },
             "points": {
                 "strategy": "scale_list",
-                "scales_v_per_div": [
-                    0.01,
-                    0.1,
-                    1.0,
-                    10.0
-                ],
-                "screen_fraction": 0.8,
-                "impedances": [
-                    "1M",
-                    "50"
-                ]
+                "by_impedance": {
+                    "1M": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1,
+                            1.0,
+                            10.0
+                        ],
+                        "screen_fraction": 0.8
+                    },
+                    "50": {
+                        "scales_v_per_div": [
+                            0.01,
+                            0.1
+                        ],
+                        "screen_fraction": 0.8
+                    }
+                },
+                "note": "50 Ω 只列到 0.1 V/div：1 V/div 的 6.4 Vpp 超 9500B 5 Vpp 上限，10 V/div 超 50 Ω 1 V/div 硬件上限"
             },
             "notes": [
                 "垂直方向覆盖 80% 屏幕，两个以上周期居中显示",

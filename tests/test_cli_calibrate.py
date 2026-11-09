@@ -111,12 +111,25 @@ class TestCalibrateFlow:
         assert result.exit_code == 2
         assert "尚未实现" in result.output
 
-    def test_records_skipped_points(self, fake_env):
-        result = CliRunner().invoke(cli, _args("--channel", "1", "--items", "dc_gain"), input="n\n")
+    def test_records_skipped_points(self, fake_env, tmp_path):
+        """显式点表默认不再产生跳过；若显式写了硬件不支持的 50 Ω 10 V/div，仍要记录。"""
+        scheme = json.loads(
+            (PROJECT_ROOT / "schemes" / "jjf1057_2026.json").read_text(encoding="utf-8")
+        )
+        scheme["items"]["dc_gain"]["points"]["by_impedance"]["50"]["scales_v_per_div"].append(10.0)
+        scheme_path = tmp_path / "dc_gain_skip.json"
+        scheme_path.write_text(json.dumps(scheme, ensure_ascii=False), encoding="utf-8")
+
+        args = _args("--channel", "1", "--items", "dc_gain")
+        index = args.index("--scheme")
+        del args[index : index + 2]
+        args.extend(["--scheme", str(scheme_path)])
+
+        result = CliRunner().invoke(cli, args, input="n\n")
         assert result.exit_code == 0, result.output
         skipped = fake_env["metadata"]["skipped_points"]
-        assert skipped, "50 Ω 超限的点应写入 skipped_points"
-        assert all("50" in note["reason"] for note in skipped)
+        assert skipped, "显式写入的 50 Ω 10 V/div 应写入 skipped_points"
+        assert any("50" in note["reason"] and "垂直挡位上限" in note["reason"] for note in skipped)
 
     def test_two_items_share_one_round(self, fake_env):
         result = CliRunner().invoke(
