@@ -54,6 +54,7 @@ ITEM_PRECISION = {
         ("sig", 4),
         ("sig", 4),
         ("dec", 4),
+        ("dec", 2),
         None,
     ],
     "enob": [
@@ -181,6 +182,7 @@ ITEM_CONFIGS = {
             "频率(Hz)",
             "幅值(Vpp)",
             "相对响应 G",
+            "重复性(%)",
             "备注",
         ],
         "keys": [
@@ -191,6 +193,7 @@ ITEM_CONFIGS = {
             "frequency_hz",
             "amplitude_vpp",
             "response",
+            "s_rel_pct",
             "note",
         ],
         "precision": ITEM_PRECISION["freq_response_bandwidth"],

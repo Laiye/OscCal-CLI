@@ -350,7 +350,17 @@ class TestFreqResponse:
         instance, _, _ = build(FreqResponseCalibrator, configs, points, None)
         applied: list[str] = []
         instance._apply_impedance = lambda impedance: applied.append(impedance)
-        instance._measure_amplitude = lambda frequency: 0.5 if frequency == 5e4 else 0.25
+
+        def measure(frequency: float) -> dict:
+            return {
+                "amplitude": 0.5 if frequency == 5e4 else 0.25,
+                "s_rel_pct": 0.0,
+                "read_spread_pct": 0.0,
+                "settle_s": 0.0,
+                "repeats": 3,
+            }
+
+        instance._measure_amplitude = measure
         instance.run()
 
         rows = [r for r in instance.results if "response" in r]
@@ -377,6 +387,38 @@ class TestFreqResponse:
         summary = [r for r in instance.results if r.get("summary") == "bandwidth"]
         assert summary, "应写入一条频带宽度汇总记录"
         assert summary[0]["bandwidth_hz"] is not None
+
+    def test_trigger_is_fixed_at_zero(self, configs):
+        points = [
+            {"channel": "1", "frequency_hz": 50000},
+            {"channel": "1", "frequency_hz": 5e8},
+        ]
+        state, reader = self._reader_factory()
+        instance, osc, _ = build(FreqResponseCalibrator, configs, points, reader)
+        instance._write_calibrator = lambda name, *args: state.update(
+            frequency=args[0] if name == "set_freq" else state["frequency"]
+        )
+        instance.run()
+
+        assert "TRIG:A:EDGE:SOU CH1" in osc.written
+        assert any("TRIG:A:LEV:CH1 0.0" in cmd for cmd in osc.written)
+        assert all("TRIG:A:LEV:CH1" not in cmd or cmd.endswith(" 0.0") for cmd in osc.written)
+
+    def test_response_records_repeatability(self, configs):
+        points = [
+            {"channel": "1", "frequency_hz": 50000},
+            {"channel": "1", "frequency_hz": 5e8},
+        ]
+        state, reader = self._reader_factory()
+        instance, _, _ = build(FreqResponseCalibrator, configs, points, reader)
+        instance._write_calibrator = lambda name, *args: state.update(
+            frequency=args[0] if name == "set_freq" else state["frequency"]
+        )
+        instance.run()
+
+        rows = [r for r in instance.results if "response" in r]
+        assert all("s_rel_pct" in row for row in rows)
+        assert all(row["repeats"] == 3 for row in rows)
 
 
 class TestRegistryWiring:
