@@ -193,6 +193,11 @@ class TestShippedSingleScheme:
         assert delta_v["1M"]["scales_v_per_div"] == [0.001, 0.1, 10.0]
         assert delta_v["50"]["scales_v_per_div"] == [0.001, 0.5]
 
+    def test_dc_offset_drops_1mv_scale(self, single_scheme):
+        points = single_scheme["items"]["dc_offset"]["points"]["by_impedance"]
+        assert points["1M"]["scales_v_per_div"] == [0.01, 0.1, 10.0]
+        assert points["50"]["scales_v_per_div"] == [0.01, 0.1, 1.0]
+
     def test_rise_time_uses_fastest_edge(self, single_scheme):
         points = single_scheme["items"]["rise_time"]["points"]
         assert points["edge_speeds_s"] == [1.5e-10]

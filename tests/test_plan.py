@@ -234,6 +234,19 @@ class TestSingleScheme:
         assert delta_t == [1e-8, 1e-5, 1e-2]
         assert items["delta_t"]["skipped"] == []
 
+    def test_dc_offset_uses_safe_scales(self, single_plan):
+        item = _by_name(single_plan)["dc_offset"]
+        expected = {"1M": [0.01, 0.1, 10.0], "50": [0.01, 0.1, 1.0]}
+        for impedance, scales in expected.items():
+            actual = [
+                p["scale"]
+                for p in item["points"]
+                if p["impedance"] == impedance and p["channel"] == "1"
+            ]
+            assert actual == scales
+            assert 0.001 not in actual, "0.001 V/div 的 16 点扫描低于 9500B 直流下限"
+        assert item["skipped"] == []
+
     def test_rise_time_uses_fastest_edge_only(self, single_plan):
         item = _by_name(single_plan)["rise_time"]
         speeds = [p["edge_rise_time_s"] for p in item["points"] if p["channel"] == "1"]

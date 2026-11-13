@@ -36,7 +36,8 @@ SWEEP_POINTS = 16
 SWEEP_SAMPLES = 1000
 #: 每个电平的建立时间。
 SETTLE_SECONDS = 0.6
-#: 零点插值用的小电平（校准仪 1 MΩ 下的最小有效幅度约 1 mV）。
+#: 零点插值用的小电平（9500B 实测直流最小约 ±0.888 mV，1 mV 只比下限高 0.112 mV；
+#: 单方法方案用 raw_lsq，不走此探针，试验方案选方法一时需注意余量）。
 ZERO_PROBE_V = 0.001
 #: 方案方法键（与 core/methods.py 的 ITEM_METHODS 一致）。
 METHOD_MEAN = "mean_readout"
