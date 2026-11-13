@@ -358,6 +358,18 @@ class TestMalformedScheme:
         errors = validate_scheme(data)
         assert any("不支持策略" in e for e in errors)
 
+    def test_edge_speeds_must_be_positive_list(self):
+        data = _valid_scheme()
+        data["items"] = {
+            "rise_time": {
+                "methods": ["fast_edge"],
+                "stimulus": {"shape": "EDGE"},
+                "points": {"strategy": "channel_x_edge_speed", "edge_speeds_s": []},
+            }
+        }
+        errors = validate_scheme(data)
+        assert any("edge_speeds_s" in e for e in errors)
+
     def test_derived_samples_must_be_coprime(self):
         data = _valid_scheme()
         data["items"] = {

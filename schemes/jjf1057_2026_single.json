@@ -37,16 +37,15 @@
                 "by_impedance": {
                     "1M": {
                         "scales_v_per_div": [
-                            0.01,
+                            0.001,
                             0.1,
-                            1.0,
                             10.0
                         ],
                         "screen_fraction": 0.8
                     },
                     "50": {
                         "scales_v_per_div": [
-                            0.01,
+                            0.001,
                             0.1,
                             1.0
                         ],
@@ -75,15 +74,14 @@
                 "by_impedance": {
                     "1M": {
                         "scales_v_per_div": [
-                            0.01,
+                            0.001,
                             0.1,
-                            1.0,
                             10.0
                         ]
                     },
                     "50": {
                         "scales_v_per_div": [
-                            0.01,
+                            0.001,
                             0.1,
                             1.0
                         ]
@@ -192,8 +190,10 @@
             },
             "points": {
                 "strategy": "channel_x_edge_speed",
-                "edge_speeds_s": "calibrator.probes[head].edge_rise_times",
-                "note": "每通道 × 每个可用边沿速度档一点；需 9500B 最快档（9530 为 150 ps / 500 ps）"
+                "edge_speeds_s": [
+                    1.5e-10
+                ],
+                "note": "只取 9500B 9530 最快档 150 ps；500 ps 与 500 MHz 示波器上升时间同量级，会把标准源沿算进去，不作校准点"
             },
             "notes": [
                 "500 MHz 机型理论上升时间约 700 ps，150 ps 快沿可分辨"
@@ -238,17 +238,16 @@
                 "by_impedance": {
                     "1M": {
                         "scales_v_per_div": [
-                            0.01,
+                            0.001,
                             0.1,
-                            1.0,
                             10.0
                         ],
                         "screen_fraction": 0.8
                     },
                     "50": {
                         "scales_v_per_div": [
-                            0.01,
-                            0.1
+                            0.001,
+                            0.5
                         ],
                         "screen_fraction": 0.8
                     }

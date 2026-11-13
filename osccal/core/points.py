@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import math
+
 from osccal.core.methods import method_output_shape
 
 SHAPE_TO_OUTPUT = {
@@ -373,15 +375,33 @@ def _resolve_fixed(item: dict, characteristics: dict, channels: list[str]) -> di
 
 def _resolve_edge_speed(item: dict, calibrator: dict, probe: str, channels: list[str]) -> dict:
     info = (calibrator.get("probes") or {}).get(probe, {})
-    speeds = [_num(v) for v in info.get("edge_rise_times", [])]
+    available = [_num(v) for v in info.get("edge_rise_times", [])]
+    rule = item.get("points") if isinstance(item.get("points"), dict) else item
+    requested = rule.get("edge_speeds_s")
+    # 旧写法是字符串引用（calibrator.probes[head].edge_rise_times），沿用全部可用档位。
+    speeds = [_num(v) for v in requested] if isinstance(requested, list) else list(available)
+
+    skipped = []
+    if not available:
+        skipped.append({"reason": f"探头 {probe} 未声明 edge_rise_times"})
+        speeds = []
+    elif not speeds:
+        skipped.append({"reason": "未选择边沿速度档"})
+    else:
+        missing = [
+            speed
+            for speed in speeds
+            if not any(math.isclose(speed, known, rel_tol=1e-9) for known in available)
+        ]
+        if missing:
+            skipped.append({"reason": f"探头 {probe} 未提供边沿速度 {missing}"})
+            speeds = [speed for speed in speeds if speed not in missing]
+
     points = [
         _point({"channel": channel, "edge_rise_time_s": speed})
         for channel in channels
         for speed in speeds
     ]
-    skipped = []
-    if not speeds:
-        skipped.append({"reason": f"探头 {probe} 未声明 edge_rise_times"})
     return {"points": points, "skipped": skipped}
 
 

@@ -165,8 +165,8 @@ class TestCalibrateFlow:
         assert result.exit_code == 0, result.output
         assert fake_env["metadata"]["spec"]["spec_code"] == "JJF 1057-2026"
         assert fake_env["metadata"]["scheme"]["name"] == "JJF 1057-2026 单方法校准方案"
-        # 单方法方案用直流两点法：4 档 1 MΩ + 3 档 50 Ω（1 V/div 可测）= 7 点
-        assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 7
+        # 单方法方案用直流两点法：3 档 1 MΩ + 3 档 50 Ω = 6 点
+        assert fake_env["metadata"]["points_plan"]["1"]["dc_gain"] == 6
 
     def test_rejects_item_missing_from_scheme(self, fake_env, tmp_path):
         """所选项目不在方案里时必须中止，不能静默跑 0 个点。"""

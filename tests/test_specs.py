@@ -187,11 +187,15 @@ class TestShippedSingleScheme:
 
     def test_dc_gain_and_delta_v_have_separate_impedance_blocks(self, single_scheme):
         gain = single_scheme["items"]["dc_gain"]["points"]["by_impedance"]
-        assert gain["1M"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
-        assert gain["50"]["scales_v_per_div"] == [0.01, 0.1, 1.0]
+        assert gain["1M"]["scales_v_per_div"] == [0.001, 0.1, 10.0]
+        assert gain["50"]["scales_v_per_div"] == [0.001, 0.1, 1.0]
         delta_v = single_scheme["items"]["delta_v"]["points"]["by_impedance"]
-        assert delta_v["1M"]["scales_v_per_div"] == [0.01, 0.1, 1.0, 10.0]
-        assert delta_v["50"]["scales_v_per_div"] == [0.01, 0.1]
+        assert delta_v["1M"]["scales_v_per_div"] == [0.001, 0.1, 10.0]
+        assert delta_v["50"]["scales_v_per_div"] == [0.001, 0.5]
+
+    def test_rise_time_uses_fastest_edge(self, single_scheme):
+        points = single_scheme["items"]["rise_time"]["points"]
+        assert points["edge_speeds_s"] == [1.5e-10]
 
     def test_timebase_and_delta_t_scales(self, single_scheme):
         for name in ("timebase_error", "delta_t"):

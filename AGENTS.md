@@ -47,7 +47,7 @@
   - **测量顺序会影响结果**：先跑直流类方法再测方波幅度，方波法会系统性偏高 1.9%~5.0%（量化台阶整数倍）。直流增益把方波方法排在最前面。
   - **示波器平均测量带偏置补偿**：直流偏置不能用 MEAN 读数，必须取**原始码值** `(码值 − YOFf) × YMUlt`（不叠加 YZEro），否则拟合截距恒接近 0。
   - **9500B 的 DC 输出不能设 0 V**：`SOUR:VOLT 0` 与 0.5 mV 都被静默丢弃、保持原值（最小可设约 1 mV）。零点改用 ±1 mV 两点插值。
-  - **快沿/脉冲测量要多次采集平均**：单次重复性约 ±52 ps，10 次平均降到约 ±17 ps。
+  - **快沿/脉冲测量要多次采集平均**：单次重复性约 ±52 ps，10 次平均降到约 ±17 ps。上升时间生产方案只取 9500B 9530 最快档 150 ps；500 ps 与 500 MHz 示波器上升时间同量级，会把标准源沿算进去，不作为校准点。方案用 `points.edge_speeds_s` 显式选档，`points._resolve_edge_speed` 会核对探头能力，缺失档位写入 `skipped`。
   - **无效读数要重新采集，而不是重复查询**：泰克用 `9.9E+37`、优利德用 `*`、ZDS 用 `3.4E+38` 表示"本次测量无效"。`read_measurement` 内部的重试只重发测量设置，同一份无效采集不会变；`base._read_meas` 现在会在 `InvalidMeasurementError` 时重新采集（最多 3 次）。实机现象：每次会话的第一条读数偶发 `9.9E+37`，不重采会直接让整项失败。
 - 版本号只有一处来源：`osccal/__init__.py:__version__`。`pyproject.toml` 用 `dynamic = ["version"]` + `[tool.setuptools.dynamic]` 指向它，CLI 用 `@click.version_option(version=__version__)`。**不要在任何地方再写死版本字符串**（`tests/test_specs.py` 守护）。
 - 配置文件一律 JSON，不引入 YAML：各类配置共用同一套校验与 `configuration_snapshot` 追溯链（快照基于 `json.dumps`，换 YAML 会破坏 sha256 语义）。

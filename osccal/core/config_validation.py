@@ -723,7 +723,13 @@ def _validate_point_rule(item_key: str, strategy: str, rule: dict, suffix: str =
             errors.append(f"{base} 的 samples_n 与 integer_cycles_n 不互质")
         return errors
 
-    # channel_x_edge_speed / fixed 无额外参数；边缘速度与最小量程由特征/校准仪提供。
+    if strategy == "channel_x_edge_speed":
+        speeds = rule.get("edge_speeds_s")
+        if speeds is not None and not isinstance(speeds, str) and not _positive_number_list(speeds):
+            errors.append(f"{base}.edge_speeds_s 必须为非空、无重复的正数列表")
+        return errors
+
+    # fixed 无额外参数；边缘速度与最小量程由特征/校准仪提供。
     return errors
 
 

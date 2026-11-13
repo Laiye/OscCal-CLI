@@ -200,7 +200,7 @@ class TestPlanContent:
 class TestSingleScheme:
     def test_same_point_count(self, single_plan):
         # 单方法用直流两点法：50 Ω 1 V/div 只需 ±3.2 V 直流，不再被方波 5 Vpp 上限误杀。
-        assert single_plan["total_points"] == 102
+        assert single_plan["total_points"] == 94
 
     def test_multi_method_items_execute_one_method(self, single_plan):
         items = _by_name(single_plan)
@@ -234,11 +234,17 @@ class TestSingleScheme:
         assert delta_t == [1e-8, 1e-5, 1e-2]
         assert items["delta_t"]["skipped"] == []
 
+    def test_rise_time_uses_fastest_edge_only(self, single_plan):
+        item = _by_name(single_plan)["rise_time"]
+        speeds = [p["edge_rise_time_s"] for p in item["points"] if p["channel"] == "1"]
+        assert speeds == [1.5e-10], "生产方案只取 150 ps 快沿，500 ps 与示波器上升时间同量级"
+        assert item["skipped"] == []
+
     def test_two_point_keeps_50_ohm_1v_per_div(self, single_plan):
         item = _by_name(single_plan)["dc_gain"]
         points = [p for p in item["points"] if p["channel"] == "1"]
         fifty = {p["scale"] for p in points if p["impedance"] == "50"}
-        assert fifty == {0.01, 0.1, 1.0}, "1 V/div 在 50 Ω 下应可测（±3.2 V 直流）"
+        assert fifty == {0.001, 0.1, 1.0}, "1 V/div 在 50 Ω 下应可测（±3.2 V 直流）"
         assert 10.0 not in fifty, "50 Ω 10 V/div 不应出现在分离点表中"
         assert item["skipped"] == [], "显式点表不应再产生点级跳过"
 
@@ -277,7 +283,7 @@ class TestSchemeSelection:
         fifty = {
             p["scale"] for p in item["points"] if p["channel"] == "1" and p["impedance"] == "50"
         }
-        assert fifty == {0.01, 0.1}
+        assert fifty == {0.001, 0.1}
 
     def test_item_not_in_scheme_is_reported(self, configs):
         scheme = copy.deepcopy(configs[1])
@@ -297,7 +303,7 @@ class TestPlanCommand:
     def test_plan_runs_offline(self):
         result = CliRunner().invoke(cli, ["plan"])
         assert result.exit_code == 0, result.output
-        assert "102" in result.output
+        assert "94" in result.output
         assert "JJF 1057-2026" in result.output
         assert "MDO3052" in result.output
 
@@ -318,7 +324,7 @@ class TestPlanCommand:
         result = CliRunner().invoke(cli, ["plan", "--json", str(out)])
         assert result.exit_code == 0, result.output
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["total_points"] == 102
+        assert data["total_points"] == 94
         assert len(data["items"]) == 12
         assert data["scheme_name"] == "JJF 1057-2026 单方法校准方案"
 
